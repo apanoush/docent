@@ -58,8 +58,8 @@ Example with a local binary and a separate config directory:
 
 ```lua
 require("docent").setup({
-  cmd = { "~/src/reading-assistant/target/debug/docent" },
-  config_dir = "~/config/docent-experiments",
+  cmd = { vim.fn.expand("~/src/reading-assistant/target/debug/docent") },
+  config_dir = vim.fn.expand("~/config/docent-experiments"),
   window = { width = 0.7, height = 0.5, border = "single" },
 })
 ```

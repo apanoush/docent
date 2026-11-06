@@ -73,7 +73,7 @@ Add the plugin directory to your configuration with lazy.nvim:
 
 ```lua
 {
-  dir = "~/path/to/reading-assistant/nvim",
+  dir = "~/path/to/reading-assistant/plugins/nvim",
   config = function()
     require("docent").setup({
       keymaps = {
