@@ -4,8 +4,11 @@ pub mod anthropic;
 pub mod openai;
 pub mod stream;
 
-use std::time::Duration;
+use std::fs;
+use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use directories::ProjectDirs;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -160,6 +163,11 @@ fn post_json(
     for (name, value) in headers {
         request = request.header(*name, *value);
     }
+    if config.api.base_url.contains("opencode.ai") {
+        if let Some(session) = opencode_session_id() {
+            request = request.header("x-opencode-session", session);
+        }
+    }
 
     let mut response =
         request
@@ -242,6 +250,32 @@ pub(crate) fn truncate(text: &str, max_chars: usize) -> String {
     output
 }
 
+fn opencode_session_id() -> Option<String> {
+    let dirs = ProjectDirs::from("", "", "docent")?;
+    let path = dirs.state_dir()?.join("opencode-session");
+    load_or_create_session_id(&path)
+}
+
+fn load_or_create_session_id(path: &Path) -> Option<String> {
+    if let Ok(id) = fs::read_to_string(path) {
+        let id = id.trim();
+        if !id.is_empty() {
+            return Some(id.to_string());
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).ok()?;
+    }
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    let id = format!("{nanos:032x}{:08x}", std::process::id());
+    fs::write(path, &id).ok()?;
+    Some(id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,6 +307,17 @@ mod tests {
     #[test]
     fn usage_is_none_when_empty() {
         assert_eq!(Usage::new(None, None), None);
+    }
+
+    #[test]
+    fn session_id_is_stable() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state/opencode-session");
+        let first = load_or_create_session_id(&path).unwrap();
+        let second = load_or_create_session_id(&path).unwrap();
+        assert_eq!(first, second);
+        assert!(!first.is_empty());
+        assert!(path.exists());
     }
 
     #[test]

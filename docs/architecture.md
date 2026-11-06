@@ -1,0 +1,140 @@
+# Architecture
+
+Docent is a one-shot CLI with an editor adapter. Neovim owns the buffer and the UI; the CLI owns configuration, prompting, context assembly, and provider communication.
+
+```text
+Neovim buffer
+    |
+    | selection, document, byte offsets, file name
+    v
+JSON on stdin
+    |
+    v
+docent run
+    |-- load config.toml
+    |-- load profiles/<name>.toml
+    |-- resolve effective settings
+    |-- build context window
+    |-- render prompt template
+    |-- call provider
+    v
+plain text, JSON, or NDJSON events on stdout
+    |
+    v
+Neovim float
+```
+
+## Request contract
+
+The CLI reads one JSON object from stdin:
+
+```json
+{
+  "selection": "the selected passage",
+  "document": "full buffer text",
+  "byte_start": 1234,
+  "byte_end": 1350,
+  "file": "/path/to/notes.md",
+  "question": null
+}
+```
+
+Every field is optional. Unknown fields are rejected. The document can be large, so stdin is preferable to command-line arguments or environment variables. Neovim's `vim.system` accepts a string for stdin, which removes the need for temporary files. See `:h vim.system()` in Neovim 0.10 or newer.
+
+The plugin sends UTF-8 byte offsets because that is what the buffer API exposes. The CLI trusts the offsets only when they match the selection exactly. Otherwise it falls back to the first exact occurrence. This keeps markers correct when a buffer was edited between capture and request.
+
+## Settings and precedence
+
+Settings resolve in this order, highest first:
+
+1. CLI flags (`--context-mode`, `--target-language`).
+2. Profile fields.
+3. `config.toml`.
+4. Built-in defaults.
+
+Provider selection, base URL, API key environment variable, and timeout are global. Model, temperature, token limit, context mode, and languages can be overridden per profile. Keeping provider selection global avoids mixing credentials and wire formats in a single request.
+
+## Context assembly
+
+`context.mode` controls how much document text is sent:
+
+- `auto`: send the whole document when it fits within `max_chars`, otherwise send a line-aligned window around the selection.
+- `full`: send the whole document, regardless of `max_chars`.
+- `none`: send no document.
+
+The selection is wrapped in `[[[ SELECTION START ]]]` and `[[[ SELECTION END ]]]` inside the context. Omitted document regions are marked with `[[[ TRUNCATED: ... ]]]`. The selection is also supplied separately through `{{selection}}`, so custom profiles can place it wherever they want.
+
+`max_chars` is a soft character budget, not a tokenizer count. Windows are aligned outward to line boundaries, so the final context can exceed the budget by up to one line. This keeps prompts readable and avoids splitting words or UTF-8 characters. Exact token accounting is deferred until a model-specific tokenizer is available.
+
+When no document is supplied, `{{context}}` renders `(no surrounding document provided)`. A profile that declares `requires = ["context"]` fails instead.
+
+## Prompt rendering
+
+A profile's `user_prompt` is a strict template. The supported placeholders are `selection`, `context`, `question`, `file`, `response_language`, and `target_language`. There is no conditional logic and no loop syntax. Unknown placeholders are rejected when the profile loads.
+
+Rendering scans the template only. Values inserted for one placeholder are not scanned again, so a document containing `{{question}}` cannot cause a second substitution. This is a small but deliberate defense against prompt injection through the text being read.
+
+The built-in system prompt states that the document and selection are data, not instructions. A profile can replace the system prompt with `system_prompt`, but the default is designed to keep the model from following directives embedded in the reading material.
+
+## Providers
+
+Docent implements two wire formats directly:
+
+- OpenAI Chat Completions, used by OpenAI, OpenCode Console, OpenCode Go, OpenRouter, local OpenAI-compatible servers, and similar gateways.
+- Anthropic Messages, used by Anthropic and OpenCode's Anthropic-compatible endpoint.
+
+The OpenAI-compatible endpoint at `https://opencode.ai/inference/go/openai/v1` and the Anthropic-compatible endpoint at `https://opencode.ai/inference/anthropic` are documented by OpenCode. See [OpenCode Go](https://opencode.ai/docs/console/go/) and [OpenCode Console models](https://opencode.ai/docs/zen/).
+
+Requests include `User-Agent: docent/<version>`. For OpenCode endpoints, Docent also sends a stable `x-opencode-session` value from the platform state directory, which OpenCode recommends for routing and prompt caching.
+
+API keys come from the environment variable named by `api.api_key_env`. Keys are never written to configuration files and never included in error messages. The CLI does not use a provider SDK because the two request shapes are small and a hand-written client keeps streaming, error mapping, and request inspection under direct control.
+
+There are no retries in 0.1.0. A failed request returns a clear error instead of risking duplicate charges. Retry and backoff are deferred.
+
+## Streaming contract
+
+With `--stream`, stdout contains one JSON object per line:
+
+```json
+{"type":"delta","text":"Hello"}
+{"type":"delta","text":" world"}
+{"type":"done","model":"test-model","usage":{"input_tokens":3,"output_tokens":4}}
+```
+
+Errors emitted after streaming starts use the same channel:
+
+```json
+{"type":"error","message":"provider request failed with HTTP 401: bad key"}
+```
+
+The CLI also writes the error to stderr and exits with the provider exit code. Neovim parses complete lines only, so a chunk boundary can never split a JSON object or a UTF-8 character. The parser handles SSE `data:` frames that are split at arbitrary byte boundaries.
+
+The stream ends with `done` or an error. A stream that ends without either is treated as a failure by the plugin if the child process exits non-zero, or as a completed answer if it exits zero.
+
+## Errors and exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success. |
+| `2` | Configuration or usage error: bad TOML, missing API key variable, invalid settings, missing profile. |
+| `3` | Provider or network error: HTTP error, timeout, malformed response, empty response. |
+| `4` | Invalid input: malformed request JSON, missing required selection or question. |
+
+Diagnostics go to stderr. The answer goes to stdout. A CLI invocation that is piped into another program can therefore keep the two separate.
+
+## Security boundaries
+
+- Profiles are loaded from `profiles/<name>.toml`. Names are restricted to letters, digits, underscores, and hyphens, so `--profile ../secret` cannot escape the directory.
+- `vim.system` receives an argument array, not a shell command line, so buffer text cannot become shell syntax.
+- API keys are referenced by environment variable name. The generated config contains no secrets.
+- Error messages include provider messages and truncated response bodies, never request headers.
+- The document is treated as untrusted content. The default system prompt tells the model not to follow instructions inside it.
+
+## Alternatives considered
+
+- **Markdown profiles with a separate metadata block** would be pleasant for prose, but splits one profile across two files or requires a custom front-matter parser. Typed TOML keeps metadata and prompt together and reuses the same parser as `config.toml`.
+- **`reqwest` with Tokio** would support advanced HTTP features, but the CLI is a one-shot process and Neovim already provides asynchrony. Blocking `ureq` with rustls keeps the dependency graph small and avoids an OpenSSL system dependency.
+- **Provider SDKs** would reduce wire-format code, but they add large dependency trees and their streaming types differ. Two small clients are easier to test and to keep compatible with OpenAI-style gateways.
+- **Raw text streaming** would be simpler for the Lua side, but chunk boundaries can split UTF-8 sequences and multi-byte characters. NDJSON gives the plugin complete, decodable units.
+- **Temporary files for the request** would avoid stdin handling, but they add cleanup, permissions, and race concerns. `vim.system` already supports stdin strings.
+- **A generic command provider** would unlock subscription-only tools, but its output contracts, permissions, and process lifecycle vary too much for the first release.
