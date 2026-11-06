@@ -59,10 +59,11 @@ If the process fails before producing an error event, the plugin shows the trimm
 `tests/nvim/test_docent.lua` runs headless with `tests/nvim/run.sh`. It covers:
 
 - Range capture and byte offsets.
+- Charwise visual capture, including byte offsets, by entering visual mode in a headless buffer.
 - Request construction from explicit selections and ranges.
 - UI append, finish, error, and cancellation behavior.
 - Profile metadata parsing with a stubbed `vim.system`.
 - End-to-end command construction and NDJSON handling with a stubbed stream.
 - The generic question prompt for profiles that declare `requires = ["question"]`.
 
-The visual capture path is exercised manually because simulating a real visual selection in headless Neovim is unreliable. The manual check is: select text, press the configured explain mapping, confirm the float contains the answer, then press `q`.
+A real end-to-end check still requires a provider: select text, press the configured explain mapping, confirm the float contains the answer, then press `q`.

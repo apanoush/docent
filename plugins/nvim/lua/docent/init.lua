@@ -321,8 +321,8 @@ function M.setup(opts)
     vim.api.nvim_create_user_command("Docent", function(args)
       local profile = args.args ~= "" and args.args or M.config.default_profile
       local run_opts = {}
-      if args.range == 2 then
-        run_opts.range = { args.line1, args.line2 }
+      if args.range >= 1 then
+        run_opts.range = { args.line1, args.range == 2 and args.line2 or args.line1 }
       end
       M.run(profile, run_opts)
     end, {

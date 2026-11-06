@@ -85,6 +85,24 @@ test("capture_range clamps and swaps line bounds", function()
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
 
+test("capture_visual returns exact text and offsets for a charwise selection", function()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "alpha beta", "second line" })
+  vim.api.nvim_set_current_buf(buf)
+  vim.api.nvim_win_set_cursor(0, { 1, 6 })
+  vim.cmd("normal! v")
+  vim.api.nvim_win_set_cursor(0, { 1, 9 })
+
+  local request = context.capture_visual(buf)
+  assert_eq(request.selection, "beta")
+  assert_eq(request.byte_start, 6)
+  assert_eq(request.byte_end, 10)
+  assert_eq(request.document, "alpha beta\nsecond line")
+
+  vim.cmd("normal! \27")
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
 test("build_request accepts an explicit selection", function()
   local request = context.build_request({
     selection = "x",
@@ -270,6 +288,35 @@ test("run streams into a float and builds the CLI command", function()
         assert_eq(request.selection, "beta")
         assert_eq(request.file, "notes.md")
 
+        docent._last_ui:close(false)
+      end
+    )
+  end)
+
+  if not ok then
+    error(err)
+  end
+end)
+
+test(":Docent uses a single-line count as a range", function()
+  docent.setup({ cmd = "docent" })
+  docent.refresh()
+
+  local ok, err = pcall(function()
+    stub_streaming_run(
+      '{"profiles":[{"name":"explain","requires":["selection"]}]}',
+      function(captured)
+        local buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "alpha", "beta", "gamma" })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+        vim.cmd("2Docent explain")
+        assert_true(vim.wait(500, function()
+          return docent._last_ui and docent._last_ui:is_done()
+        end))
+
+        local request = vim.json.decode(captured.opts.stdin)
+        assert_eq(request.selection, "beta")
         docent._last_ui:close(false)
       end
     )

@@ -76,13 +76,15 @@ function M.capture_visual(buf)
     return M.capture_range(buf, line1, line2)
   end
 
-  local ok, selection = pcall(vim.fn.getregion, anchor, cursor, { type = mode })
+  local ok, lines = pcall(vim.fn.getregion, anchor, cursor, { type = mode })
   if not ok then
     local line1 = math.min(anchor_line, cursor_line)
     local line2 = math.max(anchor_line, cursor_line)
     return M.capture_range(buf, line1, line2)
   end
 
+  -- getregion() returns a list of lines.
+  local selection = table.concat(lines, "\n")
   local anchor_byte = M.byte_offset(buf, anchor_line, anchor[3] - 1)
   local cursor_byte = M.byte_offset(buf, cursor_line, cursor[3] - 1)
   local start_byte = math.min(anchor_byte, cursor_byte)
