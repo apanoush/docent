@@ -143,6 +143,9 @@ pub enum DocentError {
 
     #[error("provider returned an empty response")]
     EmptyResponse,
+
+    #[error("failed to write to stdout: {0}")]
+    WriteStdout(#[source] std::io::Error),
 }
 
 impl DocentError {

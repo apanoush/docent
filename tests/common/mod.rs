@@ -27,6 +27,15 @@ impl MockResponse {
             content_type: "application/json".to_string(),
         }
     }
+
+    /// Creates a Server-Sent Events response.
+    pub fn sse(status: u16, body: impl Into<String>) -> Self {
+        Self {
+            status,
+            body: body.into(),
+            content_type: "text/event-stream".to_string(),
+        }
+    }
 }
 
 /// Request captured by [`MockServer`].

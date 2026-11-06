@@ -2,6 +2,7 @@
 
 pub mod anthropic;
 pub mod openai;
+pub mod stream;
 
 use std::time::Duration;
 
@@ -11,6 +12,8 @@ use serde_json::Value;
 use crate::config::{ApiKind, Config};
 use crate::error::DocentError;
 use crate::prompt::{EffectiveSettings, Prompt};
+
+type HttpResponse = ureq::http::Response<ureq::Body>;
 
 /// Token usage reported by a provider.
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
@@ -49,6 +52,31 @@ pub struct Completion {
     pub usage: Option<Usage>,
 }
 
+/// One line of the NDJSON stream written by `docent run --stream`.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum StreamEvent {
+    /// A text fragment produced by the model.
+    Delta {
+        /// Fragment text.
+        text: String,
+    },
+    /// The stream completed successfully.
+    Done {
+        /// Model reported by the provider.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        /// Token usage, when reported.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        usage: Option<Usage>,
+    },
+    /// The stream failed.
+    Error {
+        /// Human readable error message.
+        message: String,
+    },
+}
+
 pub(crate) struct ChatInput<'a> {
     pub system: &'a str,
     pub user: &'a str,
@@ -63,11 +91,7 @@ pub fn complete(
     settings: &EffectiveSettings,
     prompt: &Prompt,
 ) -> Result<Completion, DocentError> {
-    let api_key =
-        std::env::var(&config.api.api_key_env).map_err(|_| DocentError::MissingApiKey {
-            env: config.api.api_key_env.clone(),
-        })?;
-
+    let api_key = api_key(config)?;
     let input = ChatInput {
         system: &prompt.system,
         user: &prompt.user,
@@ -82,12 +106,41 @@ pub fn complete(
     }
 }
 
-pub(crate) fn send_json(
+/// Calls the configured provider and forwards text fragments as they arrive.
+pub fn complete_streaming(
+    config: &Config,
+    settings: &EffectiveSettings,
+    prompt: &Prompt,
+    on_delta: &mut dyn FnMut(&str) -> Result<(), DocentError>,
+) -> Result<Completion, DocentError> {
+    let api_key = api_key(config)?;
+    let input = ChatInput {
+        system: &prompt.system,
+        user: &prompt.user,
+        model: &settings.model,
+        temperature: settings.temperature,
+        max_tokens: settings.max_tokens,
+    };
+
+    match config.api.kind {
+        ApiKind::OpenAi => openai::complete_streaming(config, &input, &api_key, on_delta),
+        ApiKind::Anthropic => anthropic::complete_streaming(config, &input, &api_key, on_delta),
+    }
+}
+
+fn api_key(config: &Config) -> Result<String, DocentError> {
+    std::env::var(&config.api.api_key_env).map_err(|_| DocentError::MissingApiKey {
+        env: config.api.api_key_env.clone(),
+    })
+}
+
+fn post_json(
     config: &Config,
     url: &str,
     headers: &[(&str, &str)],
     body: &Value,
-) -> Result<Value, DocentError> {
+    accept: &str,
+) -> Result<HttpResponse, DocentError> {
     let payload = serde_json::to_string(body).map_err(|error| DocentError::ProviderTransport {
         message: format!("failed to encode request JSON: {error}"),
     })?;
@@ -103,7 +156,7 @@ pub(crate) fn send_json(
     let mut request = agent
         .post(url)
         .header("content-type", "application/json")
-        .header("accept", "application/json");
+        .header("accept", accept);
     for (name, value) in headers {
         request = request.header(*name, *value);
     }
@@ -115,6 +168,29 @@ pub(crate) fn send_json(
                 message: error.to_string(),
             })?;
     let status = response.status().as_u16();
+
+    if !(200..300).contains(&status) {
+        let text = response.body_mut().read_to_string().map_err(|error| {
+            DocentError::ProviderTransport {
+                message: format!("failed to read error response: {error}"),
+            }
+        })?;
+        return Err(DocentError::ProviderHttp {
+            status,
+            message: provider_error_message(&text),
+        });
+    }
+
+    Ok(response)
+}
+
+pub(crate) fn send_json(
+    config: &Config,
+    url: &str,
+    headers: &[(&str, &str)],
+    body: &Value,
+) -> Result<Value, DocentError> {
+    let mut response = post_json(config, url, headers, body, "application/json")?;
     let text =
         response
             .body_mut()
@@ -123,19 +199,21 @@ pub(crate) fn send_json(
                 message: format!("failed to read response body: {error}"),
             })?;
 
-    if !(200..300).contains(&status) {
-        return Err(DocentError::ProviderHttp {
-            status,
-            message: provider_error_message(&text),
-        });
-    }
-
     serde_json::from_str(&text).map_err(|error| DocentError::ProviderTransport {
         message: format!(
             "failed to parse response JSON: {error}; body: {}",
             truncate(&text, 300)
         ),
     })
+}
+
+pub(crate) fn send_stream(
+    config: &Config,
+    url: &str,
+    headers: &[(&str, &str)],
+    body: &Value,
+) -> Result<HttpResponse, DocentError> {
+    post_json(config, url, headers, body, "text/event-stream")
 }
 
 pub(crate) fn provider_error_message(body: &str) -> String {
@@ -195,5 +273,34 @@ mod tests {
     #[test]
     fn usage_is_none_when_empty() {
         assert_eq!(Usage::new(None, None), None);
+    }
+
+    #[test]
+    fn stream_events_have_the_expected_json_shape() {
+        assert_eq!(
+            serde_json::to_string(&StreamEvent::Delta {
+                text: "hi".to_string()
+            })
+            .unwrap(),
+            r#"{"type":"delta","text":"hi"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&StreamEvent::Done {
+                model: Some("test-model".to_string()),
+                usage: Some(Usage {
+                    input_tokens: Some(3),
+                    output_tokens: Some(4),
+                }),
+            })
+            .unwrap(),
+            r#"{"type":"done","model":"test-model","usage":{"input_tokens":3,"output_tokens":4}}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&StreamEvent::Error {
+                message: "boom".to_string()
+            })
+            .unwrap(),
+            r#"{"type":"error","message":"boom"}"#
+        );
     }
 }

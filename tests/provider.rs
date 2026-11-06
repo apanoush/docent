@@ -387,3 +387,119 @@ fn unknown_request_fields_are_reported() {
     assert_eq!(output.status.code(), Some(4));
     assert!(stderr(&output).contains("extra"));
 }
+
+#[test]
+fn openai_streaming_events() {
+    let body = concat!(
+        "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{}}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let input =
+        r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain", "--stream"],
+        input,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let events: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0]["type"], "delta");
+    assert_eq!(events[0]["text"], "Hello");
+    assert_eq!(events[1]["text"], " world");
+    assert_eq!(events[2]["type"], "done");
+    assert_eq!(events[2]["model"], "test-model");
+    assert_eq!(events[2]["usage"]["input_tokens"], 3);
+    assert_eq!(events[2]["usage"]["output_tokens"], 2);
+
+    let requests = server.requests();
+    assert_eq!(requests[0].header("accept"), Some("text/event-stream"));
+    let request = requests[0].json();
+    assert_eq!(request["stream"], true);
+}
+
+#[test]
+fn anthropic_streaming_events() {
+    let body = concat!(
+        "event: message_start\n",
+        "data: {\"type\":\"message_start\",\"message\":{\"model\":\"test-model\",\"usage\":{\"input_tokens\":3}}}\n\n",
+        "event: content_block_delta\n",
+        "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Bonjour\"}}\n\n",
+        "event: content_block_delta\n",
+        "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\" le monde\"}}\n\n",
+        "event: message_delta\n",
+        "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":4}}\n\n",
+        "event: message_stop\n",
+        "data: {\"type\":\"message_stop\"}\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "anthropic", &server.base_url());
+
+    let input =
+        r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain", "--stream"],
+        input,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let events: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0]["type"], "delta");
+    assert_eq!(events[0]["text"], "Bonjour");
+    assert_eq!(events[1]["text"], " le monde");
+    assert_eq!(events[2]["type"], "done");
+    assert_eq!(events[2]["model"], "test-model");
+    assert_eq!(events[2]["usage"]["input_tokens"], 3);
+    assert_eq!(events[2]["usage"]["output_tokens"], 4);
+}
+
+#[test]
+fn streaming_http_error_emits_an_error_event() {
+    let server = MockServer::start(MockResponse::json(
+        401,
+        r#"{"error":{"message":"bad key"}}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let input =
+        r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain", "--stream"],
+        input,
+        Some("secret"),
+    );
+    assert_eq!(output.status.code(), Some(3));
+
+    let stderr_text = stderr(&output);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let event: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(event["type"], "error");
+    assert!(event["message"].as_str().unwrap().contains("HTTP 401"));
+    assert!(event["message"].as_str().unwrap().contains("bad key"));
+    assert!(stderr_text.contains("HTTP 401"));
+}

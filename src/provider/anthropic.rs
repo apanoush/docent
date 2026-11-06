@@ -2,7 +2,10 @@
 
 use serde_json::{Value, json};
 
-use super::{ChatInput, Completion, Usage, send_json};
+use super::stream::stream_sse;
+use super::{
+    ChatInput, Completion, Usage, provider_error_message, send_json, send_stream, truncate,
+};
 use crate::config::Config;
 use crate::error::DocentError;
 
@@ -21,9 +24,89 @@ pub(crate) fn complete(
             ("x-api-key", api_key),
             ("anthropic-version", ANTHROPIC_VERSION),
         ],
-        &body(input),
+        &body(input, false),
     )?;
     parse_response(&response)
+}
+
+pub(crate) fn complete_streaming(
+    config: &Config,
+    input: &ChatInput<'_>,
+    api_key: &str,
+    on_delta: &mut dyn FnMut(&str) -> Result<(), DocentError>,
+) -> Result<Completion, DocentError> {
+    let url = endpoint(config);
+    let mut response = send_stream(
+        config,
+        &url,
+        &[
+            ("x-api-key", api_key),
+            ("anthropic-version", ANTHROPIC_VERSION),
+        ],
+        &body(input, true),
+    )?;
+
+    let mut text = String::new();
+    let mut model = None;
+    let mut input_tokens = None;
+    let mut output_tokens = None;
+
+    {
+        let mut reader = response.body_mut().as_reader();
+        stream_sse(&mut reader, &mut |data| {
+            let value: Value =
+                serde_json::from_str(data).map_err(|error| DocentError::ProviderTransport {
+                    message: format!(
+                        "failed to parse stream event: {error}; data: {}",
+                        truncate(data, 300)
+                    ),
+                })?;
+
+            match value.get("type").and_then(Value::as_str) {
+                Some("message_start") => {
+                    if let Some(message) = value.get("message") {
+                        if let Some(value_model) = message.get("model").and_then(Value::as_str) {
+                            model = Some(value_model.to_string());
+                        }
+                        if let Some(usage) = message.get("usage") {
+                            input_tokens = usage.get("input_tokens").and_then(Value::as_u64);
+                        }
+                    }
+                }
+                Some("content_block_delta") => {
+                    if let Some(delta) = value.pointer("/delta/text").and_then(Value::as_str) {
+                        if !delta.is_empty() {
+                            text.push_str(delta);
+                            on_delta(delta)?;
+                        }
+                    }
+                }
+                Some("message_delta") => {
+                    if let Some(usage) = value.get("usage") {
+                        output_tokens = usage.get("output_tokens").and_then(Value::as_u64);
+                    }
+                }
+                Some("error") => {
+                    return Err(DocentError::ProviderTransport {
+                        message: provider_error_message(&value.to_string()),
+                    });
+                }
+                _ => {}
+            }
+
+            Ok(())
+        })?;
+    }
+
+    if text.trim().is_empty() {
+        return Err(DocentError::EmptyResponse);
+    }
+
+    Ok(Completion {
+        text,
+        model,
+        usage: Usage::new(input_tokens, output_tokens),
+    })
 }
 
 fn endpoint(config: &Config) -> String {
@@ -35,14 +118,14 @@ fn endpoint(config: &Config) -> String {
     }
 }
 
-fn body(input: &ChatInput<'_>) -> Value {
+fn body(input: &ChatInput<'_>, stream: bool) -> Value {
     json!({
         "model": input.model,
         "system": input.system,
         "messages": [{"role": "user", "content": input.user}],
         "temperature": input.temperature,
         "max_tokens": input.max_tokens,
-        "stream": false
+        "stream": stream
     })
 }
 
@@ -97,7 +180,7 @@ mod tests {
 
     #[test]
     fn request_body_has_the_expected_shape() {
-        let value = body(&input());
+        let value = body(&input(), false);
         assert_eq!(value["model"], "test-model");
         assert_eq!(value["system"], "system");
         assert_eq!(value["messages"][0]["role"], "user");
@@ -105,6 +188,12 @@ mod tests {
         assert!((value["temperature"].as_f64().unwrap() - 0.2).abs() < 1e-6);
         assert_eq!(value["max_tokens"], 64);
         assert_eq!(value["stream"], false);
+    }
+
+    #[test]
+    fn streaming_body_enables_streaming() {
+        let value = body(&input(), true);
+        assert_eq!(value["stream"], true);
     }
 
     #[test]

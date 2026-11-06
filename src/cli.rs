@@ -1,6 +1,6 @@
 //! Command line interface for `docent`.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand};
@@ -73,8 +73,11 @@ pub struct RunArgs {
     #[arg(long, value_enum)]
     pub context_mode: Option<ContextMode>,
     /// Print the completion as JSON.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "stream")]
     pub json: bool,
+    /// Stream newline-delimited JSON events.
+    #[arg(long)]
+    pub stream: bool,
     /// Print the assembled prompt and exit without calling the provider.
     #[arg(long)]
     pub print_prompt: bool,
@@ -135,6 +138,10 @@ fn run_request(config_dir: &Path, args: RunArgs) -> Result<(), DocentError> {
         return Ok(());
     }
 
+    if args.stream {
+        return stream_completion(&config, &settings, &rendered);
+    }
+
     let completion = provider::complete(&config, &settings, &rendered)?;
     if args.json {
         println!("{}", serde_json::to_string(&completion)?);
@@ -145,6 +152,57 @@ fn run_request(config_dir: &Path, args: RunArgs) -> Result<(), DocentError> {
         }
     }
 
+    Ok(())
+}
+
+fn stream_completion(
+    config: &config::Config,
+    settings: &prompt::EffectiveSettings,
+    rendered: &prompt::Prompt,
+) -> Result<(), DocentError> {
+    let stdout = std::io::stdout();
+    let mut writer = stdout.lock();
+
+    let result = provider::complete_streaming(config, settings, rendered, &mut |delta| {
+        write_stream_event(
+            &mut writer,
+            &provider::StreamEvent::Delta {
+                text: delta.to_string(),
+            },
+        )
+    });
+
+    match result {
+        Ok(completion) => {
+            write_stream_event(
+                &mut writer,
+                &provider::StreamEvent::Done {
+                    model: completion.model,
+                    usage: completion.usage,
+                },
+            )?;
+            Ok(())
+        }
+        Err(error) => {
+            let _ = write_stream_event(
+                &mut writer,
+                &provider::StreamEvent::Error {
+                    message: error.to_string(),
+                },
+            );
+            Err(error)
+        }
+    }
+}
+
+fn write_stream_event(
+    writer: &mut impl Write,
+    event: &provider::StreamEvent,
+) -> Result<(), DocentError> {
+    serde_json::to_writer(&mut *writer, event)
+        .map_err(|error| DocentError::WriteStdout(std::io::Error::other(error)))?;
+    writer.write_all(b"\n").map_err(DocentError::WriteStdout)?;
+    writer.flush().map_err(DocentError::WriteStdout)?;
     Ok(())
 }
 
