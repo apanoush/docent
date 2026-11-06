@@ -1,13 +1,16 @@
 # docent configuration
 #
-# API keys are never stored here. Set the environment variable named by
-# api_key_env instead.
+# The API key comes from the environment variable named by api_key_env.
+# Alternatively, store it directly in api_key. When both are set, the
+# environment variable wins. api_key_env is safer for shared machines and
+# for config files kept in a dotfiles repository.
 
 [api]
 kind = "openai"                # openai | anthropic
 base_url = "https://opencode.ai/inference/go/openai/v1"
 model = "deepseek-v4.1-flash"
 api_key_env = "OPENCODE_API_KEY"
+# api_key = "sk-..."           # optional; this file is created with mode 0600
 timeout_secs = 120
 max_tokens = 1200
 temperature = 0.3

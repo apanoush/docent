@@ -43,7 +43,7 @@ pub enum ApiKind {
 }
 
 /// Provider settings.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ApiConfig {
     /// Wire format.
@@ -52,7 +52,11 @@ pub struct ApiConfig {
     pub base_url: String,
     /// Model identifier.
     pub model: String,
-    /// Environment variable holding the API key.
+    /// Literal API key. Prefer `api_key_env` when the config file is shared.
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// Environment variable holding the API key. Wins over `api_key` when set.
+    #[serde(default)]
     pub api_key_env: String,
     /// Request timeout in seconds.
     pub timeout_secs: u64,
@@ -62,12 +66,29 @@ pub struct ApiConfig {
     pub temperature: f32,
 }
 
+impl std::fmt::Debug for ApiConfig {
+    /// Prints every field except the key itself.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiConfig")
+            .field("kind", &self.kind)
+            .field("base_url", &self.base_url)
+            .field("model", &self.model)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("api_key_env", &self.api_key_env)
+            .field("timeout_secs", &self.timeout_secs)
+            .field("max_tokens", &self.max_tokens)
+            .field("temperature", &self.temperature)
+            .finish()
+    }
+}
+
 impl Default for ApiConfig {
     fn default() -> Self {
         Self {
             kind: ApiKind::OpenAi,
             base_url: "https://opencode.ai/inference/go/openai/v1".to_string(),
             model: "deepseek-v4.1-flash".to_string(),
+            api_key: None,
             api_key_env: "OPENCODE_API_KEY".to_string(),
             timeout_secs: 120,
             max_tokens: 1200,
@@ -142,8 +163,8 @@ impl Config {
         if self.api.model.trim().is_empty() {
             errors.push("api.model must not be empty".to_string());
         }
-        if self.api.api_key_env.trim().is_empty() {
-            errors.push("api.api_key_env must not be empty".to_string());
+        if api_key_is_empty(self.api.api_key.as_deref()) && self.api.api_key_env.trim().is_empty() {
+            errors.push("api.api_key and api.api_key_env must not both be empty".to_string());
         }
         if self.api.timeout_secs == 0 {
             errors.push("api.timeout_secs must be greater than zero".to_string());
@@ -176,6 +197,11 @@ impl Config {
             })
         }
     }
+}
+
+/// True when an optional API key is absent or blank.
+fn api_key_is_empty(key: Option<&str>) -> bool {
+    key.map(str::trim).unwrap_or("").is_empty()
 }
 
 /// Resolves the config directory from the CLI flag, environment, or platform default.
@@ -221,8 +247,32 @@ pub fn load_config(config_dir: &Path) -> Result<Config, DocentError> {
         source,
     })?;
     config.validate(&path)?;
+    warn_if_key_is_exposed(&path, &config);
     Ok(config)
 }
+
+/// Warns when a literal API key sits in a file other users can read.
+#[cfg(unix)]
+fn warn_if_key_is_exposed(path: &Path, config: &Config) {
+    use std::os::unix::fs::PermissionsExt;
+
+    if api_key_is_empty(config.api.api_key.as_deref()) {
+        return;
+    }
+    if let Ok(metadata) = fs::metadata(path) {
+        if metadata.permissions().mode() & 0o077 != 0 {
+            log::warn!(
+                "{} contains an API key and is readable by other users; run 'chmod 600 {}'",
+                path.display(),
+                path.display()
+            );
+        }
+    }
+}
+
+/// No-op on platforms without Unix permission bits.
+#[cfg(not(unix))]
+fn warn_if_key_is_exposed(_path: &Path, _config: &Config) {}
 
 /// Creates default files if `config.toml` is missing, then loads the config.
 pub fn ensure_initialized(config_dir: &Path) -> Result<Config, DocentError> {
@@ -266,12 +316,11 @@ pub fn init(config_dir: &Path, force: bool) -> Result<InitReport, DocentError> {
         skipped: Vec::new(),
     };
 
-    write_default(
-        &config_file(config_dir),
-        defaults::CONFIG,
-        force,
-        &mut report,
-    )?;
+    let config_path = config_file(config_dir);
+    write_default(&config_path, defaults::CONFIG, force, &mut report)?;
+    if report.created.contains(&config_path) {
+        restrict_permissions(&config_path)?;
+    }
     for (name, contents) in defaults::PROFILES {
         write_default(
             &profile_dir.join(format!("{name}.toml")),
@@ -282,6 +331,25 @@ pub fn init(config_dir: &Path, force: bool) -> Result<InitReport, DocentError> {
     }
 
     Ok(report)
+}
+
+/// Limits a freshly created config file to its owner, since it may hold a key.
+#[cfg(unix)]
+fn restrict_permissions(path: &Path) -> Result<(), DocentError> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|source| {
+        DocentError::Write {
+            path: path.to_path_buf(),
+            source,
+        }
+    })
+}
+
+/// No-op on platforms without Unix permission bits.
+#[cfg(not(unix))]
+fn restrict_permissions(_path: &Path) -> Result<(), DocentError> {
+    Ok(())
 }
 
 fn create_dir_all(path: &Path) -> Result<(), DocentError> {
@@ -322,6 +390,75 @@ mod tests {
         assert_eq!(config.api.kind, ApiKind::OpenAi);
         assert_eq!(config.context.mode, ContextMode::Auto);
         assert_eq!(config.api.model, "deepseek-v4.1-flash");
+    }
+
+    #[test]
+    fn config_accepts_a_literal_api_key_without_an_env_name() {
+        let config: Config = toml::from_str(
+            r#"
+[api]
+kind = "openai"
+base_url = "https://example.com"
+model = "test-model"
+api_key = "secret"
+timeout_secs = 5
+max_tokens = 16
+temperature = 0.1
+"#,
+        )
+        .unwrap();
+        config.validate(Path::new("config.toml")).unwrap();
+
+        assert_eq!(config.api.api_key.as_deref(), Some("secret"));
+        assert!(config.api.api_key_env.is_empty());
+    }
+
+    #[test]
+    fn config_accepts_an_env_name_without_a_literal_key() {
+        let config = Config::default();
+        config.validate(Path::new("config.toml")).unwrap();
+
+        assert!(config.api.api_key.is_none());
+        assert_eq!(config.api.api_key_env, "OPENCODE_API_KEY");
+    }
+
+    #[test]
+    fn config_rejects_both_missing_key_sources() {
+        let mut config = Config::default();
+        config.api.api_key = None;
+        config.api.api_key_env.clear();
+
+        let error = config.validate(Path::new("config.toml")).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("api.api_key"));
+        assert!(message.contains("api.api_key_env"));
+    }
+
+    #[test]
+    fn debug_output_redacts_the_api_key() {
+        let mut config = Config::default();
+        config.api.api_key = Some("super-secret-value".to_string());
+
+        let debug = format!("{:?}", config);
+        assert!(!debug.contains("super-secret-value"));
+        assert!(debug.contains("<redacted>"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn init_restricts_config_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("docent");
+        init(&dir, false).unwrap();
+
+        let mode = fs::metadata(config_file(&dir))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
     }
 
     #[test]

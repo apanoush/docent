@@ -113,7 +113,7 @@ A profile that declares `requires = ["question"]` opens a text prompt before the
 ## Troubleshooting
 
 - `docent: could not start ...`: the binary is missing from qutebrowser's `PATH`. Use `cmd` with an absolute path.
-- `docent: missing API key`: the environment variable named by `api_key_env` is not set in the process that started qutebrowser.
+- `docent: missing API key`: neither `api_key` nor the environment variable named by `api_key_env` is set in the process that started qutebrowser.
 - `docent: no profiles found`: run `docent init`, then `:docent-refresh`.
 - `docent: select some text first`: select text with the mouse or enter caret mode before running the command.
 - `docent: could not read this page`: the page is not ready, JavaScript is disabled, or the tab changed while the capture was running. Retry after the page loads.

@@ -121,10 +121,10 @@ pub enum DocentError {
     #[error("invalid settings: {0}")]
     InvalidSettings(String),
 
-    #[error("missing API key: environment variable {env} is not set")]
+    #[error("missing API key: {detail}")]
     MissingApiKey {
-        /// Environment variable that should hold the key.
-        env: String,
+        /// Instructions pointing at the available key sources.
+        detail: String,
     },
 
     #[error("provider request failed with HTTP {status}: {message}")]

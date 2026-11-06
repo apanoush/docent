@@ -9,13 +9,31 @@ use common::{MockResponse, MockServer};
 use serde_json::Value;
 
 fn write_config(dir: &Path, kind: &str, base_url: &str, context_mode: &str, max_chars: usize) {
+    write_config_with_key(
+        dir,
+        kind,
+        base_url,
+        context_mode,
+        max_chars,
+        r#"api_key_env = "DOCENT_TEST_KEY""#,
+    );
+}
+
+fn write_config_with_key(
+    dir: &Path,
+    kind: &str,
+    base_url: &str,
+    context_mode: &str,
+    max_chars: usize,
+    key_line: &str,
+) {
     fs::create_dir_all(dir.join("profiles")).unwrap();
     let config = format!(
         r#"[api]
 kind = "{kind}"
 base_url = "{base_url}"
 model = "test-model"
-api_key_env = "DOCENT_TEST_KEY"
+{key_line}
 timeout_secs = 5
 max_tokens = 64
 temperature = 0.2
@@ -37,7 +55,11 @@ fn write_profile(dir: &Path, name: &str, contents: &str) {
 }
 
 fn setup(dir: &Path, kind: &str, base_url: &str) {
-    write_config(dir, kind, base_url, "full", 32_000);
+    setup_with_key(dir, kind, base_url, r#"api_key_env = "DOCENT_TEST_KEY""#);
+}
+
+fn setup_with_key(dir: &Path, kind: &str, base_url: &str, key_line: &str) {
+    write_config_with_key(dir, kind, base_url, "full", 32_000, key_line);
     write_profile(
         dir,
         "explain",
@@ -187,6 +209,57 @@ fn anthropic_request_and_plain_output() {
             .unwrap()
             .contains("beta")
     );
+}
+
+#[test]
+fn literal_openai_key_is_sent_without_an_env_var() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"ok"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup_with_key(
+        &dir,
+        "openai",
+        &server.base_url(),
+        r#"api_key = "literal-secret""#,
+    );
+
+    let input =
+        r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
+    let output = run(&dir, &["run", "--profile", "explain"], input, None);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let requests = server.requests();
+    assert_eq!(
+        requests[0].header("authorization"),
+        Some("Bearer literal-secret")
+    );
+}
+
+#[test]
+fn literal_anthropic_key_is_sent_without_an_env_var() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"content":[{"type":"text","text":"ok"}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup_with_key(
+        &dir,
+        "anthropic",
+        &server.base_url(),
+        r#"api_key = "literal-secret""#,
+    );
+
+    let input =
+        r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
+    let output = run(&dir, &["run", "--profile", "explain"], input, None);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let requests = server.requests();
+    assert_eq!(requests[0].header("x-api-key"), Some("literal-secret"));
 }
 
 #[test]

@@ -12,7 +12,7 @@ use directories::ProjectDirs;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::config::{ApiKind, Config};
+use crate::config::{ApiConfig, ApiKind, Config};
 use crate::error::DocentError;
 use crate::prompt::{EffectiveSettings, Prompt};
 
@@ -132,9 +132,37 @@ pub fn complete_streaming(
 }
 
 fn api_key(config: &Config) -> Result<String, DocentError> {
-    std::env::var(&config.api.api_key_env).map_err(|_| DocentError::MissingApiKey {
-        env: config.api.api_key_env.clone(),
-    })
+    let env_value = if config.api.api_key_env.trim().is_empty() {
+        None
+    } else {
+        std::env::var(&config.api.api_key_env).ok()
+    };
+    resolve_api_key(&config.api, env_value)
+}
+
+/// Picks the API key. A non-empty environment value wins over a literal key.
+fn resolve_api_key(api: &ApiConfig, env_value: Option<String>) -> Result<String, DocentError> {
+    if let Some(value) = env_value.filter(|value| !value.trim().is_empty()) {
+        return Ok(value);
+    }
+    if let Some(value) = api
+        .api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Ok(value.to_string());
+    }
+
+    let detail = if api.api_key_env.trim().is_empty() {
+        "set api.api_key in config.toml".to_string()
+    } else {
+        format!(
+            "set api.api_key in config.toml or environment variable {}",
+            api.api_key_env
+        )
+    };
+    Err(DocentError::MissingApiKey { detail })
 }
 
 fn post_json(
@@ -318,6 +346,61 @@ mod tests {
         assert_eq!(first, second);
         assert!(!first.is_empty());
         assert!(path.exists());
+    }
+
+    #[test]
+    fn environment_key_wins_over_the_literal_key() {
+        let api = ApiConfig {
+            api_key: Some("literal".to_string()),
+            ..ApiConfig::default()
+        };
+
+        let key = resolve_api_key(&api, Some("from-env".to_string())).unwrap();
+        assert_eq!(key, "from-env");
+    }
+
+    #[test]
+    fn literal_key_is_used_when_the_environment_is_unset() {
+        let api = ApiConfig {
+            api_key: Some("literal".to_string()),
+            ..ApiConfig::default()
+        };
+
+        let key = resolve_api_key(&api, None).unwrap();
+        assert_eq!(key, "literal");
+    }
+
+    #[test]
+    fn blank_environment_value_falls_back_to_the_literal_key() {
+        let api = ApiConfig {
+            api_key: Some("literal".to_string()),
+            ..ApiConfig::default()
+        };
+
+        let key = resolve_api_key(&api, Some("  ".to_string())).unwrap();
+        assert_eq!(key, "literal");
+    }
+
+    #[test]
+    fn missing_key_reports_both_sources() {
+        let api = ApiConfig::default();
+
+        let error = resolve_api_key(&api, None).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("api.api_key"));
+        assert!(message.contains("OPENCODE_API_KEY"));
+    }
+
+    #[test]
+    fn missing_key_without_an_env_name_reports_only_the_literal_source() {
+        let mut api = ApiConfig::default();
+        api.api_key_env.clear();
+
+        let error = resolve_api_key(&api, None).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "missing API key: set api.api_key in config.toml"
+        );
     }
 
     #[test]

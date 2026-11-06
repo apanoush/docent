@@ -28,6 +28,7 @@ kind = "openai"
 base_url = "https://opencode.ai/inference/go/openai/v1"
 model = "deepseek-v4.1-flash"
 api_key_env = "OPENCODE_API_KEY"
+# api_key = "sk-..."
 timeout_secs = 120
 max_tokens = 1200
 temperature = 0.3
@@ -48,7 +49,8 @@ target_language = "English"
 | `kind` | `"openai"` or `"anthropic"` | `"openai"` | Wire format used for the request. |
 | `base_url` | string | `"https://opencode.ai/inference/go/openai/v1"` | Provider root URL, without the endpoint path. |
 | `model` | string | `"deepseek-v4.1-flash"` | Model identifier sent to the provider. |
-| `api_key_env` | string | `"OPENCODE_API_KEY"` | Environment variable that holds the API key. The key itself is never written to the file. |
+| `api_key` | string | unset | Literal API key stored in the file. Prefer `api_key_env` when the file is shared. |
+| `api_key_env` | string | `"OPENCODE_API_KEY"` | Environment variable that holds the API key. A non-empty value wins over `api_key`. |
 | `timeout_secs` | integer | `120` | Whole-request timeout in seconds. Must be greater than zero. |
 | `max_tokens` | integer | `1200` | Maximum output tokens. Must be greater than zero. |
 | `temperature` | float | `0.3` | Sampling temperature from 0.0 to 2.0. Anthropic requests must stay at or below 1.0. |
@@ -56,6 +58,25 @@ target_language = "English"
 For `kind = "openai"`, Docent posts to `<base_url>/chat/completions`. For `kind = "anthropic"`, Docent posts to `<base_url>/v1/messages`, or to `<base_url>/messages` when the base URL already ends in `/v1`.
 
 Requests are sent with `User-Agent: docent/<version>`. When the base URL contains `opencode.ai`, Docent also sends a stable `x-opencode-session` value from the platform state directory, which OpenCode uses for routing and prompt caching.
+
+### API keys
+
+Docent reads the key from the environment variable named by `api_key_env` when that variable exists and is not empty. Otherwise it uses `api_key`. If neither yields a value, the request fails with `missing API key`.
+
+Storing the key in `api_key` keeps a secret in a plaintext file. `docent init` creates `config.toml` with mode `0600` on Unix, and Docent warns when a file containing `api_key` is readable by other users. Use `api_key_env` on shared machines and in dotfiles repositories, where the config file may be copied or committed.
+
+Every provider example below can replace `api_key_env = "..."` with a literal key:
+
+```toml
+[api]
+kind = "openai"
+base_url = "https://api.openai.com/v1"
+model = "your-model-id"
+api_key = "sk-..."
+timeout_secs = 120
+max_tokens = 1200
+temperature = 0.3
+```
 
 ### Provider examples
 
@@ -105,7 +126,7 @@ model = "your-model-id"
 api_key_env = "LOCAL_API_KEY"
 ```
 
-A local server that does not check keys still needs the environment variable to exist. Set it to any non-empty value.
+A local server that does not check keys still needs a key source. Set `api_key = "none"` or export the environment variable with any non-empty value.
 
 ### `[context]`
 
