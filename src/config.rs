@@ -29,6 +29,9 @@ pub struct Config {
     /// Response language settings.
     #[serde(default)]
     pub response: ResponseConfig,
+    /// Run history settings.
+    #[serde(default)]
+    pub history: HistoryConfig,
 }
 
 /// Wire format used to talk to the provider.
@@ -40,6 +43,16 @@ pub enum ApiKind {
     OpenAi,
     /// Anthropic Messages API.
     Anthropic,
+}
+
+impl ApiKind {
+    /// Stable identifier used in the history database.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::OpenAi => "openai",
+            Self::Anthropic => "anthropic",
+        }
+    }
 }
 
 /// Provider settings.
@@ -110,6 +123,17 @@ pub enum ContextMode {
     None,
 }
 
+impl ContextMode {
+    /// Stable identifier used in the history database.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Full => "full",
+            Self::None => "none",
+        }
+    }
+}
+
 /// Context window settings.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -144,6 +168,31 @@ impl Default for ResponseConfig {
         Self {
             language: "auto".to_string(),
             target_language: "English".to_string(),
+        }
+    }
+}
+
+/// Run history settings.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HistoryConfig {
+    /// Whether provider runs are recorded.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Explicit database path. Relative paths resolve against the config directory.
+    #[serde(default)]
+    pub database: Option<PathBuf>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for HistoryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            database: None,
         }
     }
 }
@@ -186,6 +235,14 @@ impl Config {
         }
         if self.response.target_language.trim().is_empty() {
             errors.push("response.target_language must not be empty".to_string());
+        }
+        if self
+            .history
+            .database
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().to_string_lossy().trim().is_empty())
+        {
+            errors.push("history.database must not be empty".to_string());
         }
 
         if errors.is_empty() {
@@ -390,6 +447,44 @@ mod tests {
         assert_eq!(config.api.kind, ApiKind::OpenAi);
         assert_eq!(config.context.mode, ContextMode::Auto);
         assert_eq!(config.api.model, "deepseek-v4.1-flash");
+        assert!(config.history.enabled);
+        assert!(config.history.database.is_none());
+    }
+
+    #[test]
+    fn history_config_accepts_a_database_path() {
+        let config: Config = toml::from_str(
+            r#"
+[history]
+enabled = true
+database = "~/docent.db"
+"#,
+        )
+        .unwrap();
+        config.validate(Path::new("config.toml")).unwrap();
+
+        assert!(config.history.enabled);
+        assert_eq!(config.history.database, Some(PathBuf::from("~/docent.db")));
+    }
+
+    #[test]
+    fn history_config_can_be_disabled() {
+        let config: Config = toml::from_str("[history]\nenabled = false\n").unwrap();
+        assert!(!config.history.enabled);
+        assert!(config.history.database.is_none());
+    }
+
+    #[test]
+    fn history_config_rejects_an_empty_database_path() {
+        let config: Config = toml::from_str("[history]\ndatabase = \"\"\n").unwrap();
+        let error = config.validate(Path::new("config.toml")).unwrap_err();
+        assert!(error.to_string().contains("history.database"));
+    }
+
+    #[test]
+    fn history_config_rejects_unknown_fields() {
+        let error = toml::from_str::<Config>("[history]\npath = \"docent.db\"\n").unwrap_err();
+        assert!(error.to_string().contains("path"));
     }
 
     #[test]

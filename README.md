@@ -67,6 +67,8 @@ printf '%s' '{"selection":"transformer","document":"A transformer maps a sequenc
 
 Inspect the exact prompt without calling the provider with `--print-prompt`, or stream newline-delimited events with `--stream`. Run `docent --help` for the terminal commands and `docent run --help` for the machine interface.
 
+Every provider run is recorded in a local SQLite database by default, including the prompt, answer, model, parameters, token usage, and source. The database lives in the platform data directory, for example `~/.local/share/docent/docent.db` on Linux. Set `history.database` to move it, `history.enabled = false` to disable it, or pass `--no-history` for one run. See [run history](docs/history.md).
+
 ## Neovim
 
 Add the plugin directory to your configuration with lazy.nvim:

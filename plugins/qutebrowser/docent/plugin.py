@@ -62,6 +62,25 @@ class Settings:
     keymaps: dict[str, str]
 
 
+def run_arguments(
+    settings: Settings,
+    profile: str,
+    target_language: str | None,
+    context_mode: str | None,
+) -> list[str]:
+    """Build the argv passed to ``docent run``."""
+    args = list(settings.cmd[1:])
+    if settings.config_dir:
+        args.extend(["--config-dir", settings.config_dir])
+    args.extend(["run", "--profile", profile, "--stream"])
+    if target_language:
+        args.extend(["--target-language", target_language])
+    if context_mode:
+        args.extend(["--context-mode", context_mode])
+    args.extend(["--source", "qutebrowser"])
+    return args
+
+
 @dataclass
 class Session:
     """One request and the answer tab that displays it."""
@@ -90,14 +109,12 @@ class Session:
         if self.cancelled:
             return
 
-        args = list(self.settings.cmd[1:])
-        if self.settings.config_dir:
-            args.extend(["--config-dir", self.settings.config_dir])
-        args.extend(["run", "--profile", self.profile, "--stream"])
-        if target_language:
-            args.extend(["--target-language", target_language])
-        if context_mode:
-            args.extend(["--context-mode", context_mode])
+        args = run_arguments(
+            self.settings,
+            self.profile,
+            target_language,
+            context_mode,
+        )
 
         process = QProcess()
         process.setProgram(self.settings.cmd[0])

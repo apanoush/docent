@@ -30,6 +30,8 @@ local function command(extra)
     table.insert(cmd, M.config.config_dir)
   end
   vim.list_extend(cmd, extra)
+  table.insert(cmd, "--source")
+  table.insert(cmd, "nvim")
   return cmd
 end
 

@@ -40,6 +40,10 @@ max_chars = 32000
 [response]
 language = "auto"
 target_language = "English"
+
+[history]
+enabled = true
+# database = "~/docent.db"
 ```
 
 ### `[api]`
@@ -143,6 +147,21 @@ A local server that does not check keys still needs a key source. Set `api_key =
 |---|---|---|---|
 | `language` | string | `"auto"` | Response language. `"auto"` tells the model to match the selected passage. Any other value is inserted into the prompt verbatim. |
 | `target_language` | string | `"English"` | Default translation target used by the translate profile. |
+
+### `[history]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `enabled` | boolean | `true` | Record every provider run in a local SQLite database. |
+| `database` | string | unset | Database path. The default is the platform data directory, for example `~/.local/share/docent/docent.db` on Linux. |
+
+An explicit `database` path wins over the platform data directory. `~` is expanded, and a relative path is resolved against the config directory. The database is created lazily on the first model run; `docent init` does not create it.
+
+The database contains the full rendered prompt, including document context, the question, and the answer. Treat it as sensitive. On Unix, Docent creates the file with mode `0600` and the default data directory with mode `0700`. It is not encrypted.
+
+History is fail-open: when the database cannot be opened or written, Docent logs a warning and still returns the answer. Disable recording globally with `enabled = false`, or skip one run with the global `--no-history` flag. The global `--source NAME` flag records where a request came from; it defaults to `cli`, and the shipped adapters pass `nvim`, `qutebrowser`, or `zathura`.
+
+See [run history](history.md) for the schema and example queries.
 
 ## Profiles
 
@@ -297,6 +316,8 @@ docent profiles [--json]
 docent init [--force] [--config-dir PATH]
 docent config-path [--config-dir PATH]
 ```
+
+`--source NAME` and `--no-history` are global flags and work with every command. `--source` is recorded in the history database; `--no-history` skips the database for one run.
 
 The `...` above stands for the same selection and execution options as `explain`. `docent do` takes a profile name before the optional file.
 

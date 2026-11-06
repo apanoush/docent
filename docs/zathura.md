@@ -63,7 +63,7 @@ Quote values that contain spaces. Zathura's `exec` splits unquoted words into se
 
 ## Answer window
 
-The helper writes the request to a private temporary file, then launches a terminal running `docent-zathura render REQUEST_FILE`. The render process sends the request to `docent run --profile NAME --stream`, parses the NDJSON events, prints the answer, and waits for Enter before closing. Closing the terminal sends SIGHUP to the render process and cancels the request.
+The helper writes the request to a private temporary file, then launches a terminal running `docent-zathura render REQUEST_FILE`. The render process sends the request to `docent run --profile NAME --stream --source zathura`, parses the NDJSON events, prints the answer, and waits for Enter before closing. Closing the terminal sends SIGHUP to the render process and cancels the request.
 
 The terminal is a separate window, not a zathura overlay. On a tiling compositor, add a float rule for the `docent` app id (foot and kitty) or the `Docent` class (xterm). The adapter sets those names for the supported terminals. On an error, the window stays open so the message is readable.
 

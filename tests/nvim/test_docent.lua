@@ -283,6 +283,12 @@ test("run streams into a float and builds the CLI command", function()
         assert_eq(captured.cmd[3], "--profile")
         assert_eq(captured.cmd[4], "explain")
         assert_true(vim.tbl_contains(captured.cmd, "--stream"))
+        assert_true(vim.tbl_contains(captured.cmd, "--source"))
+        local source_index = 1
+        while captured.cmd[source_index] ~= "--source" do
+          source_index = source_index + 1
+        end
+        assert_eq(captured.cmd[source_index + 1], "nvim")
 
         local request = vim.json.decode(captured.opts.stdin)
         assert_eq(request.selection, "beta")

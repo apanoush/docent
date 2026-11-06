@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from docent_zathura.render import (
     RenderError,
+    docent_arguments,
     parse_event,
     render_request,
     run_render,
@@ -259,3 +260,21 @@ def test_wait_for_close_does_nothing_without_a_tty() -> None:
     wait_for_close(io.StringIO(""), out)
 
     assert out.getvalue() == ""
+
+
+def test_docent_arguments_tag_the_source() -> None:
+    args = docent_arguments("docent", "explain", "French", "full")
+
+    assert args == [
+        "docent",
+        "run",
+        "--profile",
+        "explain",
+        "--stream",
+        "--target-language",
+        "French",
+        "--context-mode",
+        "full",
+        "--source",
+        "zathura",
+    ]

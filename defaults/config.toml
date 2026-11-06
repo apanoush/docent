@@ -23,6 +23,10 @@ max_chars = 32000
 language = "auto"              # auto, or e.g. "English"
 target_language = "English"
 
+[history]
+enabled = true                 # record provider runs in a local SQLite database
+# database = "~/docent.db"     # default: platform data directory, e.g. ~/.local/share/docent/docent.db
+
 # ---------------------------------------------------------------------------
 # Provider examples
 #

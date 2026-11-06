@@ -18,6 +18,7 @@ The crate has one binary target, `src/main.rs`, and a library target, `src/lib.r
 | `provider::openai` | OpenAI Chat Completions request and response handling. |
 | `provider::anthropic` | Anthropic Messages request and response handling. |
 | `provider::stream` | Incremental SSE decoding. |
+| `history` | SQLite run history, schema creation, path resolution, and inserts. |
 | `error` | `DocentError` and process exit codes. |
 
 ## Data flow
@@ -34,9 +35,12 @@ cli::run
     context::build -> context::ContextResult
     prompt::render -> prompt::Prompt
     provider::complete or provider::complete_streaming
+    history::write -> SQLite
 ```
 
 `docent run` replaces `source::resolve_request` with `cli::read_request`, which parses the JSON document from stdin. Both paths converge on `cli::execute`.
+
+`cli::execute` records one `history::NewRun` after the provider call returns or fails, unless `--no-history` or `history.enabled = false` skips it. Streamed output is accumulated so a failed stream still records the partial answer. A history write error is logged and ignored.
 
 `--print-prompt` stops after `prompt::render` and serializes the system and user messages. Tests use this path to verify context and precedence without network access.
 
@@ -76,6 +80,10 @@ pub fn render(profile: &Profile, request: &Request, context: &ContextResult, set
 // provider
 pub fn complete(config: &Config, settings: &EffectiveSettings, prompt: &Prompt) -> Result<Completion, DocentError>;
 pub fn complete_streaming(config: &Config, settings: &EffectiveSettings, prompt: &Prompt, on_delta: &mut dyn FnMut(&str) -> Result<(), DocentError>) -> Result<Completion, DocentError>;
+
+// history
+pub fn database_path(config_dir: &Path, history: &HistoryConfig) -> Result<PathBuf, DocentError>;
+pub fn write(config: &Config, config_dir: &Path, run: &NewRun) -> Result<(), DocentError>;
 ```
 
 ## Config and profile loading

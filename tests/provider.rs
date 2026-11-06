@@ -28,6 +28,11 @@ fn write_config_with_key(
     key_line: &str,
 ) {
     fs::create_dir_all(dir.join("profiles")).unwrap();
+    let database = dir
+        .join("docent.db")
+        .display()
+        .to_string()
+        .replace('\\', "\\\\");
     let config = format!(
         r#"[api]
 kind = "{kind}"
@@ -45,6 +50,9 @@ max_chars = {max_chars}
 [response]
 language = "auto"
 target_language = "English"
+
+[history]
+database = "{database}"
 "#
     );
     fs::write(dir.join("config.toml"), config).unwrap();
@@ -942,4 +950,318 @@ fn missing_question_is_an_input_error_without_a_prompt() {
     );
     assert_eq!(output.status.code(), Some(4));
     assert!(stderr(&output).contains("requires a question"));
+}
+
+fn history_database(dir: &Path) -> std::path::PathBuf {
+    dir.join("docent.db")
+}
+
+#[derive(Debug, PartialEq)]
+struct HistoryRow {
+    command: String,
+    profile: String,
+    source: String,
+    output_mode: String,
+    status: String,
+    model: String,
+    output: String,
+    selection: String,
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
+    error: Option<String>,
+}
+
+#[test]
+fn run_history_records_a_successful_run() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"model":"test-model","choices":[{"message":{"content":"Hello **world**"}}],"usage":{"prompt_tokens":3,"completion_tokens":4}}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let input = r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10,"file":"notes.md"}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain", "--json"],
+        input,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let row = connection
+        .query_row(
+            "SELECT command, profile, source, output_mode, status, model, output, selection, input_tokens, output_tokens, error FROM runs",
+            [],
+            |row| {
+                Ok(HistoryRow {
+                    command: row.get(0)?,
+                    profile: row.get(1)?,
+                    source: row.get(2)?,
+                    output_mode: row.get(3)?,
+                    status: row.get(4)?,
+                    model: row.get(5)?,
+                    output: row.get(6)?,
+                    selection: row.get(7)?,
+                    input_tokens: row.get(8)?,
+                    output_tokens: row.get(9)?,
+                    error: row.get(10)?,
+                })
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        row,
+        HistoryRow {
+            command: "run".to_string(),
+            profile: "explain".to_string(),
+            source: "cli".to_string(),
+            output_mode: "json".to_string(),
+            status: "success".to_string(),
+            model: "test-model".to_string(),
+            output: "Hello **world**".to_string(),
+            selection: "beta".to_string(),
+            input_tokens: Some(3),
+            output_tokens: Some(4),
+            error: None,
+        }
+    );
+}
+
+#[test]
+fn run_history_records_the_source_flag() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"ok"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain", "--source", "my-plugin"],
+        input,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let source: String = connection
+        .query_row("SELECT source FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(source, "my-plugin");
+}
+
+#[test]
+fn run_history_records_provider_errors() {
+    let server = MockServer::start(MockResponse::json(
+        401,
+        r#"{"error":{"message":"bad key"}}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        input,
+        Some("secret"),
+    );
+    assert_eq!(output.status.code(), Some(3));
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let (status, error, recorded_output): (String, String, String) = connection
+        .query_row("SELECT status, error, output FROM runs", [], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .unwrap();
+    assert_eq!(status, "error");
+    assert!(error.contains("HTTP 401"));
+    assert!(error.contains("bad key"));
+    assert_eq!(recorded_output, "");
+}
+
+#[test]
+fn run_history_records_streaming_output() {
+    let body = concat!(
+        "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{}}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
+    let output = run(
+        &dir,
+        &[
+            "run",
+            "--profile",
+            "explain",
+            "--stream",
+            "--source",
+            "nvim",
+        ],
+        input,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let (status, source, output_mode, recorded_output, input_tokens, output_tokens): (
+        String,
+        String,
+        String,
+        String,
+        Option<i64>,
+        Option<i64>,
+    ) = connection
+        .query_row(
+            "SELECT status, source, output_mode, output, input_tokens, output_tokens FROM runs",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(status, "success");
+    assert_eq!(source, "nvim");
+    assert_eq!(output_mode, "ndjson");
+    assert_eq!(recorded_output, "Hello world");
+    assert_eq!(input_tokens, Some(3));
+    assert_eq!(output_tokens, Some(2));
+}
+
+#[test]
+fn run_history_records_partial_stream_output_on_error() {
+    let body = concat!(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+        "data: {\"error\":{\"message\":\"boom\"}}\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain", "--stream"],
+        input,
+        Some("secret"),
+    );
+    assert_eq!(output.status.code(), Some(3));
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let (status, recorded_output, error): (String, String, String) = connection
+        .query_row("SELECT status, output, error FROM runs", [], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .unwrap();
+    assert_eq!(status, "error");
+    assert_eq!(recorded_output, "Hello");
+    assert!(error.contains("boom"));
+}
+
+#[test]
+fn print_prompt_does_not_write_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", "http://127.0.0.1:1");
+
+    let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain", "--print-prompt"],
+        input,
+        None,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(!history_database(&dir).exists());
+}
+
+#[test]
+fn no_history_skips_the_database() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"ok"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain", "--no-history"],
+        input,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(!history_database(&dir).exists());
+}
+
+#[test]
+fn disabled_history_skips_the_database() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"ok"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let config = fs::read_to_string(dir.join("config.toml")).unwrap();
+    let config = config.replace("[history]\n", "[history]\nenabled = false\n");
+    fs::write(dir.join("config.toml"), config).unwrap();
+
+    let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        input,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(!history_database(&dir).exists());
+}
+
+#[test]
+fn history_failures_do_not_fail_the_run() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"still works"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    fs::create_dir(history_database(&dir)).unwrap();
+
+    let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        input,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "still works\n");
+    assert!(stderr(&output).contains("could not record run history"));
 }

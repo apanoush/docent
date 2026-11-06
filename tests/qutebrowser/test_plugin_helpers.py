@@ -512,3 +512,38 @@ def test_pick_command_runs_the_selected_profile(monkeypatch: Any) -> None:
     plugin._pick_command(FakeTab())
 
     assert ran == ["ask"]
+
+
+def test_run_arguments_tags_the_source() -> None:
+    args = plugin.run_arguments(_settings(), "explain", "French", "full")
+
+    assert args == [
+        "run",
+        "--profile",
+        "explain",
+        "--stream",
+        "--target-language",
+        "French",
+        "--context-mode",
+        "full",
+        "--source",
+        "qutebrowser",
+    ]
+
+
+def test_run_arguments_include_config_dir() -> None:
+    settings = _settings()
+    settings.config_dir = "/tmp/docent"
+
+    args = plugin.run_arguments(settings, "ask", None, None)
+
+    assert args == [
+        "--config-dir",
+        "/tmp/docent",
+        "run",
+        "--profile",
+        "ask",
+        "--stream",
+        "--source",
+        "qutebrowser",
+    ]

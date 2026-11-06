@@ -11,6 +11,7 @@ from typing import Any, TextIO
 
 __all__ = [
     "RenderError",
+    "docent_arguments",
     "parse_event",
     "render_request",
     "run_render",
@@ -45,6 +46,22 @@ def _terminate(process: subprocess.Popen[str]) -> None:
         process.wait()
 
 
+def docent_arguments(
+    docent_cmd: str,
+    profile: str,
+    target_language: str | None,
+    context_mode: str | None,
+) -> list[str]:
+    """Build the argv passed to ``docent run``."""
+    args = [docent_cmd, "run", "--profile", profile, "--stream"]
+    if target_language:
+        args.extend(["--target-language", target_language])
+    if context_mode:
+        args.extend(["--context-mode", context_mode])
+    args.extend(["--source", "zathura"])
+    return args
+
+
 def render_request(
     payload: Mapping[str, Any],
     *,
@@ -74,13 +91,14 @@ def render_request(
             return 1
         request = {**request, "question": answer}
 
-    args = [docent_cmd, "run", "--profile", profile, "--stream"]
     target_language = payload.get("target_language")
-    if isinstance(target_language, str) and target_language:
-        args.extend(["--target-language", target_language])
     context_mode = payload.get("context_mode")
-    if isinstance(context_mode, str) and context_mode:
-        args.extend(["--context-mode", context_mode])
+    args = docent_arguments(
+        docent_cmd,
+        profile,
+        target_language if isinstance(target_language, str) else None,
+        context_mode if isinstance(context_mode, str) else None,
+    )
 
     header = payload.get("header")
     if isinstance(header, str) and header:

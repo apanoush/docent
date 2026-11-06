@@ -6,6 +6,7 @@ Docent explains, translates, or answers questions about a selected passage while
 
 - [README](../README.md): install, quickstart, and the editor, browser, and PDF viewer setup snippets.
 - [Configuration and profiles](config.md): config file, provider examples, profile schema, and placeholders.
+- [Run history](history.md): SQLite location, schema, source tagging, privacy, and example queries.
 - [Neovim plugin](nvim.md): commands, keymaps, float behavior, and Lua API.
 - [qutebrowser adapter](qutebrowser.md): commands, keymaps, answer tabs, and browser limitations.
 - [Zathura adapter](zathura.md): `zathurarc` bindings, clipboard capture, terminal answers, and PDF limitations.
@@ -26,5 +27,6 @@ Docent explains, translates, or answers questions about a selected passage while
 4. The CLI renders the profile prompt and calls the configured provider.
 5. Text arrives either as a plain stream for the terminal or as newline-delimited JSON events for the adapters.
 6. The terminal prints the answer, the Neovim plugin appends text to a floating window, the qutebrowser adapter appends text to an answer tab, or the zathura adapter streams into a terminal window.
+7. The CLI records the run in a local SQLite database when history is enabled. Failures to write history are warnings, not request failures.
 
 The CLI is usable on its own. The Neovim, qutebrowser, and zathura adapters only shell out to `docent` and render its output.

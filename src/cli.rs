@@ -2,6 +2,7 @@
 
 use std::io::{IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
@@ -9,6 +10,7 @@ use serde::Serialize;
 use crate::config::{self, ContextMode, InitReport};
 use crate::context;
 use crate::error::DocentError;
+use crate::history;
 use crate::profile::{Profile, ProfileInfo, ProfileStore};
 use crate::prompt::{self, EffectiveSettings};
 use crate::provider::{self, Completion};
@@ -41,6 +43,20 @@ pub struct Cli {
         value_name = "PATH"
     )]
     pub config_dir: Option<PathBuf>,
+
+    /// Source recorded in the history database, for example cli, nvim, or a plugin name.
+    #[arg(
+        long,
+        global = true,
+        value_name = "NAME",
+        default_value = "cli",
+        value_parser = parse_source
+    )]
+    pub source: String,
+
+    /// Do not record this run in the history database.
+    #[arg(long, global = true)]
+    pub no_history: bool,
 
     /// Command to run. With no command, prints a short getting-started message.
     #[command(subcommand)]
@@ -202,14 +218,33 @@ enum OutputMode {
     PrintPrompt,
 }
 
+impl OutputMode {
+    /// Stable identifier used in the history database.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::PlainStreaming => "plain_stream",
+            Self::PlainBuffered => "plain",
+            Self::Json => "json",
+            Self::Ndjson => "ndjson",
+            Self::PrintPrompt => "print_prompt",
+        }
+    }
+}
+
 /// Parses arguments, dispatches the command, and reports errors.
 pub fn run() -> Result<(), DocentError> {
-    let cli = Cli::parse();
-    let Some(command) = cli.command else {
+    let Cli {
+        config_dir: explicit_config_dir,
+        source,
+        no_history,
+        command,
+    } = Cli::parse();
+    let Some(command) = command else {
         print_getting_started();
         return Ok(());
     };
-    let config_dir = config::config_dir_from_env(cli.config_dir)?;
+    let config_dir = config::config_dir_from_env(explicit_config_dir)?;
+    let record_history = !no_history;
 
     match command {
         Command::Init { force } => {
@@ -217,11 +252,31 @@ pub fn run() -> Result<(), DocentError> {
             print_init_report(&report);
         }
         Command::Profiles { json } => run_profiles(&config_dir, json)?,
-        Command::Explain(args) => run_human(&config_dir, "explain", args)?,
-        Command::Ask(args) => run_human(&config_dir, "ask", args)?,
-        Command::Translate(args) => run_human(&config_dir, "translate", args)?,
-        Command::Do(args) => run_do(&config_dir, args)?,
-        Command::Run(args) => run_request(&config_dir, args)?,
+        Command::Explain(args) => {
+            run_human(
+                &config_dir,
+                "explain",
+                "explain",
+                args,
+                &source,
+                record_history,
+            )?;
+        }
+        Command::Ask(args) => {
+            run_human(&config_dir, "ask", "ask", args, &source, record_history)?;
+        }
+        Command::Translate(args) => {
+            run_human(
+                &config_dir,
+                "translate",
+                "translate",
+                args,
+                &source,
+                record_history,
+            )?;
+        }
+        Command::Do(args) => run_do(&config_dir, args, &source, record_history)?,
+        Command::Run(args) => run_request(&config_dir, args, &source, record_history)?,
         Command::ConfigPath => println!("{}", config_dir.display()),
     }
 
@@ -240,7 +295,14 @@ fn print_getting_started() {
     println!("Run `docent --help` for all commands and options.");
 }
 
-fn run_human(config_dir: &Path, profile_name: &str, args: HumanArgs) -> Result<(), DocentError> {
+fn run_human(
+    config_dir: &Path,
+    command: &str,
+    profile_name: &str,
+    args: HumanArgs,
+    source: &str,
+    record_history: bool,
+) -> Result<(), DocentError> {
     let HumanArgs {
         file,
         selection,
@@ -263,10 +325,26 @@ fn run_human(config_dir: &Path, profile_name: &str, args: HumanArgs) -> Result<(
         OutputMode::PlainStreaming
     };
 
-    execute(&config, &profile, &settings, request, profile_name, output)
+    execute(
+        config_dir,
+        &config,
+        &profile,
+        &settings,
+        request,
+        command,
+        profile_name,
+        source,
+        record_history,
+        output,
+    )
 }
 
-fn run_do(config_dir: &Path, args: DoArgs) -> Result<(), DocentError> {
+fn run_do(
+    config_dir: &Path,
+    args: DoArgs,
+    source: &str,
+    record_history: bool,
+) -> Result<(), DocentError> {
     let DoArgs {
         profile,
         file,
@@ -275,12 +353,15 @@ fn run_do(config_dir: &Path, args: DoArgs) -> Result<(), DocentError> {
     } = args;
     run_human(
         config_dir,
+        "do",
         &profile,
         HumanArgs {
             file,
             selection,
             common,
         },
+        source,
+        record_history,
     )
 }
 
@@ -325,7 +406,12 @@ fn resolve_human_request(
     }
 }
 
-fn run_request(config_dir: &Path, args: RunArgs) -> Result<(), DocentError> {
+fn run_request(
+    config_dir: &Path,
+    args: RunArgs,
+    source: &str,
+    record_history: bool,
+) -> Result<(), DocentError> {
     let RunArgs {
         profile: profile_name,
         question,
@@ -354,15 +440,31 @@ fn run_request(config_dir: &Path, args: RunArgs) -> Result<(), DocentError> {
         OutputMode::PlainBuffered
     };
 
-    execute(&config, &profile, &settings, request, &profile_name, output)
+    execute(
+        config_dir,
+        &config,
+        &profile,
+        &settings,
+        request,
+        "run",
+        &profile_name,
+        source,
+        record_history,
+        output,
+    )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn execute(
+    config_dir: &Path,
     config: &config::Config,
     profile: &Profile,
     settings: &EffectiveSettings,
     request: Request,
+    command: &str,
     profile_name: &str,
+    source: &str,
+    record_history: bool,
     output: OutputMode,
 ) -> Result<(), DocentError> {
     let context = context::build(
@@ -374,31 +476,135 @@ fn execute(
     );
     let rendered = prompt::render(profile, &request, &context, settings)?;
 
-    match output {
-        OutputMode::PrintPrompt => {
-            let output = PromptOutput {
-                profile: profile_name,
-                model: &settings.model,
-                system: &rendered.system,
-                user: &rendered.user,
-                context_chars: context.chars,
-                context_truncated: context.truncated,
-            };
-            println!("{}", serde_json::to_string(&output)?);
-        }
-        OutputMode::PlainStreaming => stream_plain(config, settings, &rendered)?,
-        OutputMode::PlainBuffered => {
-            let completion = provider::complete(config, settings, &rendered)?;
-            print_completion(&completion.text);
-        }
-        OutputMode::Json => {
-            let completion = provider::complete(config, settings, &rendered)?;
-            println!("{}", completion_json(&completion)?);
-        }
-        OutputMode::Ndjson => stream_ndjson(config, settings, &rendered)?,
+    if output == OutputMode::PrintPrompt {
+        let output = PromptOutput {
+            profile: profile_name,
+            model: &settings.model,
+            system: &rendered.system,
+            user: &rendered.user,
+            context_chars: context.chars,
+            context_truncated: context.truncated,
+        };
+        println!("{}", serde_json::to_string(&output)?);
+        return Ok(());
     }
 
-    Ok(())
+    let created_at_ms = history::now_ms();
+    let started = Instant::now();
+    let mut streamed = String::new();
+
+    let outcome = match output {
+        OutputMode::PrintPrompt => unreachable!("print prompt returns before the provider call"),
+        OutputMode::PlainStreaming => stream_plain(config, settings, &rendered, &mut streamed),
+        OutputMode::PlainBuffered => provider::complete(config, settings, &rendered),
+        OutputMode::Json => provider::complete(config, settings, &rendered),
+        OutputMode::Ndjson => stream_ndjson(config, settings, &rendered, &mut streamed),
+    };
+
+    let duration_ms = started.elapsed().as_millis().min(i64::MAX as u128) as i64;
+
+    if record_history {
+        let run = build_history_run(
+            config,
+            &request,
+            &context,
+            &rendered,
+            settings,
+            command,
+            profile_name,
+            source,
+            output,
+            created_at_ms,
+            duration_ms,
+            &outcome,
+            &streamed,
+        );
+        if let Err(error) = history::write(config, config_dir, &run) {
+            log::warn!("could not record run history: {error}");
+        }
+    }
+
+    match (&output, &outcome) {
+        (OutputMode::PlainBuffered, Ok(completion)) => print_completion(&completion.text),
+        (OutputMode::Json, Ok(completion)) => {
+            println!("{}", completion_json(completion)?);
+        }
+        _ => {}
+    }
+
+    outcome.map(|_| ())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_history_run(
+    config: &config::Config,
+    request: &Request,
+    context: &context::ContextResult,
+    rendered: &prompt::Prompt,
+    settings: &EffectiveSettings,
+    command: &str,
+    profile_name: &str,
+    source: &str,
+    output_mode: OutputMode,
+    created_at_ms: i64,
+    duration_ms: i64,
+    outcome: &Result<Completion, DocentError>,
+    streamed: &str,
+) -> history::NewRun {
+    let (status, error) = match outcome {
+        Ok(_) => ("success".to_string(), None),
+        Err(error) => ("error".to_string(), Some(error.to_string())),
+    };
+    let (model, usage) = match outcome {
+        Ok(completion) => (completion.model.as_deref(), completion.usage.as_ref()),
+        Err(_) => (None, None),
+    };
+    let output = match outcome {
+        Ok(completion) => completion.text.clone(),
+        Err(_) => streamed.to_string(),
+    };
+
+    history::NewRun {
+        created_at_ms,
+        duration_ms,
+        command: command.to_string(),
+        profile: profile_name.to_string(),
+        source: source.to_string(),
+        output_mode: output_mode.as_str().to_string(),
+        status,
+        error,
+        file: request.file.clone(),
+        selection: request.selection.clone(),
+        question: request.question.clone(),
+        document_bytes: request
+            .document
+            .as_ref()
+            .map(|document| document.len() as i64),
+        byte_start: request.byte_start.map(|value| value as i64),
+        byte_end: request.byte_end.map(|value| value as i64),
+        context_mode: settings.context_mode.as_str().to_string(),
+        context_max_chars: config.context.max_chars as i64,
+        context_chars: context.chars as i64,
+        context_truncated: context.truncated,
+        provider: config.api.kind.as_str().to_string(),
+        base_url: config.api.base_url.clone(),
+        model: model.unwrap_or(&settings.model).to_string(),
+        temperature: f64::from(settings.temperature),
+        max_tokens: i64::from(settings.max_tokens),
+        timeout_secs: config.api.timeout_secs as i64,
+        response_language: settings.response_language.clone(),
+        target_language: settings.target_language.clone(),
+        system_prompt: rendered.system.clone(),
+        user_prompt: rendered.user.clone(),
+        output,
+        input_tokens: usage
+            .and_then(|usage| usage.input_tokens)
+            .map(|value| value as i64),
+        output_tokens: usage
+            .and_then(|usage| usage.output_tokens)
+            .map(|value| value as i64),
+        docent_version: env!("CARGO_PKG_VERSION").to_string(),
+    }
 }
 
 fn print_completion(text: &str) {
@@ -416,7 +622,8 @@ fn stream_plain(
     config: &config::Config,
     settings: &EffectiveSettings,
     rendered: &prompt::Prompt,
-) -> Result<(), DocentError> {
+    streamed: &mut String,
+) -> Result<Completion, DocentError> {
     let stdout = std::io::stdout();
     let mut writer = stdout.lock();
     let mut wrote = false;
@@ -426,6 +633,7 @@ fn stream_plain(
         if delta.is_empty() {
             return Ok(());
         }
+        streamed.push_str(delta);
         writer
             .write_all(delta.as_bytes())
             .map_err(DocentError::WriteStdout)?;
@@ -438,6 +646,7 @@ fn stream_plain(
     match result {
         Ok(completion) => {
             if !wrote {
+                streamed.push_str(&completion.text);
                 writer
                     .write_all(completion.text.as_bytes())
                     .map_err(DocentError::WriteStdout)?;
@@ -446,7 +655,7 @@ fn stream_plain(
             if !ends_with_newline {
                 writer.write_all(b"\n").map_err(DocentError::WriteStdout)?;
             }
-            Ok(())
+            Ok(completion)
         }
         Err(error) => {
             if wrote && !ends_with_newline {
@@ -461,11 +670,13 @@ fn stream_ndjson(
     config: &config::Config,
     settings: &EffectiveSettings,
     rendered: &prompt::Prompt,
-) -> Result<(), DocentError> {
+    streamed: &mut String,
+) -> Result<Completion, DocentError> {
     let stdout = std::io::stdout();
     let mut writer = stdout.lock();
 
     let result = provider::complete_streaming(config, settings, rendered, &mut |delta| {
+        streamed.push_str(delta);
         write_stream_event(
             &mut writer,
             &provider::StreamEvent::Delta {
@@ -479,11 +690,11 @@ fn stream_ndjson(
             write_stream_event(
                 &mut writer,
                 &provider::StreamEvent::Done {
-                    model: completion.model,
-                    usage: completion.usage,
+                    model: completion.model.clone(),
+                    usage: completion.usage.clone(),
                 },
             )?;
-            Ok(())
+            Ok(completion)
         }
         Err(error) => {
             let _ = write_stream_event(
@@ -523,6 +734,23 @@ fn read_request() -> Result<Request, DocentError> {
     serde_json::from_str(&input).map_err(|error| {
         DocentError::InvalidRequest(format!("failed to parse request JSON: {error}"))
     })
+}
+
+fn parse_source(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err("source must not be empty".to_string());
+    }
+    if value.len() > 64 {
+        return Err("source must be at most 64 characters".to_string());
+    }
+    if !value
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.'))
+    {
+        return Err("source may only contain letters, digits, '-', '_', and '.'".to_string());
+    }
+    Ok(value.to_string())
 }
 
 fn parse_line_range(value: &str) -> Result<LineRange, String> {

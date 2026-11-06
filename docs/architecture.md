@@ -67,7 +67,7 @@ Prompts use a small `Prompter` trait. The real implementation reads from stdin a
 
 The adapter is a Python module loaded from qutebrowser's `config.py`. It captures the page selection with `window.getSelection()` and the rendered page text with `document.body.innerText` through `tab.run_js_async`. The page URL has its query and fragment removed before it is used as the `file` label. A profile that declares `requires = ["question"]` opens a `QInputDialog` before the request starts.
 
-The adapter starts `docent run --profile NAME --stream` with `QProcess`, writes the request JSON to stdin, and parses stdout with the same NDJSON line parser as the Neovim plugin. The answer streams into a new tab. Closing the tab calls `terminate()` and then `kill()` if needed. The question travels in the JSON request rather than in argv so it does not appear in the process list.
+The adapter starts `docent run --profile NAME --stream --source qutebrowser` with `QProcess`, writes the request JSON to stdin, and parses stdout with the same NDJSON line parser as the Neovim plugin. The answer streams into a new tab. Closing the tab calls `terminate()` and then `kill()` if needed. The question travels in the JSON request rather than in argv so it does not appear in the process list.
 
 qutebrowser does not expose a stable third-party plugin API. The loader only walks built-in components, and `qutebrowser/api/__init__.py` says the extension API is not exposed to third-party extensions yet. The adapter therefore imports internal modules and must be retested on qutebrowser upgrades. It also requires JavaScript for selection capture and answer rendering. `window.getSelection()` sees the top frame only, so iframes, shadow DOM, and PDF viewers are not supported in the first version.
 
@@ -83,7 +83,7 @@ map <C-e> exec /path/to/docent-zathura explain $FILE $PAGE
 
 `exec` expands `$FILE` and `$PAGE` and starts the helper directly, without a shell. The helper cannot receive the selection directly because `exec` has no `$SELECTION` placeholder. Zathura copies a mouse selection to the clipboard, so the helper reads it with `wl-paste`, `xclip`, or `xsel`. The workflow is mouse-first because zathura has no keyboard text selection.
 
-The helper extracts the current page plus one page on each side with `pdftotext`, builds the same JSON request as the other adapters, and writes it to a private temporary file. It then starts a terminal window running `docent-zathura render REQUEST_FILE`. The render process reads and deletes the request file, runs `docent run --profile NAME --stream`, prints the `delta` events, and waits for Enter before closing. This two-process split keeps the selection out of argv and gives the answer a window that stays open after the stream ends.
+The helper extracts the current page plus one page on each side with `pdftotext`, builds the same JSON request as the other adapters, and writes it to a private temporary file. It then starts a terminal window running `docent-zathura render REQUEST_FILE`. The render process reads and deletes the request file, runs `docent run --profile NAME --stream --source zathura`, prints the `delta` events, and waits for Enter before closing. This two-process split keeps the selection out of argv and gives the answer a window that stays open after the stream ends.
 
 The answer is a terminal window rather than a zathura overlay. An overlay would require patching zathura's GTK/C core. The terminal window streams naturally, supports the CLI's existing output, and can be floated with a compositor rule. The first version is PDF only; DjVu, PostScript, and comic-book files need different text extractors.
 
@@ -92,6 +92,16 @@ The answer is a terminal window rather than a zathura overlay. An overlay would 
 Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. The Neovim, qutebrowser, and zathura integrations use `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object.
 
 The shared executor builds the context and prompt once, then selects the output mode. This keeps buffered, streamed, JSON, and prompt-preview paths on the same request and prompt code.
+
+## Run history
+
+When history is enabled, `cli::execute` records one row after the provider call returns or fails. The row stores the command, profile, source, structured request inputs, effective settings, the rendered system and user messages, the answer, token usage, duration, status, and error. Streamed runs record the partial answer when the stream fails. `--print-prompt` and failures before the provider call are not recorded.
+
+`history` opens the SQLite database once per run, enables WAL mode, applies a busy timeout, and creates the schema on first use. Schema changes are tracked with `PRAGMA user_version`. The database path comes from `history.database` or the platform data directory. A failed write is logged as a warning and never changes the command result.
+
+The global `--source` flag, default `cli`, identifies the caller. The adapters pass `nvim`, `qutebrowser`, or `zathura`; custom plugins pass their own name. The source is only stored in history and does not affect request handling.
+
+The database contains full prompts and answers, including document context, so it is local, unencrypted, and restricted to the owning user on Unix. API keys are not stored. See [run history](history.md) for the schema and queries.
 
 ## Settings and precedence
 
@@ -176,7 +186,8 @@ Diagnostics and prompt labels go to stderr. The answer goes to stdout. A CLI inv
 
 - Profiles are loaded from `profiles/<name>.toml`. Names are restricted to letters, digits, underscores, and hyphens, so `--profile ../secret` cannot escape the directory.
 - `vim.system` and `QProcess` receive argument arrays, not shell command lines, so buffer and page text cannot become shell syntax. Terminal commands likewise treat file paths and selection text as data, never as shell input.
-- API keys are referenced by environment variable name. The generated config contains no secrets.
+- API keys are referenced by environment variable name. The generated config contains no secrets, and the history database never stores a key.
+- The history database stores full prompts and answers, including document context. It is local and unencrypted, and on Unix it is created with mode `0600` under a `0700` default data directory.
 - Error messages include provider messages and truncated response bodies, never request headers.
 - The document is treated as untrusted content. The default system prompt tells the model not to follow instructions inside it.
 

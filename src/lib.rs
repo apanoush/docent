@@ -8,6 +8,7 @@ pub mod config;
 pub mod context;
 pub mod defaults;
 pub mod error;
+pub mod history;
 pub mod profile;
 pub mod prompt;
 pub mod provider;

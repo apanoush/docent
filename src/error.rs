@@ -8,6 +8,32 @@ pub enum DocentError {
     #[error("could not determine a config directory; set DOCENT_CONFIG_DIR or pass --config-dir")]
     NoConfigDir,
 
+    #[error(
+        "could not determine a data directory for the history database; set history.database in config.toml"
+    )]
+    NoDataDir,
+
+    #[error("history database {path} failed: {source}")]
+    History {
+        /// Database that could not be opened or written.
+        path: PathBuf,
+        /// Underlying SQLite error.
+        #[source]
+        source: rusqlite::Error,
+    },
+
+    #[error(
+        "history database {path} uses schema version {version}, but this build supports {supported}"
+    )]
+    HistorySchema {
+        /// Database with the incompatible schema.
+        path: PathBuf,
+        /// Version found in the database.
+        version: i64,
+        /// Version supported by this build.
+        supported: i64,
+    },
+
     #[error("config path {0} exists but is not a directory")]
     ConfigDirNotDirectory(PathBuf),
 

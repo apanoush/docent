@@ -19,7 +19,7 @@ The adapter lives in `plugins/zathura/`, separate from the Rust crate. It has no
 The adapter uses two processes:
 
 1. The capture process is started by zathura's `exec`. It reads the clipboard, extracts the page window, writes a private request file, and launches a terminal. It exits immediately.
-2. The render process runs in the terminal. It reads and deletes the request file, starts `docent run --profile NAME --stream`, writes the request JSON to stdin, and prints `delta` text as it arrives. It prints `error` events to stderr and waits for Enter after a successful answer.
+2. The render process runs in the terminal. It reads and deletes the request file, starts `docent run --profile NAME --stream --source zathura`, writes the request JSON to stdin, and prints `delta` text as it arrives. It prints `error` events to stderr and waits for Enter after a successful answer.
 
 The request file is created with `mkdtemp` under `XDG_RUNTIME_DIR` (or the system temporary directory), written with mode 0600, and removed by the render process. This keeps the selection and document text out of argv and out of the process list.
 
@@ -35,7 +35,7 @@ The capture process uses the JSON stdin contract rather than `docent explain --t
 
 ## Rendering
 
-`render.py` reads the request file and starts `docent run --profile NAME --stream` with optional `--target-language` and `--context-mode`. It parses one JSON object per line:
+`render.py` reads the request file and starts `docent run --profile NAME --stream --source zathura` with optional `--target-language` and `--context-mode`. It parses one JSON object per line:
 
 - `delta`: write `text` to stdout and flush.
 - `done`: stop reading and finish successfully.
