@@ -1,13 +1,18 @@
 //! Command line interface for `docent`.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
 
-use crate::config::{self, InitReport};
+use crate::config::{self, ContextMode, InitReport};
+use crate::context;
 use crate::error::DocentError;
 use crate::profile::{ProfileInfo, ProfileStore};
+use crate::prompt;
+use crate::provider;
+use crate::request::Request;
 
 /// Command line arguments.
 #[derive(Debug, Parser)]
@@ -46,8 +51,33 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Explain, ask about, or translate a selected passage.
+    Run(RunArgs),
     /// Print the resolved config directory.
     ConfigPath,
+}
+
+/// Arguments for `docent run`.
+#[derive(Debug, Args)]
+pub struct RunArgs {
+    /// Profile to use.
+    #[arg(long, default_value = "explain")]
+    pub profile: String,
+    /// Question for profiles that require one.
+    #[arg(long)]
+    pub question: Option<String>,
+    /// Translation target language.
+    #[arg(long)]
+    pub target_language: Option<String>,
+    /// Context mode override.
+    #[arg(long, value_enum)]
+    pub context_mode: Option<ContextMode>,
+    /// Print the completion as JSON.
+    #[arg(long)]
+    pub json: bool,
+    /// Print the assembled prompt and exit without calling the provider.
+    #[arg(long)]
+    pub print_prompt: bool,
 }
 
 /// Parses arguments, dispatches the command, and reports errors.
@@ -61,10 +91,88 @@ pub fn run() -> Result<(), DocentError> {
             print_init_report(&report);
         }
         Command::Profiles { json } => run_profiles(&config_dir, json)?,
+        Command::Run(args) => run_request(&config_dir, args)?,
         Command::ConfigPath => println!("{}", config_dir.display()),
     }
 
     Ok(())
+}
+
+fn run_request(config_dir: &Path, args: RunArgs) -> Result<(), DocentError> {
+    let config = config::ensure_initialized(config_dir)?;
+    let store = ProfileStore::new(config::profiles_dir(config_dir));
+    let profile = store.load(&args.profile)?;
+
+    let mut request = read_request()?;
+    if args.question.is_some() {
+        request.question = args.question;
+    }
+
+    let overrides = prompt::Overrides {
+        context_mode: args.context_mode,
+        target_language: args.target_language,
+    };
+    let settings = prompt::EffectiveSettings::resolve(&config, &profile, &overrides)?;
+    let context = context::build(
+        &request,
+        context::ContextOptions {
+            mode: settings.context_mode,
+            max_chars: config.context.max_chars,
+        },
+    );
+    let rendered = prompt::render(&profile, &request, &context, &settings)?;
+
+    if args.print_prompt {
+        let output = PromptOutput {
+            profile: &args.profile,
+            model: &settings.model,
+            system: &rendered.system,
+            user: &rendered.user,
+            context_chars: context.chars,
+            context_truncated: context.truncated,
+        };
+        println!("{}", serde_json::to_string(&output)?);
+        return Ok(());
+    }
+
+    let completion = provider::complete(&config, &settings, &rendered)?;
+    if args.json {
+        println!("{}", serde_json::to_string(&completion)?);
+    } else {
+        print!("{}", completion.text);
+        if !completion.text.ends_with('\n') {
+            println!();
+        }
+    }
+
+    Ok(())
+}
+
+fn read_request() -> Result<Request, DocentError> {
+    let mut input = String::new();
+    std::io::stdin()
+        .read_to_string(&mut input)
+        .map_err(DocentError::ReadStdin)?;
+
+    if input.trim().is_empty() {
+        return Err(DocentError::InvalidRequest(
+            "expected a JSON request on stdin".to_string(),
+        ));
+    }
+
+    serde_json::from_str(&input).map_err(|error| {
+        DocentError::InvalidRequest(format!("failed to parse request JSON: {error}"))
+    })
+}
+
+#[derive(Serialize)]
+struct PromptOutput<'a> {
+    profile: &'a str,
+    model: &'a str,
+    system: &'a str,
+    user: &'a str,
+    context_chars: usize,
+    context_truncated: bool,
 }
 
 #[derive(Serialize)]

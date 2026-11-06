@@ -5,8 +5,12 @@
 
 pub mod cli;
 pub mod config;
+pub mod context;
 pub mod defaults;
 pub mod error;
 pub mod profile;
+pub mod prompt;
+pub mod provider;
+pub mod request;
 
 pub use error::DocentError;

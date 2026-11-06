@@ -105,14 +105,54 @@ pub enum DocentError {
 
     #[error("failed to serialize profiles: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
+
+    #[error("failed to read stdin: {0}")]
+    ReadStdin(#[source] std::io::Error),
+
+    #[error("profile requires {input} but it was not provided")]
+    MissingInput {
+        /// Missing input name.
+        input: &'static str,
+    },
+
+    #[error("invalid settings: {0}")]
+    InvalidSettings(String),
+
+    #[error("missing API key: environment variable {env} is not set")]
+    MissingApiKey {
+        /// Environment variable that should hold the key.
+        env: String,
+    },
+
+    #[error("provider request failed with HTTP {status}: {message}")]
+    ProviderHttp {
+        /// HTTP status code.
+        status: u16,
+        /// Provider error message or a truncated response body.
+        message: String,
+    },
+
+    #[error("provider request failed: {message}")]
+    ProviderTransport {
+        /// Transport, timeout, or response parsing error.
+        message: String,
+    },
+
+    #[error("provider returned an empty response")]
+    EmptyResponse,
 }
 
 impl DocentError {
     /// Process exit code for this error.
-    ///
-    /// Configuration and usage failures all use the same code in the first
-    /// implementation pass. Provider and input errors add their own codes later.
     pub fn exit_code(&self) -> u8 {
-        2
+        match self {
+            Self::InvalidRequest(_) | Self::MissingInput { .. } | Self::ReadStdin(_) => 4,
+            Self::MissingApiKey { .. } | Self::InvalidSettings(_) => 2,
+            Self::ProviderHttp { .. } | Self::ProviderTransport { .. } | Self::EmptyResponse => 3,
+            _ => 2,
+        }
     }
 }

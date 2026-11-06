@@ -77,7 +77,7 @@ impl Default for ApiConfig {
 }
 
 /// How much of the surrounding document to send.
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum ContextMode {
     /// Use the whole document when it fits, otherwise a window around the selection.
