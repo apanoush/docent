@@ -151,7 +151,10 @@ function M.open(opts)
       return
     end
     state.done = true
-    if #state.lines == 0 or (#state.lines == 1 and state.lines[1] == "") then
+    if
+      #state.lines == 0
+      or (#state.lines == 1 and (state.lines[1] == "" or state.lines[1] == "Thinking..."))
+    then
       state.lines = { "(no output)" }
       render()
     end

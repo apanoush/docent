@@ -92,4 +92,4 @@ Rust tests are split into three layers:
 - Integration tests in `tests/cli.rs` for `init`, `config-path`, and `profiles`.
 - Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, and input errors. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
 
-The coverage gate is `cargo llvm-cov --workspace --all-targets --fail-under-lines 80`. Run `scripts/check.sh` for the full gate, including formatting, clippy, tests, coverage, and the Neovim tests.
+The coverage gate is `cargo llvm-cov --workspace --all-targets --fail-under-lines 80`. Run `scripts/check.sh` for the full gate, including formatting, clippy, tests, coverage, and the Neovim tests. The script requires `cargo-llvm-cov` and Neovim on `PATH`.

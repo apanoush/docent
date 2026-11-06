@@ -128,6 +128,17 @@ test("ui appends deltas and finishes", function()
   assert_false(ui:is_open())
 end)
 
+test("ui shows no output when the stream is empty", function()
+  local ui = ui_module.open({ profile = "explain" })
+  ui:finish()
+
+  local lines = vim.api.nvim_buf_get_lines(ui:buffer(), 0, -1, false)
+  assert_eq(table.concat(lines, "\n"), "(no output)")
+  assert_true(ui:is_done())
+
+  ui:close(false)
+end)
+
 test("ui renders errors", function()
   local ui = ui_module.open({ profile = "explain" })
   ui:set_error("bad key")
