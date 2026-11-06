@@ -40,7 +40,7 @@ if question:
     text += " / Q: " + question
 print(json.dumps({"type": "delta", "text": text}), flush=True)
 time.sleep(0.1)
-print(json.dumps({"type": "delta", "text": "\n\nDone."}), flush=True)
+print(json.dumps({"type": "delta", "text": "\n\n## RenderedHeading"}), flush=True)
 print(json.dumps({"type": "done", "model": "fake-model"}), flush=True)
 PY
 chmod +x "$tmp/docent"
@@ -69,6 +69,11 @@ timeout -s TERM 20s qutebrowser \
 
 if ! grep -q "Fake answer for: A transformer maps a sequence to a sequence using attention." "$log"; then
     echo "qutebrowser e2e failed; log follows" >&2
+    cat "$log" >&2
+    exit 1
+fi
+if ! grep -q "^RenderedHeading$" "$log"; then
+    echo "qutebrowser e2e did not render the answer as Markdown; log follows" >&2
     cat "$log" >&2
     exit 1
 fi

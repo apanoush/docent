@@ -11,9 +11,10 @@ The adapter source lives in `plugins/qutebrowser/`, separate from the Rust crate
 | `docent/stream.py` | Pure incremental NDJSON parser. |
 | `docent/profiles.py` | Pure profile metadata loader around `docent profiles --json`. |
 | `docent/plugin.py` | Commands, setup, JavaScript capture, `QProcess` lifecycle, and sessions. |
+| `docent/markdown.py` | Pure Markdown subset renderer used by the answer tab. |
 | `docent/ui.py` | Answer-tab HTML shell and streaming DOM updates. |
 
-`request.py`, `stream.py`, and `profiles.py` do not import qutebrowser. The unit tests exercise them without a browser.
+`request.py`, `stream.py`, `profiles.py`, and `markdown.py` do not import qutebrowser. The unit tests exercise them without a browser.
 
 ## Loading and commands
 
@@ -56,11 +57,13 @@ Closing the answer tab emits `shutting_down`, which calls `Session.cancel`. Canc
 
 `ui.AnswerPage` injects JavaScript with `run_js_async`:
 
-- `append_text` creates a text node in the answer element and auto-scrolls only when the reader is already near the bottom.
+- `append_text` creates a text node in the raw answer element, accumulates the text for rendering, and auto-scrolls only when the reader is already near the bottom.
 - `set_error` appends a red error line and changes the title to `docent: error`.
-- `done` updates the header and tab title with the profile, model, and elapsed time.
-- `finish` handles a process that exits successfully without a `done` event, showing `(no output)` if the stream was empty.
+- `done` replaces the raw block with the rendered Markdown answer and updates the header and tab title with the profile, model, and elapsed time.
+- `finish` does the same when a process exits successfully without a `done` event, showing `(no output)` if the stream was empty.
 - `close` stops accepting updates after the tab is closed or the process is cancelled.
+
+Rendering happens once, after the stream ends, so partial Markdown does not reflow as it arrives. `markdown.render` handles headings, paragraphs, lists, fenced code, blockquotes, rules, GFM tables, emphasis, strikethrough, and links. It escapes all text, keeps raw HTML and images literal, and only turns `http`, `https`, and `mailto` URLs into links, which open in a new tab. Nested lists are flattened; task lists and footnotes are not supported.
 
 The JavaScript runs in qutebrowser's application world. It manipulates the generated page directly by element ID, so it does not depend on page scripts or globals.
 
@@ -78,6 +81,7 @@ Sessions are stored by answer-tab ID. `docent-close` closes the current answer t
 - NDJSON chunk boundaries, including UTF-8 characters split across reads.
 - Profile metadata parsing and error paths.
 - URL cleaning, request capture, answer-tab shell escaping, and streaming updates.
+- Markdown block and inline rendering, tables, and escaping of raw HTML and unsafe links.
 - Profile requirements, question prompting, picker dispatch, and process-failure reporting.
 
 The qutebrowser integration is also checked end to end with `tests/qutebrowser/e2e.sh`. It starts a qutebrowser with a temporary base directory, a test `config.py`, and a fake `docent` executable that emits NDJSON. It selects page text with `jseval`, runs `:docent`, and reads the answer tab back with `jseval`. The startup sequence uses `:cmd-later`, not the deprecated `:later` alias. The script is manual and is not called by `scripts/check.sh` because it needs a display and QtWebEngine.

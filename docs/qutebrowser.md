@@ -84,9 +84,11 @@ The answer opens in a new foreground tab by default. The tab:
 
 - Streams text as the provider returns it.
 - Shows the profile and model in the header, and updates the tab title when the stream finishes.
-- Renders the raw Markdown answer in a monospace block, matching the Neovim float.
+- Renders common Markdown once the stream finishes: headings, paragraphs, lists, fenced code, blockquotes, rules, GFM tables, emphasis, strikethrough, and links.
 - Uses your status bar colors where possible.
 - Can be scrolled with normal qutebrowser keys such as `j`, `k`, `gg`, `G`, and `/`.
+
+Markdown rendering is intentionally limited. Links open in a new tab and only `http`, `https`, and `mailto` URLs become links. Raw HTML and images in the answer stay literal text, so model output cannot inject scripts or fetch remote resources. Nested lists are flattened, and task lists and footnotes are not rendered. The Neovim float still shows raw Markdown.
 
 Press `d` to close the answer tab. Closing it before the request finishes terminates the `docent` process. Navigating the answer tab away from its generated page also cancels the request.
 

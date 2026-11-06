@@ -221,6 +221,43 @@ def test_answer_page_done_updates_title_and_stops_updates() -> None:
     assert "docent: explain - test-model" in tab.codes[0]
 
 
+def test_answer_page_done_renders_accumulated_markdown() -> None:
+    tab = FakeTab()
+    page = ui.AnswerPage(tab, "explain")
+
+    page.append_text("# Title\n\nBody with **bold**.")
+    page.done("test-model")
+
+    rendered = tab.codes[-1]
+    assert "<h1>Title</h1>" in rendered
+    assert "<strong>bold</strong>" in rendered
+    assert "docent: explain - test-model" in rendered
+
+
+def test_answer_page_finish_renders_accumulated_markdown() -> None:
+    tab = FakeTab()
+    page = ui.AnswerPage(tab, "explain")
+
+    page.append_text("- one")
+    page.finish()
+
+    rendered = tab.codes[-1]
+    assert "<ul><li>one</li></ul>" in rendered
+    assert "(no output)" not in rendered
+
+
+def test_answer_page_done_escapes_model_output() -> None:
+    tab = FakeTab()
+    page = ui.AnswerPage(tab, "explain")
+
+    page.append_text("<script>alert(1)</script>")
+    page.done()
+
+    rendered = tab.codes[-1]
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;" in rendered
+
+
 def test_answer_page_finish_reports_no_output() -> None:
     tab = FakeTab()
     page = ui.AnswerPage(tab, "explain")

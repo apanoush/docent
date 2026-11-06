@@ -8,6 +8,8 @@ import re
 import time
 from typing import Any
 
+from . import markdown
+
 __all__ = ["AnswerPage", "build_shell"]
 
 _SAFE_COLOR = re.compile(r"^[#a-zA-Z0-9(),.% -]+$")
@@ -73,6 +75,62 @@ def build_shell(profile: str, colors: dict[str, str] | None = None) -> str:
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.95rem;
   }}
+  .markdown > :first-child {{ margin-top: 0; }}
+  .markdown h1, .markdown h2, .markdown h3,
+  .markdown h4, .markdown h5, .markdown h6 {{
+    margin: 1.4em 0 0.5em;
+    line-height: 1.25;
+  }}
+  .markdown h1 {{ font-size: 1.7rem; }}
+  .markdown h2 {{ font-size: 1.4rem; }}
+  .markdown h3 {{ font-size: 1.2rem; }}
+  .markdown h4, .markdown h5, .markdown h6 {{ font-size: 1.05rem; }}
+  .markdown p {{ margin: 0 0 1em; }}
+  .markdown ul, .markdown ol {{ margin: 0 0 1em; padding-left: 1.6rem; }}
+  .markdown li {{ margin: 0.25em 0; }}
+  .markdown blockquote {{
+    margin: 0 0 1em;
+    padding: 0.1em 0 0.1em 1rem;
+    border-left: 3px solid color-mix(in srgb, var(--docent-fg) 30%, transparent);
+    opacity: 0.85;
+  }}
+  .markdown hr {{
+    margin: 1.5em 0;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--docent-fg) 20%, transparent);
+  }}
+  .markdown code {{
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--docent-fg) 12%, transparent);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.9em;
+  }}
+  .markdown pre {{
+    margin: 0 0 1em;
+    padding: 0.8rem 1rem;
+    overflow-x: auto;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--docent-fg) 8%, transparent);
+  }}
+  .markdown pre code {{ padding: 0; background: none; font-size: 0.9rem; }}
+  .markdown a {{
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--docent-fg) 45%, transparent);
+    text-underline-offset: 2px;
+  }}
+  .table-wrap {{ margin: 0 0 1em; overflow-x: auto; }}
+  .markdown table {{ border-collapse: collapse; }}
+  .markdown th, .markdown td {{
+    padding: 0.3rem 0.6rem;
+    border: 1px solid color-mix(in srgb, var(--docent-fg) 20%, transparent);
+    vertical-align: top;
+  }}
+  .markdown th {{
+    background: color-mix(in srgb, var(--docent-fg) 8%, transparent);
+    font-weight: 600;
+  }}
   .error {{ color: var(--docent-error); }}
 </style>
 </head>
@@ -97,11 +155,13 @@ class AnswerPage:
         self.closed = False
         self.finished = False
         self.failed = False
+        self._chunks: list[str] = []
 
     def append_text(self, text: str) -> None:
         """Append a streamed delta to the answer."""
         if not text or self.finished or self.failed or self.closed:
             return
+        self._chunks.append(text)
         self._run(
             """
 (() => {
@@ -146,45 +206,42 @@ class AnswerPage:
         )
 
     def done(self, model: str | None = None) -> None:
-        """Set the final title after a successful stream."""
+        """Render the accumulated answer and set the final title."""
         if self.closed or self.failed:
             return
         self.finished = True
-        label = self._label(model)
-        self._run(
-            """
-(() => {
-  const answer = document.getElementById('answer');
-  if (answer && answer.dataset.placeholder === '1') {
-    answer.textContent = '(no output)';
-    answer.dataset.placeholder = '0';
-  }
-  const status = document.getElementById('status');
-  if (status) status.textContent = LABEL;
-  document.title = LABEL;
-})()
-""".replace("LABEL", _js_string(label))
-        )
+        self._show(self._label(model))
 
     def finish(self) -> None:
-        """Finalize a stream that ended without a done event."""
+        """Render the answer when the stream ends without a done event."""
         if self.closed or self.finished or self.failed:
             return
         self.finished = True
-        label = self._label(None)
+        self._show(self._label(None))
+
+    def _show(self, label: str) -> None:
+        """Replace the raw answer with rendered Markdown."""
+        body = markdown.render("".join(self._chunks)) or "<p>(no output)</p>"
+        block = f'<div id="answer" class="markdown">{body}</div>'
+        self._chunks.clear()
+        payload = json.dumps({"block": block, "label": label}, ensure_ascii=False)
+        payload = payload.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
         self._run(
             """
 (() => {
+  const payload = PAYLOAD;
   const answer = document.getElementById('answer');
-  if (answer && (answer.dataset.placeholder === '1' || answer.textContent === '')) {
-    answer.textContent = '(no output)';
-    answer.dataset.placeholder = '0';
+  if (answer) {
+    const root = document.documentElement;
+    const atBottom = (window.innerHeight + window.scrollY) >= (root.scrollHeight - 8);
+    answer.outerHTML = payload.block;
+    if (atBottom) window.scrollTo(0, root.scrollHeight);
   }
   const status = document.getElementById('status');
-  if (status) status.textContent = LABEL;
-  document.title = LABEL;
+  if (status) status.textContent = payload.label;
+  document.title = payload.label;
 })()
-""".replace("LABEL", _js_string(label))
+""".replace("PAYLOAD", payload)
         )
 
     def close(self) -> None:
