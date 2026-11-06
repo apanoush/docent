@@ -27,11 +27,13 @@ The capture process uses the JSON stdin contract rather than `docent explain --t
 
 ## Capture
 
-`clipboard.py` prefers `wl-paste` when `WAYLAND_DISPLAY` or `XDG_SESSION_TYPE=wayland` is set, then `xclip` and `xsel` when `DISPLAY` is set. `--clipboard` selects the regular clipboard; the default is PRIMARY, which is zathura's default `selection-clipboard`.
+`clipboard.py` prefers `wl-paste` when `WAYLAND_DISPLAY` or `XDG_SESSION_TYPE=wayland` is set, then `xclip` and `xsel` when `DISPLAY` is set. With no explicit target it reads PRIMARY first, then CLIPBOARD, and prefers the text that occurs in the extracted page. `--primary` and `--clipboard` force a target. The page check avoids sending unrelated clipboard text when the configured clipboard is empty or stale.
 
 `pdf.py` computes `(max(1, page - radius), page + radius)` and runs `pdftotext -f START -l END FILE -`. It rejects empty output, which usually means the page is scanned.
 
 `request.py` normalizes CRLF, strips a trailing newline from the selection, and adds `byte_start` and `byte_end` only when the selection occurs exactly in the UTF-8 document. The CLI revalidates the offsets and falls back to the first exact occurrence.
+
+`cli.py` resolves `--docent` with `shutil.which`, then searches `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, and `/usr/bin`. This keeps desktop-launched zathura working when its `PATH` does not include the user's shell path.
 
 ## Rendering
 
@@ -49,7 +51,7 @@ A separate thread drains stderr so a chatty CLI cannot block on a full pipe. The
 
 ## Tests
 
-`tests/zathura/run.sh` runs pytest, ruff, and ty. The unit tests cover clipboard backend selection, page windows and `pdftotext` arguments, request offsets, terminal argv building, NDJSON parsing, error paths, request-file cleanup, and CLI orchestration.
+`tests/zathura/run.sh` runs pytest, ruff, and ty. The unit tests cover clipboard backend selection, automatic PRIMARY and CLIPBOARD matching, page windows and `pdftotext` arguments, request offsets, terminal argv building, NDJSON parsing, error paths, request-file cleanup, `docent` lookup, error dialogs, and CLI orchestration.
 
 `tests/zathura/e2e.sh` is a manual end-to-end check. It creates a small PDF with `ps2pdf`, puts a selection on the clipboard, runs the adapter with a fake terminal and a fake `docent`, and checks the streamed answer. It needs a display and a clipboard tool and is not part of `scripts/check.sh`.
 

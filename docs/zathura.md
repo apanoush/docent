@@ -7,7 +7,7 @@ The zathura adapter reads the selected text from the system clipboard, extracts 
 - zathura with `$FILE` and `$PAGE` expansion in `exec`. The adapter targets zathura 2026.10.4 and the poppler plugin.
 - Python 3.10 or newer for the adapter script.
 - `pdftotext` from poppler-utils. The adapter is PDF only.
-- `docent` installed and available on `PATH`, or an absolute path passed through `--docent`.
+- `docent` installed and available on `PATH`, or in `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, or `/usr/bin`. Use `--docent` for any other location.
 - A clipboard tool: `wl-paste` on Wayland, or `xclip` or `xsel` on X11.
 - A terminal emulator: `foot`, `kitty`, `alacritty`, or `xterm`, or a command in `DOCENT_TERMINAL` or `--terminal`.
 
@@ -21,15 +21,18 @@ map <C-a> exec /home/you/path/to/reading-assistant/plugins/zathura/docent-zathur
 map <C-t> exec /home/you/path/to/reading-assistant/plugins/zathura/docent-zathura translate $FILE $PAGE
 ```
 
-Use absolute paths. Zathura launched from a desktop entry may not inherit your shell `PATH` or the API-key environment variable. Export the key in the session that starts zathura, as the [qutebrowser guide](qutebrowser.md) describes.
+Use absolute paths. Zathura launched from a desktop entry may not inherit your shell `PATH` or the API-key environment variable. The adapter searches `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, and `/usr/bin` for `docent`; export the key in the session that starts zathura, as the [qutebrowser guide](qutebrowser.md) describes.
+
+Point the binding at this checkout directly, or symlink the directory so updates apply:
+
+```bash
+ln -s /home/you/path/to/reading-assistant/plugins/zathura \
+  ~/.config/zathura/plugins/docent
+```
 
 Select text with the mouse, then press the key. Zathura has no keyboard text selection, so this is a mouse-first workflow. The answer opens in a terminal window and streams as it arrives.
 
-If you set `selection-clipboard clipboard` in `zathurarc`, add `--clipboard` to each binding:
-
-```zathurarc
-map <C-e> exec /path/docent-zathura explain $FILE $PAGE --clipboard
-```
+The adapter reads both PRIMARY and CLIPBOARD and uses the text that appears in the extracted page, so it works with either `selection-clipboard` value. Pass `--primary` or `--clipboard` to force a target.
 
 ## Commands
 
@@ -44,9 +47,10 @@ Options:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--clipboard` | off | Read the CLIPBOARD selection instead of PRIMARY. |
+| `--clipboard` | auto | Force the CLIPBOARD selection. |
+| `--primary` | auto | Force the PRIMARY selection. |
 | `--terminal NAME` | detected | Terminal emulator to use. |
-| `--docent PATH` | `docent` | CLI executable. |
+| `--docent PATH` | searched | CLI executable or command name. |
 | `--context-pages N` | `1` | Pages of context before and after the current page. |
 | `--context-mode MODE` | profile or config | `auto`, `full`, or `none`. |
 | `--question TEXT` | none | Question for `ask` or `do`; `ask` prompts when omitted. |
@@ -56,7 +60,7 @@ Quote values that contain spaces. Zathura's `exec` splits unquoted words into se
 
 ## What gets captured
 
-- The selection is read from zathura's clipboard. Zathura copies it when a mouse selection ends. `exec` has no `$SELECTION` placeholder.
+- The selection is read from zathura's clipboard. Zathura copies it when a mouse selection ends. `exec` has no `$SELECTION` placeholder. The adapter checks PRIMARY first, then CLIPBOARD, and prefers the text that appears in the extracted page. Unrelated clipboard text is rejected unless you force it with `--clipboard`.
 - The document is the current page plus `--context-pages` pages on each side, extracted with `pdftotext -f START -l END`. `pdftotext` clamps ranges beyond the last page, so the adapter does not need a page count.
 - The file label is `<name> (page N)`, not the full path, so the provider does not see your home directory.
 - Byte offsets are included only when the selection appears exactly in the extracted text. Otherwise the CLI falls back to the first exact occurrence. With the default one-page context window, the extracted text is usually under the CLI's 32k `auto` budget, so the whole window is sent even when the exact selection is not found.
@@ -69,7 +73,8 @@ The terminal is a separate window, not a zathura overlay. On a tiling compositor
 
 ## Troubleshooting
 
-- `no text selected`: select text with the mouse first. If zathura uses the regular clipboard, pass `--clipboard`.
+- `no text selected`: select text with the mouse first. The adapter checks both clipboards; if neither contains the selection, select again or pass `--primary` or `--clipboard`.
+- `the CLIPBOARD selection does not appear on this page`: the clipboard holds unrelated text. Select the passage again, or force the target with `--clipboard` if the text extraction differs from the viewer.
 - `pdftotext not found`: install poppler-utils.
 - `no text layer`: the PDF is scanned or the page has no text. OCR and vision input are not implemented.
 - `no terminal emulator found`: set `DOCENT_TERMINAL` or pass `--terminal`.

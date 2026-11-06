@@ -11,13 +11,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .clipboard import ClipboardError, read_selection
+from .clipboard import ClipboardError, read_best_selection
 from .launch import TerminalError, detect_terminal, launch_terminal
 from .pdf import PDFError, extract_text, page_window
 from .render import RenderError, run_render
 from .request import RequestError, build_request
 
-__all__ = ["build_parser", "main"]
+__all__ = ["build_parser", "find_docent", "main"]
 
 ENTRY = Path(__file__).resolve().parent.parent / "docent-zathura"
 
@@ -75,13 +75,23 @@ def build_parser() -> argparse.ArgumentParser:
 def _add_capture_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("file", type=Path, help="PDF file")
     parser.add_argument("page", type=int, help="current page number")
-    parser.add_argument(
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument(
         "--clipboard",
         action="store_true",
-        help="read the CLIPBOARD selection instead of PRIMARY",
+        help="force the CLIPBOARD selection",
+    )
+    target.add_argument(
+        "--primary",
+        action="store_true",
+        help="force the PRIMARY selection",
     )
     parser.add_argument("--terminal", help="terminal emulator to use")
-    parser.add_argument("--docent", default="docent", help="path to the docent binary")
+    parser.add_argument(
+        "--docent",
+        default="docent",
+        help="path or command name; common locations are searched when not on PATH",
+    )
     parser.add_argument(
         "--context-pages",
         type=int,
@@ -101,6 +111,32 @@ def _resolve_docent(value: str) -> str:
     return value
 
 
+def _docent_candidates() -> tuple[Path, ...]:
+    home = Path.home()
+    return (
+        home / ".local" / "bin" / "docent",
+        home / ".cargo" / "bin" / "docent",
+        Path("/usr/local/bin/docent"),
+        Path("/usr/bin/docent"),
+    )
+
+
+def find_docent(value: str) -> str:
+    """Resolve a docent command, searching common install locations."""
+    resolved = _resolve_docent(value)
+    if os.sep in resolved:
+        return resolved
+
+    found = shutil.which(resolved)
+    if found:
+        return found
+
+    for candidate in _docent_candidates():
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return resolved
+
+
 def _capture(args: argparse.Namespace) -> int:
     path = args.file.expanduser().resolve()
     if not path.is_file():
@@ -110,10 +146,15 @@ def _capture(args: argparse.Namespace) -> int:
     if args.context_pages < 0:
         raise ValueError("context pages must not be negative")
 
-    target = "clipboard" if args.clipboard else "primary"
-    selection = read_selection(target)
     start, end = page_window(args.page, args.context_pages)
     document = extract_text(path, start, end)
+
+    target = None
+    if args.clipboard:
+        target = "clipboard"
+    elif args.primary:
+        target = "primary"
+    selection = read_best_selection(document, target)
 
     label = f"{path.name} (page {args.page})"
     question = getattr(args, "question", None)
@@ -150,7 +191,7 @@ def _capture(args: argparse.Namespace) -> int:
         str(ENTRY),
         "render",
         "--docent",
-        _resolve_docent(args.docent),
+        find_docent(args.docent),
         str(request_file),
     ]
     try:
@@ -165,18 +206,30 @@ def _show_error(message: str) -> None:
     print(f"docent-zathura: {message}", file=sys.stderr)
     if sys.stderr.isatty():
         return
-    if shutil.which("notify-send") is None:
-        return
     if not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
         return
-    try:
-        subprocess.run(
-            ["notify-send", "--app-name=Docent", "Docent", message],
-            check=False,
-            timeout=5,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        pass
+
+    if shutil.which("zenity"):
+        try:
+            result = subprocess.run(
+                ["zenity", "--error", "--title=Docent", "--text", message],
+                check=False,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                return
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    if shutil.which("notify-send"):
+        try:
+            subprocess.run(
+                ["notify-send", "--app-name=Docent", "Docent", message],
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
 
 def main(argv: list[str] | None = None) -> int:

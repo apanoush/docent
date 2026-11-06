@@ -10,6 +10,8 @@ import pytest
 from docent_zathura.clipboard import (
     ClipboardError,
     clipboard_commands,
+    matches_document,
+    read_best_selection,
     read_selection,
 )
 
@@ -110,3 +112,119 @@ def test_missing_tool_is_reported() -> None:
 
     with pytest.raises(ClipboardError, match="wl-paste"):
         read_selection("primary", {"WAYLAND_DISPLAY": "wayland-1"}, runner)
+
+
+def test_matches_document_exactly_and_after_normalizing_whitespace() -> None:
+    assert matches_document("alpha beta", "Page one alpha beta gamma.")
+    assert matches_document("alpha\nbeta", "Page one alpha beta gamma.")
+    assert not matches_document("missing", "Page one alpha beta gamma.")
+    assert not matches_document("", "Page one alpha beta gamma.")
+
+
+def _two_clipboard_runner(
+    primary: str | None,
+    clipboard: str | None,
+    calls: list[Sequence[str]],
+) -> Any:
+    def runner(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if "--primary" in argv:
+            if primary is None:
+                return _completed(argv, 1, "", "Nothing is copied")
+            return _completed(argv, 0, primary)
+        if clipboard is None:
+            return _completed(argv, 1, "", "Nothing is copied")
+        return _completed(argv, 0, clipboard)
+
+    return runner
+
+
+def test_best_selection_uses_matching_primary_without_reading_clipboard() -> None:
+    calls: list[Sequence[str]] = []
+
+    selection = read_best_selection(
+        "alpha beta",
+        environ={"WAYLAND_DISPLAY": "wayland-1"},
+        runner=_two_clipboard_runner("alpha beta", "other", calls),
+    )
+
+    assert selection == "alpha beta"
+    assert len(calls) == 1
+
+
+def test_best_selection_falls_back_to_clipboard_when_primary_is_empty() -> None:
+    calls: list[Sequence[str]] = []
+
+    selection = read_best_selection(
+        "alpha beta",
+        environ={"WAYLAND_DISPLAY": "wayland-1"},
+        runner=_two_clipboard_runner(None, "alpha beta", calls),
+    )
+
+    assert selection == "alpha beta"
+    assert len(calls) == 2
+
+
+def test_best_selection_uses_matching_clipboard_when_primary_does_not_match() -> None:
+    calls: list[Sequence[str]] = []
+
+    selection = read_best_selection(
+        "alpha beta",
+        environ={"WAYLAND_DISPLAY": "wayland-1"},
+        runner=_two_clipboard_runner("stale", "alpha beta", calls),
+    )
+
+    assert selection == "alpha beta"
+
+
+def test_best_selection_prefers_primary_when_both_match() -> None:
+    selection = read_best_selection(
+        "alpha beta",
+        environ={"WAYLAND_DISPLAY": "wayland-1"},
+        runner=_two_clipboard_runner("alpha", "alpha beta", []),
+    )
+
+    assert selection == "alpha"
+
+
+def test_best_selection_falls_back_to_primary_when_nothing_matches() -> None:
+    selection = read_best_selection(
+        "alpha beta",
+        environ={"WAYLAND_DISPLAY": "wayland-1"},
+        runner=_two_clipboard_runner("stale", "other", []),
+    )
+
+    assert selection == "stale"
+
+
+def test_best_selection_rejects_unrelated_clipboard_text() -> None:
+    with pytest.raises(ClipboardError, match="does not appear"):
+        read_best_selection(
+            "alpha beta",
+            environ={"WAYLAND_DISPLAY": "wayland-1"},
+            runner=_two_clipboard_runner(None, "unrelated", []),
+        )
+
+
+def test_best_selection_reports_when_both_are_empty() -> None:
+    with pytest.raises(ClipboardError, match="no text selected"):
+        read_best_selection(
+            "alpha beta",
+            environ={"WAYLAND_DISPLAY": "wayland-1"},
+            runner=_two_clipboard_runner(None, None, []),
+        )
+
+
+def test_best_selection_honors_an_explicit_target() -> None:
+    calls: list[Sequence[str]] = []
+
+    selection = read_best_selection(
+        "alpha beta",
+        "clipboard",
+        {"WAYLAND_DISPLAY": "wayland-1"},
+        _two_clipboard_runner("alpha", "alpha beta", calls),
+    )
+
+    assert selection == "alpha beta"
+    assert len(calls) == 1
+    assert "--primary" not in calls[0]

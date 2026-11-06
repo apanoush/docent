@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +31,7 @@ def capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         captured["command"] = command
 
     monkeypatch.setattr(cli, "launch_terminal", fake_launch)
-    monkeypatch.setattr(cli, "read_selection", lambda target: "alpha")
+    monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
     monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
     monkeypatch.setattr(cli, "detect_terminal", lambda: "foot")
     return captured
@@ -52,6 +54,20 @@ def test_parser_accepts_explain_options() -> None:
     assert args.page == 3
     assert args.clipboard is True
     assert args.context_pages == 2
+
+
+def test_parser_accepts_primary_override() -> None:
+    args = cli.build_parser().parse_args(["explain", "paper.pdf", "1", "--primary"])
+
+    assert args.primary is True
+    assert args.clipboard is False
+
+
+def test_parser_rejects_two_clipboard_targets() -> None:
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(
+            ["explain", "paper.pdf", "1", "--primary", "--clipboard"]
+        )
 
 
 def test_capture_builds_explain_request(pdf: Path, capture: dict[str, Any]) -> None:
@@ -108,10 +124,11 @@ def test_capture_reports_clipboard_errors(
 ) -> None:
     messages: list[str] = []
 
-    def fail(target: str) -> str:
+    def fail(document: str, target: str | None) -> str:
         raise ClipboardError("nothing selected")
 
-    monkeypatch.setattr(cli, "read_selection", fail)
+    monkeypatch.setattr(cli, "read_best_selection", fail)
+    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
     monkeypatch.setattr(cli, "_show_error", messages.append)
 
     code = cli.main(["explain", str(pdf), "1", "--terminal", "foot"])
@@ -125,7 +142,7 @@ def test_capture_requires_a_terminal(
 ) -> None:
     messages: list[str] = []
 
-    monkeypatch.setattr(cli, "read_selection", lambda target: "alpha")
+    monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
     monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha")
     monkeypatch.setattr(cli, "detect_terminal", lambda: None)
     monkeypatch.setattr(cli, "_show_error", messages.append)
@@ -161,3 +178,94 @@ def test_render_command_reports_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "run_render", fail)
 
     assert cli.main(["render", "request.json"]) == 1
+
+
+def test_find_docent_uses_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/opt/bin/docent")
+
+    assert cli.find_docent("docent") == "/opt/bin/docent"
+
+
+def test_find_docent_searches_home_install_locations(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(cli.shutil, "which", lambda name: None)
+    candidate = tmp_path / ".local" / "bin" / "docent"
+    candidate.parent.mkdir(parents=True)
+    candidate.write_text("#!/bin/sh\n", encoding="utf-8")
+    candidate.chmod(0o755)
+
+    assert cli.find_docent("docent") == str(candidate)
+
+
+def test_find_docent_keeps_an_absolute_path(tmp_path: Path) -> None:
+    candidate = tmp_path / "custom-docent"
+
+    assert cli.find_docent(str(candidate)) == str(candidate)
+
+
+class _NotTty(io.StringIO):
+    def isatty(self) -> bool:
+        return False
+
+
+def test_show_error_prefers_zenity(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cli.sys, "stderr", _NotTty())
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    monkeypatch.setattr(
+        cli.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name == "zenity" else None,
+    )
+
+    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(cli.subprocess, "run", runner)
+
+    cli._show_error("boom")
+
+    assert calls[0][0] == "zenity"
+
+
+def test_show_error_falls_back_to_notify_send(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cli.sys, "stderr", _NotTty())
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    monkeypatch.setattr(
+        cli.shutil,
+        "which",
+        lambda name: "/usr/bin/notify-send" if name == "notify-send" else None,
+    )
+
+    def runner(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(cli.subprocess, "run", runner)
+
+    cli._show_error("boom")
+
+    assert calls[0][0] == "notify-send"
+
+
+def test_show_error_skips_dialogs_on_a_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[object] = []
+
+    class Tty(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr(cli.sys, "stderr", Tty())
+    monkeypatch.setattr(
+        cli.subprocess, "run", lambda *args, **kwargs: calls.append(args)
+    )
+
+    cli._show_error("boom")
+
+    assert calls == []
