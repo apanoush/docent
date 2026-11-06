@@ -82,7 +82,7 @@ pub fn complete_streaming(config: &Config, settings: &EffectiveSettings, prompt:
 
 `config::resolve_config_dir` is a pure function that takes the CLI value and the environment value. Tests cover the precedence without mutating process globals. `config::ensure_initialized` creates the default files only when `config.toml` is missing; it does not recreate deleted profiles.
 
-`profile::ProfileStore::discover` reads every `.toml` file, validates it, sorts valid profiles by name, and collects warnings for files that were skipped. An empty directory returns `NoProfiles`; a directory with only invalid files returns `NoValidProfiles` with the validation messages. The Neovim picker only sees valid profiles.
+`profile::ProfileStore::discover` reads every `.toml` file, validates it, sorts valid profiles by name, and collects warnings for files that were skipped. An empty directory returns `NoProfiles`; a directory with only invalid files returns `NoValidProfiles` with the validation messages. The Neovim and qutebrowser pickers only see valid profiles.
 
 Profile validation covers TOML fields, numeric ranges, placeholder syntax, requirement consistency, and the conflict between `requires = ["context"]` and `context_mode = "none"`.
 
@@ -112,4 +112,4 @@ Rust tests are split into three layers:
 - Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, and the bare getting-started output.
 - Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, selection errors, and input errors. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
 
-The coverage gate is `cargo llvm-cov --workspace --all-targets --fail-under-lines 80`. Run `scripts/check.sh` for the full gate, including formatting, clippy, tests, coverage, and the Neovim tests. The script requires `cargo-llvm-cov` and Neovim on `PATH`.
+The coverage gate is `cargo llvm-cov --workspace --all-targets --fail-under-lines 80`. Run `scripts/check.sh` for the full gate, including formatting, clippy, tests, coverage, the Neovim tests, and the qutebrowser adapter tests. The script requires `cargo-llvm-cov`, Neovim, pytest, ruff, and ty on `PATH`.

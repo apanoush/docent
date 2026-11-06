@@ -1,33 +1,33 @@
 # Architecture
 
-Docent is a one-shot CLI with a terminal front end and an editor adapter. Neovim owns the buffer and the editor UI; the CLI owns configuration, input resolution, prompting, context assembly, and provider communication.
+Docent is a one-shot CLI with a terminal front end, an editor adapter, and a browser adapter. Neovim owns the buffer and the editor UI; qutebrowser owns the page and the browser UI; the CLI owns configuration, input resolution, prompting, context assembly, and provider communication.
 
 ```text
-Terminal input                              Neovim buffer
-FILE, stdin, --lines,                       selection, document,
---select, --text                            byte offsets, file name
-        |                                           |
-        v                                           v
-source adapter and prompts                  JSON on stdin
-        |                                           |
-        +------------------+------------------------+
-                           |
-                           v
-                    docent executor
-                    |-- load config.toml
-                    |-- load profiles/<name>.toml
-                    |-- resolve effective settings
-                    |-- build context window
-                    |-- render prompt template
-                    |-- call provider
-                           |
-                           v
-             plain text, JSON, or NDJSON events
-                           |
-                 +---------+---------+
-                 |                   |
-                 v                   v
-          terminal output       Neovim float
+Terminal input              Neovim buffer              qutebrowser page
+FILE, stdin, --lines,       selection, document,       selection, innerText,
+--select, --text            byte offsets, file name    page URL and title
+        |                         |                          |
+        v                         v                          v
+source adapter and prompts      JSON on stdin          JSON on stdin
+        |                         |                          |
+        +-------------------------+--------------------------+
+                                  |
+                                  v
+                           docent executor
+                           |-- load config.toml
+                           |-- load profiles/<name>.toml
+                           |-- resolve effective settings
+                           |-- build context window
+                           |-- render prompt template
+                           |-- call provider
+                                  |
+                                  v
+                    plain text, JSON, or NDJSON events
+                                  |
+                    +-------------+-------------+
+                    |             |             |
+                    v             v             v
+             terminal output  Neovim float  qutebrowser answer tab
 ```
 
 ## Request contract
@@ -45,9 +45,9 @@ The CLI reads one JSON object from stdin:
 }
 ```
 
-Every field is optional. Unknown fields are rejected. The document can be large, so stdin is preferable to command-line arguments or environment variables. Neovim's `vim.system` accepts a string for stdin, which removes the need for temporary files. See `:h vim.system()` in Neovim 0.10 or newer.
+Every field is optional. Unknown fields are rejected. The document can be large, so stdin is preferable to command-line arguments or environment variables. Neovim's `vim.system` accepts a string for stdin, which removes the need for temporary files. See `:h vim.system()` in Neovim 0.10 or newer. The qutebrowser adapter uses `QProcess` and writes the same JSON to its stdin.
 
-The plugin sends UTF-8 byte offsets because that is what the buffer API exposes. The CLI trusts the offsets only when they match the selection exactly. Otherwise it falls back to the first exact occurrence. This keeps markers correct when a buffer was edited between capture and request.
+The Neovim plugin sends UTF-8 byte offsets because that is what the buffer API exposes. The CLI trusts the offsets only when they match the selection exactly. Otherwise it falls back to the first exact occurrence. This keeps markers correct when a buffer was edited between capture and request. The first qutebrowser version omits offsets and relies on the same fallback.
 
 ## Terminal input adapter
 
@@ -63,9 +63,19 @@ The terminal commands (`explain`, `ask`, `translate`, `do`) build the same `Requ
 
 Prompts use a small `Prompter` trait. The real implementation reads from stdin and writes labels to stderr; tests substitute a scripted implementation. Prompts only run when stdin is a terminal, so a piped document is never consumed as prompt input. The profile is loaded before input resolution, which lets its `requires` list drive file, selection, and question prompts.
 
+## qutebrowser adapter
+
+The adapter is a Python module loaded from qutebrowser's `config.py`. It captures the page selection with `window.getSelection()` and the rendered page text with `document.body.innerText` through `tab.run_js_async`. The page URL has its query and fragment removed before it is used as the `file` label. A profile that declares `requires = ["question"]` opens a `QInputDialog` before the request starts.
+
+The adapter starts `docent run --profile NAME --stream` with `QProcess`, writes the request JSON to stdin, and parses stdout with the same NDJSON line parser as the Neovim plugin. The answer streams into a new tab. Closing the tab calls `terminate()` and then `kill()` if needed. The question travels in the JSON request rather than in argv so it does not appear in the process list.
+
+qutebrowser does not expose a stable third-party plugin API. The loader only walks built-in components, and `qutebrowser/api/__init__.py` says the extension API is not exposed to third-party extensions yet. The adapter therefore imports internal modules and must be retested on qutebrowser upgrades. It also requires JavaScript for selection capture and answer rendering. `window.getSelection()` sees the top frame only, so iframes, shadow DOM, and PDF viewers are not supported in the first version.
+
+The first UI is a tab rather than a floating window. qutebrowser's application-wide key filter handles keys before widgets, and `q` is bound to macro recording in normal mode, so a float-like overlay would need insert/passthrough mode or a plugin key filter. A tab keeps normal qutebrowser bindings, including `d` to close and `j`/`k` to scroll.
+
 ## Output modes
 
-Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. The Neovim integration uses `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object.
+Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. The Neovim and qutebrowser integrations use `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object.
 
 The shared executor builds the context and prompt once, then selects the output mode. This keeps buffered, streamed, JSON, and prompt-preview paths on the same request and prompt code.
 
@@ -133,9 +143,9 @@ Errors emitted after streaming starts use the same channel:
 {"type":"error","message":"provider request failed with HTTP 401: bad key"}
 ```
 
-The CLI also writes the error to stderr and exits with the provider exit code. Neovim parses complete lines only, so a chunk boundary can never split a JSON object or a UTF-8 character. The parser handles SSE `data:` frames that are split at arbitrary byte boundaries.
+The CLI also writes the error to stderr and exits with the provider exit code. Neovim and qutebrowser parse complete lines only, so a chunk boundary can never split a JSON object or a UTF-8 character. The parser handles SSE `data:` frames that are split at arbitrary byte boundaries.
 
-The stream ends with `done` or an error. A stream that ends without either is treated as a failure by the plugin if the child process exits non-zero, or as a completed answer if it exits zero.
+The stream ends with `done` or an error. A stream that ends without either is treated as a failure by the adapter if the child process exits non-zero, or as a completed answer if it exits zero.
 
 ## Errors and exit codes
 
@@ -151,7 +161,7 @@ Diagnostics and prompt labels go to stderr. The answer goes to stdout. A CLI inv
 ## Security boundaries
 
 - Profiles are loaded from `profiles/<name>.toml`. Names are restricted to letters, digits, underscores, and hyphens, so `--profile ../secret` cannot escape the directory.
-- `vim.system` receives an argument array, not a shell command line, so buffer text cannot become shell syntax. Terminal commands likewise treat file paths and selection text as data, never as shell input.
+- `vim.system` and `QProcess` receive argument arrays, not shell command lines, so buffer and page text cannot become shell syntax. Terminal commands likewise treat file paths and selection text as data, never as shell input.
 - API keys are referenced by environment variable name. The generated config contains no secrets.
 - Error messages include provider messages and truncated response bodies, never request headers.
 - The document is treated as untrusted content. The default system prompt tells the model not to follow instructions inside it.
@@ -159,9 +169,11 @@ Diagnostics and prompt labels go to stderr. The answer goes to stdout. A CLI inv
 ## Alternatives considered
 
 - **Markdown profiles with a separate metadata block** would be pleasant for prose, but splits one profile across two files or requires a custom front-matter parser. Typed TOML keeps metadata and prompt together and reuses the same parser as `config.toml`.
-- **`reqwest` with Tokio** would support advanced HTTP features, but the CLI is a one-shot process and Neovim already provides asynchrony. Blocking `ureq` with rustls keeps the dependency graph small and avoids an OpenSSL system dependency.
+- **`reqwest` with Tokio** would support advanced HTTP features, but the CLI is a one-shot process and the editor and browser adapters already provide asynchrony. Blocking `ureq` with rustls keeps the dependency graph small and avoids an OpenSSL system dependency.
 - **Provider SDKs** would reduce wire-format code, but they add large dependency trees and their streaming types differ. Two small clients are easier to test and to keep compatible with OpenAI-style gateways.
 - **Raw text streaming** would be simpler for the Lua side, but chunk boundaries can split UTF-8 sequences and multi-byte characters. NDJSON gives the plugin complete, decodable units.
 - **Temporary files for the request** would avoid stdin handling, but they add cleanup, permissions, and race concerns. `vim.system` already supports stdin strings.
 - **A generic command provider** would unlock subscription-only tools, but its output contracts, permissions, and process lifecycle vary too much for the first release.
 - **A full-screen terminal UI or REPL** would duplicate the Neovim experience and add a terminal rendering stack. Plain commands with prompts cover the terminal use case with much less surface area.
+- **A qutebrowser userscript** is the documented extension mechanism and needs no internal API, but it cannot stream into a live view or prompt cleanly for the ask profile. The adapter uses a Python module instead and accepts the compatibility risk.
+- **An answer tab instead of a float overlay** avoids qutebrowser's application-wide key filter and keeps native tab navigation. The overlay is deferred until the tab workflow is stable.

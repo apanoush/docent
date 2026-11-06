@@ -20,6 +20,9 @@ __pycache__/
 .ipynb_checkpoints/
 
 # tooling caches
+.coverage
+coverage.xml
+htmlcov/
 .pytest_cache/
 .ruff_cache/
 .ty/

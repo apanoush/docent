@@ -133,7 +133,7 @@ A profile is one TOML file in `profiles/`. The filename without `.toml` is the p
 |---|---|---|---|
 | `user_prompt` | string | yes | User message template. Must not be empty. |
 | `system_prompt` | string | no | Replaces the built-in system message for this profile. |
-| `description` | string | no | Short description shown by the Neovim profile picker. |
+| `description` | string | no | Short description shown by the Neovim and qutebrowser profile pickers. |
 | `requires` | array | no | Inputs required before the profile can run. Values are `selection`, `question`, and `context`. |
 | `context_mode` | `"auto"`, `"full"`, or `"none"` | no | Per-profile context mode override. |
 | `model` | string | no | Per-profile model override. |
@@ -157,7 +157,7 @@ Unknown fields are rejected, so typos fail loudly instead of being ignored.
 
 Placeholders use `{{name}}`; whitespace inside the braces is allowed. Unknown placeholders are rejected at load time. Substituted values are not scanned again, so a document that contains `{{question}}` cannot inject another placeholder.
 
-If a prompt uses `{{selection}}` or `{{question}}`, the profile must also declare the matching entry in `requires`. This lets the Neovim plugin prompt for a question before starting the request. A profile may use `{{context}}` without declaring `requires = ["context"]`; in that case an empty document renders the fallback note instead of failing.
+If a prompt uses `{{selection}}` or `{{question}}`, the profile must also declare the matching entry in `requires`. This lets the Neovim and qutebrowser adapters prompt for a question before starting the request. A profile may use `{{context}}` without declaring `requires = ["context"]`; in that case an empty document renders the fallback note instead of failing.
 
 Each declared requirement must be used by `user_prompt` or `system_prompt`. Duplicate requirements are rejected. A profile that requires `context` cannot be combined with an effective `context_mode = "none"`.
 
@@ -231,7 +231,7 @@ docent do my-profile notes.md --lines 12:20
 
 Piped stdin is always the document, never prompt input. Prompts only appear when stdin is a terminal and a required input is missing. A profile that requires a question prompts for one; a profile that requires a selection prompts for a line range or pasted text.
 
-A bare `docent` prints a short getting-started message. `docent profiles` prints `name: description`; `docent profiles --json` remains the machine-readable form used by the Neovim picker.
+A bare `docent` prints a short getting-started message. `docent profiles` prints `name: description`; `docent profiles --json` remains the machine-readable form used by the Neovim and qutebrowser pickers.
 
 Terminal commands stream plain text by default. `--no-stream` waits for the complete answer and prints it once. `--json` and `--stream` are reserved for `docent run`, where `--stream` means newline-delimited JSON events.
 

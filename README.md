@@ -1,11 +1,12 @@
 # Docent
 
-A context-aware reading companion for the terminal and Neovim. Select a passage, ask Docent to explain it, translate it, or answer a question about it, and Docent sends the surrounding document as context to an AI provider.
+A context-aware reading companion for the terminal, Neovim, and qutebrowser. Select a passage, ask Docent to explain it, translate it, or answer a question about it, and Docent sends the surrounding document as context to an AI provider.
 
-Docent has two pieces:
+Docent has three pieces:
 
 - `docent`, a Rust CLI with terminal commands for files, line ranges, pasted text, and questions. It also accepts JSON on stdin for machine integrations, builds the prompt, calls an OpenAI-compatible or Anthropic API, and returns or streams the answer.
 - `nvim/`, a Neovim plugin that captures the selection and buffer, calls the CLI asynchronously, and streams the answer into a floating window.
+- `qutebrowser/`, a qutebrowser adapter that captures the page selection and rendered text, calls the CLI asynchronously, and streams the answer into a new tab.
 
 ## Why
 
@@ -13,7 +14,7 @@ Most lookup tools treat a word or phrase in isolation. Docent sends the selectio
 
 ## Install
 
-Requires Rust 1.85 or newer, and Neovim 0.10 or newer for the plugin.
+Requires Rust 1.85 or newer, Neovim 0.10 or newer for the Neovim plugin, and qutebrowser 3.7 or newer for the qutebrowser adapter.
 
 ```bash
 cargo install --path .
@@ -57,7 +58,7 @@ cat notes.md | docent explain - --line 12
 
 If a required input is missing and stdin is a terminal, Docent prompts for it. Piped stdin is always treated as the document. Answers stream by default; add `--no-stream` to wait for the complete answer.
 
-The JSON stdin interface used by Neovim remains available:
+The JSON stdin interface used by Neovim and qutebrowser remains available:
 
 ```bash
 printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence using attention.","byte_start":2,"byte_end":13,"file":"notes.md"}' | docent run --profile explain
@@ -87,17 +88,41 @@ Add the plugin directory to your configuration with lazy.nvim:
 
 Select text and press `<leader>de`, or run `:Docent explain`. The answer streams into a floating window. Press `q` to close it; if the request is still running, `q` cancels it. See [the Neovim guide](docs/nvim.md).
 
+## qutebrowser
+
+Load the adapter from your qutebrowser `config.py`:
+
+```python
+import sys
+sys.path.insert(0, "~/path/to/reading-assistant/qutebrowser")
+import docent
+
+docent.setup(
+    config,
+    keymaps={
+        "explain": ",de",
+        "ask": ",da",
+        "translate": ",dt",
+        "pick": ",dp",
+    },
+)
+```
+
+Select text with the mouse or in caret mode and press `,de`, or run `:docent explain`. The answer streams into a new tab. Press `d` to close the tab; closing it while the request is still running cancels the request. See [the qutebrowser guide](docs/qutebrowser.md).
+
 ## Status
 
-Early development, version 0.1.0. The terminal commands, streaming, profile system, and Neovim plugin work. Follow-up conversations, image input, clipboard selection, and a generic command provider are not implemented yet.
+Early development, version 0.1.0. The terminal commands, streaming, profile system, Neovim plugin, and qutebrowser adapter work. Follow-up conversations, image input, clipboard selection, and a generic command provider are not implemented yet.
 
 ## Documentation
 
 - [Documentation index](docs/index.md)
 - [Configuration and profiles](docs/config.md)
 - [Neovim plugin](docs/nvim.md)
+- [qutebrowser adapter](docs/qutebrowser.md)
 - [Architecture](docs/architecture.md)
-- [Module reference](docs/modules/docent.md)
+- [Rust module reference](docs/modules/docent.md)
+- [qutebrowser module reference](docs/modules/qutebrowser.md)
 
 ## License
 
