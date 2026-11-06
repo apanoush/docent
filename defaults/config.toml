@@ -1,0 +1,61 @@
+# docent configuration
+#
+# API keys are never stored here. Set the environment variable named by
+# api_key_env instead.
+
+[api]
+kind = "openai"                # openai | anthropic
+base_url = "https://opencode.ai/inference/go/openai/v1"
+model = "deepseek-v4.1-flash"
+api_key_env = "OPENCODE_API_KEY"
+timeout_secs = 120
+max_tokens = 1200
+temperature = 0.3
+
+[context]
+mode = "auto"                  # auto | full | none
+max_chars = 32000
+
+[response]
+language = "auto"              # auto, or e.g. "English"
+target_language = "English"
+
+# ---------------------------------------------------------------------------
+# Provider examples
+#
+# To use another provider, replace the [api] block above with one of these.
+# Keep exactly one active [api] block.
+#
+# OpenAI direct:
+# [api]
+# kind = "openai"
+# base_url = "https://api.openai.com/v1"
+# model = "your-model-id"
+# api_key_env = "OPENAI_API_KEY"
+# timeout_secs = 120
+# max_tokens = 1200
+# temperature = 0.3
+#
+# Anthropic direct:
+# [api]
+# kind = "anthropic"
+# base_url = "https://api.anthropic.com"
+# model = "your-model-id"
+# api_key_env = "ANTHROPIC_API_KEY"
+# timeout_secs = 120
+# max_tokens = 1200
+# temperature = 0.3
+#
+# OpenCode Console (pay as you go):
+# [api]
+# kind = "openai"
+# base_url = "https://opencode.ai/inference/openai/v1"
+# model = "deepseek-v4.1-flash"
+# api_key_env = "OPENCODE_API_KEY"
+#
+# Local OpenAI-compatible server:
+# [api]
+# kind = "openai"
+# base_url = "http://localhost:11434/v1"
+# model = "your-model-id"
+# api_key_env = "LOCAL_API_KEY"

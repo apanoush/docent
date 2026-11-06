@@ -1,0 +1,18 @@
+description = "Ask a question about the selected passage"
+requires = ["selection", "question"]
+
+user_prompt = """
+The document below is provided as context. The reader has selected a passage and has a question about it.
+
+<document>
+{{context}}
+</document>
+
+<selection>
+{{selection}}
+</selection>
+
+Question: {{question}}
+
+Answer the question using the document and the selected passage. If the document does not contain enough information, say so. Respond in {{response_language}}. Use Markdown.
+"""

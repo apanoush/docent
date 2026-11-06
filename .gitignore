@@ -5,6 +5,10 @@ results/*
 
 .env
 
+# rust
+target/
+**/*.rs.bk
+
 .old/
 old/
 

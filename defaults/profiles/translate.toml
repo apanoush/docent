@@ -1,0 +1,16 @@
+description = "Translate the selected passage and explain nuances"
+requires = ["selection"]
+
+user_prompt = """
+The document below is provided as context. The reader wants a translation of the selected passage.
+
+<document>
+{{context}}
+</document>
+
+<selection>
+{{selection}}
+</selection>
+
+Translate the selected passage into {{target_language}}. Then add one or two sentences explaining any nuance, idiom, or context that the translation alone might miss. Respond in {{response_language}}. Use Markdown.
+"""
