@@ -4,7 +4,7 @@ A context-aware reading companion for the terminal and Neovim. Select a passage,
 
 Docent has two pieces:
 
-- `docent`, a Rust CLI that reads a JSON request on stdin, builds the prompt, calls an OpenAI-compatible or Anthropic API, and returns or streams the answer.
+- `docent`, a Rust CLI with terminal commands for files, line ranges, pasted text, and questions. It also accepts JSON on stdin for machine integrations, builds the prompt, calls an OpenAI-compatible or Anthropic API, and returns or streams the answer.
 - `nvim/`, a Neovim plugin that captures the selection and buffer, calls the CLI asynchronously, and streams the answer into a floating window.
 
 ## Why
@@ -25,23 +25,45 @@ docent init
 
 ## Quickstart
 
+Explain lines 12 through 20 of a file:
+
+```bash
+docent explain notes.md --lines 12:20
+```
+
+Ask a question about those lines:
+
+```bash
+docent ask notes.md --lines 12:20 --question "Why does this argument work?"
+```
+
+Translate one line:
+
+```bash
+docent translate notes.md --line 12 --to French
+```
+
+Use a pasted passage with a file as context:
+
+```bash
+docent explain --text "the passage to explain" --file notes.md
+```
+
+Pipe a document and select a line:
+
+```bash
+cat notes.md | docent explain - --line 12
+```
+
+If a required input is missing and stdin is a terminal, Docent prompts for it. Piped stdin is always treated as the document. Answers stream by default; add `--no-stream` to wait for the complete answer.
+
+The JSON stdin interface used by Neovim remains available:
+
 ```bash
 printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence using attention.","byte_start":2,"byte_end":13,"file":"notes.md"}' | docent run --profile explain
 ```
 
-Inspect the exact prompt without calling the provider:
-
-```bash
-printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence using attention.","byte_start":2,"byte_end":13}' | docent run --profile explain --print-prompt
-```
-
-Stream newline-delimited JSON events for an editor integration:
-
-```bash
-printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence using attention.","byte_start":2,"byte_end":13}' | docent run --profile explain --stream
-```
-
-Run `docent run --help` for all flags and `docent profiles --json` for profile metadata.
+Inspect the exact prompt without calling the provider with `--print-prompt`, or stream newline-delimited events with `--stream`. Run `docent --help` for the terminal commands and `docent run --help` for the machine interface.
 
 ## Neovim
 
@@ -67,7 +89,7 @@ Select text and press `<leader>de`, or run `:Docent explain`. The answer streams
 
 ## Status
 
-Early development, version 0.1.0. The CLI, streaming, profile system, and Neovim plugin work. Follow-up conversations, image input, and a generic command provider are not implemented yet.
+Early development, version 0.1.0. The terminal commands, streaming, profile system, and Neovim plugin work. Follow-up conversations, image input, clipboard selection, and a generic command provider are not implemented yet.
 
 ## Documentation
 

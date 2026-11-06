@@ -144,6 +144,26 @@ pub enum DocentError {
     #[error("provider returned an empty response")]
     EmptyResponse,
 
+    #[error("{0}")]
+    Input(String),
+
+    #[error("failed to read {path}: {source}")]
+    ReadDocument {
+        /// Document that could not be read.
+        path: PathBuf,
+        /// Underlying filesystem error.
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error(
+        "cannot read the document from stdin because stdin is a terminal; provide a file or use --text"
+    )]
+    StdinIsTerminal,
+
+    #[error("failed to write to stderr: {0}")]
+    WriteStderr(#[source] std::io::Error),
+
     #[error("failed to write to stdout: {0}")]
     WriteStdout(#[source] std::io::Error),
 }
@@ -152,8 +172,13 @@ impl DocentError {
     /// Process exit code for this error.
     pub fn exit_code(&self) -> u8 {
         match self {
-            Self::InvalidRequest(_) | Self::MissingInput { .. } | Self::ReadStdin(_) => 4,
-            Self::MissingApiKey { .. } | Self::InvalidSettings(_) => 2,
+            Self::InvalidRequest(_)
+            | Self::MissingInput { .. }
+            | Self::ReadStdin(_)
+            | Self::Input(_)
+            | Self::ReadDocument { .. }
+            | Self::StdinIsTerminal => 4,
+            Self::MissingApiKey { .. } | Self::InvalidSettings(_) | Self::WriteStderr(_) => 2,
             Self::ProviderHttp { .. } | Self::ProviderTransport { .. } | Self::EmptyResponse => 3,
             _ => 2,
         }

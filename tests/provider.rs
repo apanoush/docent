@@ -503,3 +503,370 @@ fn streaming_http_error_emits_an_error_event() {
     assert!(event["message"].as_str().unwrap().contains("bad key"));
     assert!(stderr_text.contains("HTTP 401"));
 }
+
+fn write_notes(directory: &Path, contents: &str) -> std::path::PathBuf {
+    let path = directory.join("notes.md");
+    fs::write(&path, contents).unwrap();
+    path
+}
+
+#[test]
+fn explain_file_lines_streams_plain_text() {
+    let server = MockServer::start(MockResponse::sse(
+        200,
+        concat!(
+            "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
+            "data: [DONE]\n\n"
+        ),
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    let notes = write_notes(temp.path(), "alpha\nbeta gamma\ndelta\n");
+
+    let output = run(
+        &dir,
+        &["explain", notes.to_str().unwrap(), "--lines", "2:3"],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "Hello world\n");
+
+    let requests = server.requests();
+    let body = requests[0].json();
+    let user = body["messages"][1]["content"].as_str().unwrap();
+    assert!(user.contains("beta gamma"));
+    assert!(user.contains("delta"));
+    assert_eq!(body["stream"], true);
+}
+
+#[test]
+fn explain_no_stream_buffers_the_answer() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"Buffered answer"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    let notes = write_notes(temp.path(), "alpha\nbeta gamma\ndelta\n");
+
+    let output = run(
+        &dir,
+        &[
+            "explain",
+            notes.to_str().unwrap(),
+            "--line",
+            "2",
+            "--no-stream",
+        ],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "Buffered answer\n"
+    );
+
+    let body = server.requests()[0].json();
+    assert_eq!(body["stream"], false);
+    assert!(
+        body["messages"][1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("beta gamma")
+    );
+}
+
+#[test]
+fn ask_question_is_added_to_the_prompt() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"because"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    let notes = write_notes(temp.path(), "alpha\nbeta gamma\n");
+
+    let output = run(
+        &dir,
+        &[
+            "ask",
+            notes.to_str().unwrap(),
+            "--line",
+            "1",
+            "--question",
+            "Why?",
+            "--no-stream",
+        ],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let body = server.requests()[0].json();
+    assert!(
+        body["messages"][1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Why?")
+    );
+}
+
+#[test]
+fn translate_to_sets_the_target_language() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"Bonjour"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    write_profile(
+        &dir,
+        "translate",
+        r#"description = "Translate"
+requires = ["selection"]
+user_prompt = "Translate into {{target_language}}: {{selection}}"
+"#,
+    );
+    let notes = write_notes(temp.path(), "alpha\nbeta gamma\n");
+
+    let output = run(
+        &dir,
+        &[
+            "translate",
+            notes.to_str().unwrap(),
+            "--line",
+            "1",
+            "--to",
+            "French",
+            "--no-stream",
+        ],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let body = server.requests()[0].json();
+    let user = body["messages"][1]["content"].as_str().unwrap();
+    assert!(user.contains("French"));
+    assert!(user.contains("alpha"));
+}
+
+#[test]
+fn do_runs_a_custom_profile() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"custom answer"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    write_profile(
+        &dir,
+        "custom",
+        r#"requires = ["selection"]
+user_prompt = "Custom {{selection}}"
+"#,
+    );
+    let notes = write_notes(temp.path(), "alpha\nbeta gamma\n");
+
+    let output = run(
+        &dir,
+        &[
+            "do",
+            "custom",
+            notes.to_str().unwrap(),
+            "--line",
+            "2",
+            "--no-stream",
+        ],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let body = server.requests()[0].json();
+    assert!(
+        body["messages"][1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Custom beta gamma")
+    );
+}
+
+#[test]
+fn explain_reads_the_document_from_stdin() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"from stdin"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let output = run(
+        &dir,
+        &["explain", "-", "--line", "2", "--no-stream"],
+        "alpha\nbeta\n",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let body = server.requests()[0].json();
+    let user = body["messages"][1]["content"].as_str().unwrap();
+    assert!(user.contains("beta"));
+    assert!(user.contains("alpha"));
+}
+
+#[test]
+fn explain_uses_text_with_file_context() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"text answer"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    let notes = write_notes(temp.path(), "alpha beta gamma\n");
+
+    let output = run(
+        &dir,
+        &[
+            "explain",
+            notes.to_str().unwrap(),
+            "--text",
+            "beta",
+            "--no-stream",
+        ],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let body = server.requests()[0].json();
+    let user = body["messages"][1]["content"].as_str().unwrap();
+    assert!(user.contains("beta"));
+    assert!(user.contains("alpha"));
+}
+
+#[test]
+fn explain_selects_a_phrase() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"phrase answer"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    let notes = write_notes(temp.path(), "alpha beta gamma\n");
+
+    let output = run(
+        &dir,
+        &[
+            "explain",
+            notes.to_str().unwrap(),
+            "--select",
+            "beta",
+            "--no-stream",
+        ],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let body = server.requests()[0].json();
+    let user = body["messages"][1]["content"].as_str().unwrap();
+    assert!(user.contains("SELECTION START"));
+    assert!(user.contains("beta"));
+}
+
+#[test]
+fn missing_phrase_is_an_input_error() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", "http://127.0.0.1:1");
+    let notes = write_notes(temp.path(), "alpha beta gamma\n");
+
+    let output = run(
+        &dir,
+        &["explain", notes.to_str().unwrap(), "--select", "missing"],
+        "",
+        None,
+    );
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stderr(&output).contains("phrase not found"));
+}
+
+#[test]
+fn out_of_bounds_lines_are_an_input_error() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", "http://127.0.0.1:1");
+    let notes = write_notes(temp.path(), "alpha\nbeta\n");
+
+    let output = run(
+        &dir,
+        &["explain", notes.to_str().unwrap(), "--lines", "9:10"],
+        "",
+        None,
+    );
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stderr(&output).contains("out of bounds"));
+}
+
+#[test]
+fn missing_selection_is_an_input_error() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", "http://127.0.0.1:1");
+    let notes = write_notes(temp.path(), "alpha\nbeta\n");
+
+    let output = run(
+        &dir,
+        &["explain", notes.to_str().unwrap(), "--no-stream"],
+        "",
+        None,
+    );
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stderr(&output).contains("no selection provided"));
+}
+
+#[test]
+fn missing_file_is_an_input_error() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", "http://127.0.0.1:1");
+    let missing = temp.path().join("missing.md");
+
+    let output = run(
+        &dir,
+        &["explain", missing.to_str().unwrap(), "--line", "1"],
+        "",
+        None,
+    );
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stderr(&output).contains("failed to read"));
+}
+
+#[test]
+fn missing_question_is_an_input_error_without_a_prompt() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", "http://127.0.0.1:1");
+    let notes = write_notes(temp.path(), "alpha\nbeta\n");
+
+    let output = run(
+        &dir,
+        &["ask", notes.to_str().unwrap(), "--line", "1", "--no-stream"],
+        "",
+        None,
+    );
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stderr(&output).contains("requires a question"));
+}

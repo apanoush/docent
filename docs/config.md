@@ -206,16 +206,36 @@ Explain the formula $\sum_i x_i$ in {{selection}}.
 
 The generated profiles use `"""` because their text contains no backslashes.
 
-## CLI reference
+## Terminal usage
 
-```text
-docent run [--profile explain] [--question TEXT] [--target-language LANG]
-           [--context-mode auto|full|none] [--stream] [--json]
-           [--print-prompt] [--config-dir PATH]
-docent profiles [--json]
-docent init [--force] [--config-dir PATH]
-docent config-path [--config-dir PATH]
+```bash
+docent explain notes.md --lines 12:20
+docent explain notes.md --line 12
+docent explain notes.md --select "transformer"
+docent explain --text "a pasted passage" --file notes.md
+docent ask notes.md --lines 12:20 --question "Why does this work?"
+docent translate notes.md --lines 12:20 --to French
+docent do my-profile notes.md --lines 12:20
 ```
+
+### Input rules
+
+- `FILE` is the document used for context and for line or phrase selection. Use `-` for stdin.
+- With no `FILE` and piped stdin, the piped text is the document.
+- With no `FILE` and a terminal stdin, Docent prompts for a file. The exception is `--text`, which can supply a selection without any document.
+- `--lines START:END` is 1-based and inclusive. `--line N` is a single line.
+- `--select PHRASE` uses the first exact occurrence. A missing phrase is an input error.
+- `--text TEXT` supplies a pasted selection. If a file or piped stdin is present, that is the document, and offsets are resolved when the text occurs there.
+- Only one of `--lines`, `--line`, `--select`, and `--text` may be used.
+- `--context-mode` and `--target-language` (alias `--to`) work on every terminal command.
+
+Piped stdin is always the document, never prompt input. Prompts only appear when stdin is a terminal and a required input is missing. A profile that requires a question prompts for one; a profile that requires a selection prompts for a line range or pasted text.
+
+A bare `docent` prints a short getting-started message. `docent profiles` prints `name: description`; `docent profiles --json` remains the machine-readable form used by the Neovim picker.
+
+Terminal commands stream plain text by default. `--no-stream` waits for the complete answer and prints it once. `--json` and `--stream` are reserved for `docent run`, where `--stream` means newline-delimited JSON events.
+
+## Machine interface
 
 `docent run` reads a JSON request from stdin:
 
@@ -232,13 +252,32 @@ docent config-path [--config-dir PATH]
 
 All fields are optional, but most profiles need a selection. Unknown fields are rejected. `byte_start` and `byte_end` are UTF-8 byte offsets into `document`; they are used only when they match `selection` exactly, otherwise Docent falls back to the first exact occurrence of the selection.
 
-Output modes:
+Output modes for `docent run`:
 
 - Default: the answer as plain text.
 - `--json`: one JSON object with `text`, `model`, and `usage`.
 - `--stream`: newline-delimited JSON events of type `delta`, `done`, and `error`.
 - `--print-prompt`: the assembled system and user messages as JSON, without calling the provider.
 - `--stream` and `--json` cannot be combined.
+
+## CLI reference
+
+```text
+docent explain [FILE] [--lines START:END | --line N | --select PHRASE | --text TEXT]
+               [--question TEXT] [--context-mode auto|full|none]
+               [--target-language LANG | --to LANG] [--no-stream]
+docent ask [FILE] ...
+docent translate [FILE] ...
+docent do PROFILE [FILE] ...
+docent run [--profile explain] [--question TEXT] [--target-language LANG]
+           [--context-mode auto|full|none] [--stream] [--json]
+           [--print-prompt] [--config-dir PATH]
+docent profiles [--json]
+docent init [--force] [--config-dir PATH]
+docent config-path [--config-dir PATH]
+```
+
+The `...` above stands for the same selection and execution options as `explain`. `docent do` takes a profile name before the optional file.
 
 Exit codes: `0` success, `2` configuration or usage error, `3` provider or network error, `4` invalid input or a missing required value.
 
@@ -256,4 +295,4 @@ Exit codes: `0` success, `2` configuration or usage error, `3` provider or netwo
 }
 ```
 
-Invalid profile files are reported on stderr and omitted from the catalog. `docent run --profile NAME` fails with the exact parse or validation error.
+Invalid profile files are reported on stderr and omitted from the catalog. Any command that loads a profile by name fails with the exact parse or validation error.

@@ -1,27 +1,33 @@
 # Architecture
 
-Docent is a one-shot CLI with an editor adapter. Neovim owns the buffer and the UI; the CLI owns configuration, prompting, context assembly, and provider communication.
+Docent is a one-shot CLI with a terminal front end and an editor adapter. Neovim owns the buffer and the editor UI; the CLI owns configuration, input resolution, prompting, context assembly, and provider communication.
 
 ```text
-Neovim buffer
-    |
-    | selection, document, byte offsets, file name
-    v
-JSON on stdin
-    |
-    v
-docent run
-    |-- load config.toml
-    |-- load profiles/<name>.toml
-    |-- resolve effective settings
-    |-- build context window
-    |-- render prompt template
-    |-- call provider
-    v
-plain text, JSON, or NDJSON events on stdout
-    |
-    v
-Neovim float
+Terminal input                              Neovim buffer
+FILE, stdin, --lines,                       selection, document,
+--select, --text                            byte offsets, file name
+        |                                           |
+        v                                           v
+source adapter and prompts                  JSON on stdin
+        |                                           |
+        +------------------+------------------------+
+                           |
+                           v
+                    docent executor
+                    |-- load config.toml
+                    |-- load profiles/<name>.toml
+                    |-- resolve effective settings
+                    |-- build context window
+                    |-- render prompt template
+                    |-- call provider
+                           |
+                           v
+             plain text, JSON, or NDJSON events
+                           |
+                 +---------+---------+
+                 |                   |
+                 v                   v
+          terminal output       Neovim float
 ```
 
 ## Request contract
@@ -42,6 +48,26 @@ The CLI reads one JSON object from stdin:
 Every field is optional. Unknown fields are rejected. The document can be large, so stdin is preferable to command-line arguments or environment variables. Neovim's `vim.system` accepts a string for stdin, which removes the need for temporary files. See `:h vim.system()` in Neovim 0.10 or newer.
 
 The plugin sends UTF-8 byte offsets because that is what the buffer API exposes. The CLI trusts the offsets only when they match the selection exactly. Otherwise it falls back to the first exact occurrence. This keeps markers correct when a buffer was edited between capture and request.
+
+## Terminal input adapter
+
+The terminal commands (`explain`, `ask`, `translate`, `do`) build the same `Request` as the Neovim plugin. The `source` module handles the difference in input shapes:
+
+- A file is read as the document. `-` means stdin.
+- With no file and piped stdin, the piped text becomes the document.
+- With no file and a terminal stdin, Docent prompts for a file.
+- Line ranges are 1-based and inclusive and are converted to byte offsets through a line index.
+- `--select` uses the first exact phrase occurrence and fails when the phrase is absent.
+- `--text` supplies a selection without line numbers. Offsets are resolved when the text occurs in the document.
+- CRLF is normalized to LF before the line index is built, so offsets and selections stay consistent.
+
+Prompts use a small `Prompter` trait. The real implementation reads from stdin and writes labels to stderr; tests substitute a scripted implementation. Prompts only run when stdin is a terminal, so a piped document is never consumed as prompt input. The profile is loaded before input resolution, which lets its `requires` list drive file, selection, and question prompts.
+
+## Output modes
+
+Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. The Neovim integration uses `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object.
+
+The shared executor builds the context and prompt once, then selects the output mode. This keeps buffered, streamed, JSON, and prompt-preview paths on the same request and prompt code.
 
 ## Settings and precedence
 
@@ -91,9 +117,9 @@ API keys come from the environment variable named by `api.api_key_env`. Keys are
 
 There are no retries in 0.1.0. A failed request returns a clear error instead of risking duplicate charges. Retry and backoff are deferred.
 
-## Streaming contract
+## NDJSON streaming contract
 
-With `--stream`, stdout contains one JSON object per line:
+With `docent run --stream`, stdout contains one JSON object per line:
 
 ```json
 {"type":"delta","text":"Hello"}
@@ -118,14 +144,14 @@ The stream ends with `done` or an error. A stream that ends without either is tr
 | `0` | Success. |
 | `2` | Configuration or usage error: bad TOML, missing API key variable, invalid settings, missing profile. |
 | `3` | Provider or network error: HTTP error, timeout, malformed response, empty response. |
-| `4` | Invalid input: malformed request JSON, missing required selection or question. |
+| `4` | Invalid input: malformed request JSON, missing required selection or question, unreadable document, empty document, phrase not found, line range out of bounds. |
 
-Diagnostics go to stderr. The answer goes to stdout. A CLI invocation that is piped into another program can therefore keep the two separate.
+Diagnostics and prompt labels go to stderr. The answer goes to stdout. A CLI invocation that is piped into another program can therefore keep the two separate.
 
 ## Security boundaries
 
 - Profiles are loaded from `profiles/<name>.toml`. Names are restricted to letters, digits, underscores, and hyphens, so `--profile ../secret` cannot escape the directory.
-- `vim.system` receives an argument array, not a shell command line, so buffer text cannot become shell syntax.
+- `vim.system` receives an argument array, not a shell command line, so buffer text cannot become shell syntax. Terminal commands likewise treat file paths and selection text as data, never as shell input.
 - API keys are referenced by environment variable name. The generated config contains no secrets.
 - Error messages include provider messages and truncated response bodies, never request headers.
 - The document is treated as untrusted content. The default system prompt tells the model not to follow instructions inside it.
@@ -138,3 +164,4 @@ Diagnostics go to stderr. The answer goes to stdout. A CLI invocation that is pi
 - **Raw text streaming** would be simpler for the Lua side, but chunk boundaries can split UTF-8 sequences and multi-byte characters. NDJSON gives the plugin complete, decodable units.
 - **Temporary files for the request** would avoid stdin handling, but they add cleanup, permissions, and race concerns. `vim.system` already supports stdin strings.
 - **A generic command provider** would unlock subscription-only tools, but its output contracts, permissions, and process lifecycle vary too much for the first release.
+- **A full-screen terminal UI or REPL** would duplicate the Neovim experience and add a terminal rendering stack. Plain commands with prompts cover the terminal use case with much less surface area.

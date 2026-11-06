@@ -66,7 +66,40 @@ fn profiles_auto_initializes_when_config_is_missing() {
     assert!(dir.join("config.toml").exists());
 
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.lines().any(|line| line == "explain"));
+    assert!(stdout.lines().any(|line| line.starts_with("explain")));
+}
+
+#[test]
+fn profiles_prints_descriptions_for_humans() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+
+    let output = docent()
+        .args(["--config-dir", dir.to_str().unwrap(), "init"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let output = docent()
+        .args(["--config-dir", dir.to_str().unwrap(), "profiles"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("explain: Explain the selected passage in context"));
+    assert!(stdout.contains("ask: Ask a question about the selected passage"));
+}
+
+#[test]
+fn bare_docent_prints_getting_started_examples() {
+    let output = docent().output().unwrap();
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("docent explain notes.md --lines 12:20"));
+    assert!(stdout.contains("docent ask notes.md"));
+    assert!(stdout.contains("docent --help"));
 }
 
 #[test]

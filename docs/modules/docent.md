@@ -6,11 +6,12 @@ The crate has one binary target, `src/main.rs`, and a library target, `src/lib.r
 
 | Module | Responsibility |
 |---|---|
-| `cli` | Clap definitions, subcommand dispatch, stdin request reading, output modes, NDJSON writing. |
+| `cli` | Clap definitions, subcommand dispatch, terminal prompts, stdin request reading, output modes, NDJSON writing. |
 | `config` | Config directory resolution, `config.toml` parsing and validation, default file creation. |
 | `defaults` | `include_str!` copies of the shipped `config.toml` and profiles. |
 | `profile` | Profile schema, validation, placeholder parsing, discovery, and metadata for `docent profiles`. |
 | `request` | The JSON request type and selection range resolution. |
+| `source` | Terminal input adapters: file and stdin documents, line ranges, phrase and text selection, prompts, and request construction. |
 | `context` | Context modes, windowing, line alignment, selection and truncation markers. |
 | `prompt` | Effective settings precedence and strict placeholder rendering. |
 | `provider` | Provider dispatch, shared HTTP code, error extraction, streaming types. |
@@ -21,18 +22,21 @@ The crate has one binary target, `src/main.rs`, and a library target, `src/lib.r
 
 ## Data flow
 
-A `run` invocation follows this path:
+A terminal command follows this path:
 
 ```text
 cli::run
   config::ensure_initialized
   profile::ProfileStore::load
-  cli::read_request -> request::Request
   prompt::EffectiveSettings::resolve
-  context::build -> context::ContextResult
-  prompt::render -> prompt::Prompt
-  provider::complete or provider::complete_streaming -> provider::Completion
+  source::resolve_request -> request::Request
+  cli::execute
+    context::build -> context::ContextResult
+    prompt::render -> prompt::Prompt
+    provider::complete or provider::complete_streaming
 ```
+
+`docent run` replaces `source::resolve_request` with `cli::read_request`, which parses the JSON document from stdin. Both paths converge on `cli::execute`.
 
 `--print-prompt` stops after `prompt::render` and serializes the system and user messages. Tests use this path to verify context and precedence without network access.
 
@@ -51,6 +55,14 @@ impl ProfileStore {
     pub fn load(&self, name: &str) -> Result<Profile, DocentError>;
     pub fn discover(&self) -> Result<ProfileCatalog, DocentError>;
 }
+
+// source
+pub fn resolve_request(
+    options: RequestOptions<'_>,
+    prompter: &mut dyn Prompter,
+    stdin_is_terminal: bool,
+    stdin: &mut dyn Read,
+) -> Result<Request, DocentError>;
 
 // context
 pub fn build(request: &Request, options: ContextOptions) -> ContextResult;
@@ -78,6 +90,14 @@ Profile validation covers TOML fields, numeric ranges, placeholder syntax, requi
 
 `context::build` uses byte offsets from the request only when they match the selected text. It converts byte budgets to character counts with `char_indices`, so slicing never lands inside a UTF-8 sequence. Windows are aligned to line starts and ends. `max_chars` is a soft budget; line alignment can add up to one line.
 
+## Terminal input and output
+
+`source::Document` normalizes CRLF and stores a byte range for every line. Line selections are sliced from the first line start to the last line end, so they include newlines between lines but not the trailing newline after the final line. `--select` uses the first exact phrase occurrence and reports the count when it is ambiguous; `--text` resolves offsets only when the text occurs in the document.
+
+`source::resolve_request` reads a file or stdin, applies the profile's `requires` list, and prompts through the `Prompter` trait when stdin is a terminal. `TerminalPrompter` writes labels to stderr and reads one line from stdin. `NoPrompter` is used for piped input, so a document on stdin is never consumed as prompt answers.
+
+`cli::execute` selects one of five output modes: plain streaming for terminal commands, plain buffered for `--no-stream`, JSON for `docent run --json`, NDJSON for `docent run --stream`, and prompt JSON for `--print-prompt`. Plain streaming writes each provider fragment directly and flushes it, then adds a final newline if needed.
+
 ## Provider clients
 
 Both clients share `provider::post_json`, which builds a `ureq` agent, sets the timeout and user agent, sends JSON, and maps non-2xx responses through `provider_error_message`. The clients differ only in request shape, endpoint path, authentication headers, and response parsing.
@@ -88,8 +108,8 @@ Streaming clients parse SSE through `provider::stream::stream_sse`. The decoder 
 
 Rust tests are split into three layers:
 
-- Unit tests in each module for parsing, validation, windowing, rendering, request bodies, response parsing, SSE decoding, and settings precedence.
-- Integration tests in `tests/cli.rs` for `init`, `config-path`, and `profiles`.
-- Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, and input errors. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
+- Unit tests in each module for parsing, validation, windowing, rendering, request bodies, response parsing, SSE decoding, settings precedence, line ranges, prompt sequencing, and terminal request construction.
+- Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, and the bare getting-started output.
+- Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, selection errors, and input errors. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
 
 The coverage gate is `cargo llvm-cov --workspace --all-targets --fail-under-lines 80`. Run `scripts/check.sh` for the full gate, including formatting, clippy, tests, coverage, and the Neovim tests. The script requires `cargo-llvm-cov` and Neovim on `PATH`.

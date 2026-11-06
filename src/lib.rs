@@ -12,5 +12,6 @@ pub mod profile;
 pub mod prompt;
 pub mod provider;
 pub mod request;
+pub mod source;
 
 pub use error::DocentError;
