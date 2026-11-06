@@ -1,6 +1,6 @@
 # qutebrowser adapter modules
 
-The adapter source lives in `qutebrowser/`, separate from the Rust crate. It has no Python package metadata and no third-party dependencies; qutebrowser provides the Python interpreter, Qt bindings, and command API.
+The adapter source lives in `plugins/qutebrowser/`, separate from the Rust crate. It has no Python package metadata and no third-party dependencies; qutebrowser provides the Python interpreter, Qt bindings, and command API.
 
 ## File map
 
@@ -17,7 +17,7 @@ The adapter source lives in `qutebrowser/`, separate from the Rust crate. It has
 
 ## Loading and commands
 
-`config.py` adds the outer `qutebrowser/` directory to `sys.path` and imports `docent`. `docent.setup(config, ...)` lazily imports `docent.plugin`, which registers the commands with `qutebrowser.api.cmdutils` and stores the settings.
+`config.py` adds the outer `plugins/qutebrowser/` directory to `sys.path` and imports `docent`. `docent.setup(config, ...)` lazily imports `docent.plugin`, which registers the commands with `qutebrowser.api.cmdutils` and stores the settings.
 
 Commands are registered once per process. The module checks `qutebrowser.misc.objects.commands` before registering, so a manual `importlib.reload` does not fail with a duplicate-command error. `setup` is idempotent: later calls replace settings and rebind keymaps without re-registering commands.
 

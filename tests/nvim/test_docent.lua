@@ -1,5 +1,5 @@
 -- Headless tests for the docent Neovim plugin.
-vim.opt.runtimepath:prepend(vim.fn.getcwd() .. "/nvim")
+vim.opt.runtimepath:prepend(vim.fn.getcwd() .. "/plugins/nvim")
 
 local context = require("docent.context")
 local docent = require("docent")

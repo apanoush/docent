@@ -9,11 +9,11 @@ The plugin captures a selection and its buffer, calls the `docent` CLI asynchron
 
 ## Install
 
-With lazy.nvim, point `dir` at the `nvim/` directory inside this repository:
+With lazy.nvim, point `dir` at the `plugins/nvim/` directory inside this repository:
 
 ```lua
 {
-  dir = "~/path/to/reading-assistant/nvim",
+  dir = "~/path/to/reading-assistant/plugins/nvim",
   config = function()
     require("docent").setup({
       keymaps = {
@@ -30,7 +30,7 @@ With lazy.nvim, point `dir` at the `nvim/` directory inside this repository:
 For a plain runtimepath setup:
 
 ```lua
-vim.opt.runtimepath:append("~/path/to/reading-assistant/nvim")
+vim.opt.runtimepath:append("~/path/to/reading-assistant/plugins/nvim")
 ```
 
 `plugin/docent.lua` calls `require("docent").setup()` with defaults, so `:Docent` and `:DocentProfiles` work even without an explicit `setup()` call. Calling `setup()` with options overrides the defaults and installs keymaps.

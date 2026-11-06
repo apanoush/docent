@@ -1,6 +1,6 @@
 # Architecture
 
-Docent is a one-shot CLI with a terminal front end, an editor adapter, and a browser adapter. Neovim owns the buffer and the editor UI; qutebrowser owns the page and the browser UI; the CLI owns configuration, input resolution, prompting, context assembly, and provider communication.
+Docent is a one-shot CLI with a terminal front end, an editor adapter, a browser adapter, and a document-viewer adapter. Neovim owns the buffer and the editor UI; qutebrowser owns the page and the browser UI; zathura owns the PDF view; the CLI owns configuration, input resolution, prompting, context assembly, and provider communication.
 
 ```text
 Terminal input              Neovim buffer              qutebrowser page
@@ -73,9 +73,23 @@ qutebrowser does not expose a stable third-party plugin API. The loader only wal
 
 The first UI is a tab rather than a floating window. qutebrowser's application-wide key filter handles keys before widgets, and `q` is bound to macro recording in normal mode, so a float-like overlay would need insert/passthrough mode or a plugin key filter. A tab keeps normal qutebrowser bindings, including `d` to close and `j`/`k` to scroll.
 
+## Zathura adapter
+
+Zathura has no third-party UI plugin API. Its plugin system loads document backends by MIME type, and the only scripting hooks are `zathurarc` commands, `exec`, and D-Bus. The adapter therefore uses a `zathurarc` binding:
+
+```zathurarc
+map <C-e> exec /path/to/docent-zathura explain $FILE $PAGE
+```
+
+`exec` expands `$FILE` and `$PAGE` and starts the helper directly, without a shell. The helper cannot receive the selection directly because `exec` has no `$SELECTION` placeholder. Zathura copies a mouse selection to the clipboard, so the helper reads it with `wl-paste`, `xclip`, or `xsel`. The workflow is mouse-first because zathura has no keyboard text selection.
+
+The helper extracts the current page plus one page on each side with `pdftotext`, builds the same JSON request as the other adapters, and writes it to a private temporary file. It then starts a terminal window running `docent-zathura render REQUEST_FILE`. The render process reads and deletes the request file, runs `docent run --profile NAME --stream`, prints the `delta` events, and waits for Enter before closing. This two-process split keeps the selection out of argv and gives the answer a window that stays open after the stream ends.
+
+The answer is a terminal window rather than a zathura overlay. An overlay would require patching zathura's GTK/C core. The terminal window streams naturally, supports the CLI's existing output, and can be floated with a compositor rule. The first version is PDF only; DjVu, PostScript, and comic-book files need different text extractors.
+
 ## Output modes
 
-Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. The Neovim and qutebrowser integrations use `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object.
+Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. The Neovim, qutebrowser, and zathura integrations use `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object.
 
 The shared executor builds the context and prompt once, then selects the output mode. This keeps buffered, streamed, JSON, and prompt-preview paths on the same request and prompt code.
 
@@ -123,7 +137,7 @@ The OpenAI-compatible endpoint at `https://opencode.ai/inference/go/openai/v1` a
 
 Requests include `User-Agent: docent/<version>`. For OpenCode endpoints, Docent also sends a stable `x-opencode-session` value from the platform state directory, which OpenCode recommends for routing and prompt caching.
 
-API keys come from the environment variable named by `api.api_key_env`. Keys are never written to configuration files and never included in error messages. The CLI does not use a provider SDK because the two request shapes are small and a hand-written client keeps streaming, error mapping, and request inspection under direct control.
+API keys come from the environment variable named by `api.api_key_env`, or from the optional `api.api_key` field for users who accept a plaintext secret in `config.toml`. A set environment variable wins, `init` creates the file with mode `0600` on Unix, and keys are never included in error messages or `Debug` output. The CLI does not use a provider SDK because the two request shapes are small and a hand-written client keeps streaming, error mapping, and request inspection under direct control.
 
 There are no retries in 0.1.0. A failed request returns a clear error instead of risking duplicate charges. Retry and backoff are deferred.
 

@@ -1,6 +1,6 @@
 # Neovim plugin modules
 
-The plugin source lives in `nvim/`, separate from the Rust crate. It has no Lua dependencies.
+The plugin source lives in `plugins/nvim/`, separate from the Rust crate. It has no Lua dependencies.
 
 ## File map
 

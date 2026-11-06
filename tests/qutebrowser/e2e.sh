@@ -53,7 +53,7 @@ HTML
 
 cat > "$tmp/config.py" <<PY
 import sys
-sys.path.insert(0, "${root}/qutebrowser")
+sys.path.insert(0, "${root}/plugins/qutebrowser")
 import docent
 docent.setup(config, cmd=["${tmp}/docent"])
 PY

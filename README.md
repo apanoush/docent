@@ -1,12 +1,13 @@
 # Docent
 
-A context-aware reading companion for the terminal, Neovim, and qutebrowser. Select a passage, ask Docent to explain it, translate it, or answer a question about it, and Docent sends the surrounding document as context to an AI provider.
+A context-aware reading companion for the terminal, Neovim, qutebrowser, and zathura. Select a passage, ask Docent to explain it, translate it, or answer a question about it, and Docent sends the surrounding document as context to an AI provider.
 
-Docent has three pieces:
+Docent has four pieces:
 
 - `docent`, a Rust CLI with terminal commands for files, line ranges, pasted text, and questions. It also accepts JSON on stdin for machine integrations, builds the prompt, calls an OpenAI-compatible or Anthropic API, and returns or streams the answer.
-- `nvim/`, a Neovim plugin that captures the selection and buffer, calls the CLI asynchronously, and streams the answer into a floating window.
-- `qutebrowser/`, a qutebrowser adapter that captures the page selection and rendered text, calls the CLI asynchronously, and streams the answer into a new tab.
+- `plugins/nvim/`, a Neovim plugin that captures the selection and buffer, calls the CLI asynchronously, and streams the answer into a floating window.
+- `plugins/qutebrowser/`, a qutebrowser adapter that captures the page selection and rendered text, calls the CLI asynchronously, and streams the answer into a new tab.
+- `plugins/zathura/`, a zathura adapter that reads the selection from the clipboard, extracts the current page with `pdftotext`, calls the CLI, and streams the answer into a terminal window.
 
 ## Why
 
@@ -14,7 +15,7 @@ Most lookup tools treat a word or phrase in isolation. Docent sends the selectio
 
 ## Install
 
-Requires Rust 1.85 or newer, Neovim 0.10 or newer for the Neovim plugin, and qutebrowser 3.7 or newer for the qutebrowser adapter.
+Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, and the zathura adapter needs zathura plus `pdftotext`.
 
 ```bash
 cargo install --path .
@@ -22,7 +23,7 @@ export OPENCODE_API_KEY=...
 docent init
 ```
 
-`docent init` writes `~/.config/docent/config.toml` and three profiles: explain, ask, and translate. The generated config points at OpenCode Go. Edit it to use OpenAI, Anthropic, another OpenAI-compatible endpoint, or a local server. See [configuration](docs/config.md).
+`docent init` writes `~/.config/docent/config.toml` and three profiles: explain, ask, and translate. The generated config points at OpenCode Go. Edit it to use OpenAI, Anthropic, another OpenAI-compatible endpoint, or a local server. The key can also be stored directly in `config.toml` with `api_key` instead of an environment variable; a set environment variable wins, and `api_key_env` remains the safer choice for shared machines and dotfiles. See [configuration](docs/config.md).
 
 ## Quickstart
 
@@ -94,7 +95,7 @@ Load the adapter from your qutebrowser `config.py`:
 
 ```python
 import sys
-sys.path.insert(0, "~/path/to/reading-assistant/qutebrowser")
+sys.path.insert(0, "~/path/to/reading-assistant/plugins/qutebrowser")
 import docent
 
 docent.setup(
@@ -110,9 +111,19 @@ docent.setup(
 
 Select text with the mouse or in caret mode and press `,de`, or run `:docent explain`. The answer streams into a new tab. Press `d` to close the tab; closing it while the request is still running cancels the request. See [the qutebrowser guide](docs/qutebrowser.md).
 
+## Zathura
+
+Add a binding to `~/.config/zathura/zathurarc`:
+
+```zathurarc
+map <C-e> exec /home/you/path/to/reading-assistant/plugins/zathura/docent-zathura explain $FILE $PAGE
+```
+
+Select text with the mouse and press `<C-e>`. The answer streams into a terminal window. `ask` and `translate` work the same way; `ask` prompts for the question in the terminal. See [the zathura guide](docs/zathura.md).
+
 ## Status
 
-Early development, version 0.1.0. The terminal commands, streaming, profile system, Neovim plugin, and qutebrowser adapter work. Follow-up conversations, image input, clipboard selection, and a generic command provider are not implemented yet.
+Early development, version 0.1.0. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, and zathura adapter work. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
 
 ## Documentation
 
@@ -120,9 +131,11 @@ Early development, version 0.1.0. The terminal commands, streaming, profile syst
 - [Configuration and profiles](docs/config.md)
 - [Neovim plugin](docs/nvim.md)
 - [qutebrowser adapter](docs/qutebrowser.md)
+- [Zathura adapter](docs/zathura.md)
 - [Architecture](docs/architecture.md)
 - [Rust module reference](docs/modules/docent.md)
 - [qutebrowser module reference](docs/modules/qutebrowser.md)
+- [Zathura module reference](docs/modules/zathura.md)
 
 ## License
 

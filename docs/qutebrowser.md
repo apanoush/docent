@@ -10,11 +10,11 @@ The qutebrowser adapter captures the selected text and the surrounding page, cal
 
 ## Install
 
-The adapter is a Python module loaded from your qutebrowser `config.py`. It is not inside a packaged qutebrowser plugin directory, so add the outer `qutebrowser/` directory to `sys.path` and call `docent.setup` with qutebrowser's `config` object:
+The adapter is a Python module loaded from your qutebrowser `config.py`. It is not inside a packaged qutebrowser plugin directory, so add the outer `plugins/qutebrowser/` directory to `sys.path` and call `docent.setup` with qutebrowser's `config` object:
 
 ```python
 import sys
-sys.path.insert(0, "~/path/to/reading-assistant/qutebrowser")
+sys.path.insert(0, "~/path/to/reading-assistant/plugins/qutebrowser")
 import docent
 
 docent.setup(
@@ -28,7 +28,7 @@ docent.setup(
 )
 ```
 
-`sys.path` must point at the `qutebrowser/` directory that contains the `docent` package, not at the repository root. Adding the repository root would make `import qutebrowser` resolve to the adapter directory instead of the installed browser package.
+`sys.path` must point at the `plugins/qutebrowser/` directory that contains the `docent` package, not at the repository root. Adding the repository root would make `import qutebrowser` resolve to the adapter directory instead of the installed browser package.
 
 Keymaps are opt-in. The adapter binds each key in both `normal` and `caret` mode so mouse selections and caret selections work. The commands themselves are available without keymaps.
 

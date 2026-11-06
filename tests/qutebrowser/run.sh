@@ -10,6 +10,6 @@ python3 -m pytest -q \
   --cov-fail-under=80 \
   tests/qutebrowser
 
-ruff check qutebrowser tests/qutebrowser
-ruff format --check qutebrowser tests/qutebrowser
-ty check qutebrowser/docent/request.py qutebrowser/docent/stream.py qutebrowser/docent/profiles.py
+ruff check plugins/qutebrowser tests/qutebrowser
+ruff format --check plugins/qutebrowser tests/qutebrowser
+ty check plugins/qutebrowser/docent/request.py plugins/qutebrowser/docent/stream.py plugins/qutebrowser/docent/profiles.py
