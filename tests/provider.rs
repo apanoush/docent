@@ -53,9 +53,20 @@ target_language = "English"
 
 [history]
 database = "{database}"
+
+[cache]
+enabled = false
 "#
     );
     fs::write(dir.join("config.toml"), config).unwrap();
+}
+
+fn enable_cache(dir: &Path) {
+    let path = dir.join("config.toml");
+    let contents = fs::read_to_string(&path).unwrap();
+    let enabled = contents.replace("[cache]\nenabled = false", "[cache]\nenabled = true");
+    assert!(enabled.contains("[cache]\nenabled = true"));
+    fs::write(path, enabled).unwrap();
 }
 
 fn write_profile(dir: &Path, name: &str, contents: &str) {
@@ -1555,4 +1566,332 @@ fn history_failures_do_not_fail_the_run() {
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(String::from_utf8_lossy(&output.stdout), "still works\n");
     assert!(stderr(&output).contains("could not record run history"));
+}
+
+fn completion_response(text: &str) -> MockResponse {
+    MockResponse::json(
+        200,
+        format!(r#"{{"model":"test-model","choices":[{{"message":{{"content":"{text}"}}}}]}}"#),
+    )
+}
+
+fn cache_rows(dir: &Path) -> i64 {
+    let connection = rusqlite::Connection::open(history_database(dir)).unwrap();
+    connection
+        .query_row("SELECT COUNT(*) FROM cache", [], |row| row.get(0))
+        .unwrap()
+}
+
+const EXPLAIN_INPUT: &str = r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10,"file":"notes.md"}"#;
+
+#[test]
+fn cache_reuses_a_successful_answer() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"model":"test-model","choices":[{"message":{"content":"Hello **world**"}}],"usage":{"prompt_tokens":3,"completion_tokens":4}}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    enable_cache(&dir);
+
+    let first = run(
+        &dir,
+        &["run", "--profile", "explain", "--json"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+
+    let second = run(
+        &dir,
+        &["run", "--profile", "explain", "--json"],
+        EXPLAIN_INPUT,
+        None,
+    );
+    assert!(second.status.success(), "stderr: {}", stderr(&second));
+
+    assert_eq!(server.requests().len(), 1);
+
+    let first_value: Value = serde_json::from_slice(&first.stdout).unwrap();
+    assert!(first_value.get("cached").is_none());
+
+    let second_value: Value = serde_json::from_slice(&second.stdout).unwrap();
+    assert_eq!(second_value["text"], "Hello **world**");
+    assert_eq!(second_value["cached"], true);
+    assert!(second_value.get("usage").is_none());
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let runs: i64 = connection
+        .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
+        .unwrap();
+    let hits: i64 = connection
+        .query_row("SELECT hits FROM cache", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(runs, 1);
+    assert_eq!(hits, 1);
+}
+
+#[test]
+fn no_cache_bypasses_reads_and_writes() {
+    let server = MockServer::start_many(vec![
+        completion_response("first"),
+        completion_response("second"),
+    ]);
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    enable_cache(&dir);
+
+    let first = run(
+        &dir,
+        &["run", "--profile", "explain", "--no-cache"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+    let second = run(
+        &dir,
+        &["run", "--profile", "explain", "--no-cache"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(second.status.success(), "stderr: {}", stderr(&second));
+
+    assert_eq!(server.requests().len(), 2);
+    assert_eq!(String::from_utf8_lossy(&first.stdout), "first\n");
+    assert_eq!(String::from_utf8_lossy(&second.stdout), "second\n");
+    assert_eq!(cache_rows(&dir), 0);
+}
+
+#[test]
+fn refresh_replaces_a_stored_answer() {
+    let server = MockServer::start_many(vec![
+        completion_response("first"),
+        completion_response("second"),
+    ]);
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    enable_cache(&dir);
+
+    let first = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+    let refreshed = run(
+        &dir,
+        &["run", "--profile", "explain", "--refresh"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(refreshed.status.success(), "stderr: {}", stderr(&refreshed));
+    let third = run(&dir, &["run", "--profile", "explain"], EXPLAIN_INPUT, None);
+    assert!(third.status.success(), "stderr: {}", stderr(&third));
+
+    assert_eq!(server.requests().len(), 2);
+    assert_eq!(String::from_utf8_lossy(&first.stdout), "first\n");
+    assert_eq!(String::from_utf8_lossy(&refreshed.stdout), "second\n");
+    assert_eq!(String::from_utf8_lossy(&third.stdout), "second\n");
+}
+
+#[test]
+fn disabled_cache_calls_the_provider_every_time() {
+    let server = MockServer::start_many(vec![
+        completion_response("first"),
+        completion_response("second"),
+    ]);
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let first = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+    let second = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(second.status.success(), "stderr: {}", stderr(&second));
+
+    assert_eq!(server.requests().len(), 2);
+    assert_eq!(cache_rows(&dir), 0);
+}
+
+#[test]
+fn no_history_disables_the_cache() {
+    let server = MockServer::start_many(vec![
+        completion_response("first"),
+        completion_response("second"),
+    ]);
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    enable_cache(&dir);
+
+    for _ in 0..2 {
+        let output = run(
+            &dir,
+            &["run", "--profile", "explain", "--no-history"],
+            EXPLAIN_INPUT,
+            Some("secret"),
+        );
+        assert!(output.status.success(), "stderr: {}", stderr(&output));
+    }
+
+    assert_eq!(server.requests().len(), 2);
+    assert!(!history_database(&dir).exists());
+}
+
+#[test]
+fn errors_are_not_cached() {
+    let server = MockServer::start_many(vec![
+        MockResponse::json(401, r#"{"error":{"message":"bad key"}}"#),
+        completion_response("recovered"),
+    ]);
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    enable_cache(&dir);
+
+    let failed = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert_eq!(failed.status.code(), Some(3));
+    let recovered = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(recovered.status.success(), "stderr: {}", stderr(&recovered));
+
+    assert_eq!(server.requests().len(), 2);
+    assert_eq!(String::from_utf8_lossy(&recovered.stdout), "recovered\n");
+}
+
+#[test]
+fn ndjson_replays_a_cached_answer() {
+    let server = MockServer::start(MockResponse::sse(
+        200,
+        [
+            "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
+            "data: [DONE]\n\n",
+        ]
+        .concat(),
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    enable_cache(&dir);
+
+    let first = run(
+        &dir,
+        &["run", "--profile", "explain", "--stream"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+
+    let second = run(
+        &dir,
+        &["run", "--profile", "explain", "--stream"],
+        EXPLAIN_INPUT,
+        None,
+    );
+    assert!(second.status.success(), "stderr: {}", stderr(&second));
+
+    assert_eq!(server.requests().len(), 1);
+
+    let events: Vec<Value> = String::from_utf8_lossy(&second.stdout)
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["type"], "delta");
+    assert_eq!(events[0]["text"], "Hello world");
+    assert_eq!(events[1]["type"], "done");
+    assert_eq!(events[1]["cached"], true);
+}
+
+#[test]
+fn changing_the_document_invalidates_the_cache() {
+    let server = MockServer::start_many(vec![
+        completion_response("first"),
+        completion_response("second"),
+    ]);
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    enable_cache(&dir);
+
+    let first = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+    let second = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        r#"{"selection":"beta","document":"alpha beta gamma delta","byte_start":6,"byte_end":10,"file":"notes.md"}"#,
+        Some("secret"),
+    );
+    assert!(second.status.success(), "stderr: {}", stderr(&second));
+
+    assert_eq!(server.requests().len(), 2);
+    assert_eq!(String::from_utf8_lossy(&second.stdout), "second\n");
+}
+
+#[test]
+fn changing_a_parameter_invalidates_the_cache() {
+    let server = MockServer::start_many(vec![
+        completion_response("first"),
+        completion_response("second"),
+    ]);
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    enable_cache(&dir);
+
+    let first = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+
+    let path = dir.join("config.toml");
+    let contents = fs::read_to_string(&path).unwrap();
+    fs::write(
+        &path,
+        contents.replace("temperature = 0.2", "temperature = 0.4"),
+    )
+    .unwrap();
+
+    let second = run(
+        &dir,
+        &["run", "--profile", "explain"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(second.status.success(), "stderr: {}", stderr(&second));
+
+    assert_eq!(server.requests().len(), 2);
+    assert_eq!(String::from_utf8_lossy(&second.stdout), "second\n");
 }

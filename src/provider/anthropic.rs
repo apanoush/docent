@@ -106,6 +106,7 @@ pub(crate) fn complete_streaming(
         text,
         model,
         usage: Usage::new(input_tokens, output_tokens),
+        cached: false,
     })
 }
 
@@ -153,6 +154,7 @@ fn parse_response(value: &Value) -> Result<Completion, DocentError> {
             .and_then(Value::as_str)
             .map(str::to_string),
         usage: parse_usage(value),
+        cached: false,
     })
 }
 

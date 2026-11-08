@@ -53,6 +53,14 @@ pub struct Completion {
     /// Token usage, when reported.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<Usage>,
+    /// True when the answer came from the local cache instead of the provider.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub cached: bool,
+}
+
+/// Returns true for the default `false`, so serialized output stays unchanged.
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// One line of the NDJSON stream written by `docent run --stream`.
@@ -80,6 +88,9 @@ pub enum StreamEvent {
         /// Token usage, when reported.
         #[serde(skip_serializing_if = "Option::is_none")]
         usage: Option<Usage>,
+        /// True when the answer came from the local cache.
+        #[serde(default, skip_serializing_if = "is_false")]
+        cached: bool,
     },
     /// The stream failed.
     Error {
@@ -434,6 +445,7 @@ mod tests {
                     input_tokens: Some(3),
                     output_tokens: Some(4),
                 }),
+                cached: false,
             })
             .unwrap(),
             r#"{"type":"done","model":"test-model","usage":{"input_tokens":3,"output_tokens":4}}"#

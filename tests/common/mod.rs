@@ -77,6 +77,11 @@ pub struct MockServer {
 impl MockServer {
     /// Starts a server that answers one request with `response`.
     pub fn start(response: MockResponse) -> Self {
+        Self::start_many(vec![response])
+    }
+
+    /// Starts a server that answers subsequent requests with `responses`.
+    pub fn start_many(responses: Vec<MockResponse>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let addr = listener.local_addr().unwrap();
@@ -86,19 +91,21 @@ impl MockServer {
         let stop = Arc::clone(&shutdown);
 
         let handle = thread::spawn(move || {
-            loop {
-                if stop.load(Ordering::Relaxed) {
-                    return;
-                }
-                match listener.accept() {
-                    Ok((stream, _)) => {
-                        handle_request(stream, &response, &shared);
+            for response in responses {
+                loop {
+                    if stop.load(Ordering::Relaxed) {
                         return;
                     }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(5));
+                    match listener.accept() {
+                        Ok((stream, _)) => {
+                            handle_request(stream, &response, &shared);
+                            break;
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(_) => return,
                     }
-                    Err(_) => return,
                 }
             }
         });

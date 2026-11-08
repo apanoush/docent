@@ -89,7 +89,12 @@ pub(crate) fn complete_streaming(
         return Err(DocentError::EmptyResponse);
     }
 
-    Ok(Completion { text, model, usage })
+    Ok(Completion {
+        text,
+        model,
+        usage,
+        cached: false,
+    })
 }
 
 fn endpoint(config: &Config) -> String {
@@ -139,6 +144,7 @@ fn parse_response(value: &Value) -> Result<Completion, DocentError> {
             .and_then(Value::as_str)
             .map(str::to_string),
         usage: parse_usage(value),
+        cached: false,
     })
 }
 

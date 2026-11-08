@@ -8,6 +8,7 @@ use std::time::Instant;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 
+use crate::cache;
 use crate::config::{self, ContextMode, InitReport};
 use crate::context;
 use crate::error::DocentError;
@@ -63,6 +64,14 @@ pub struct Cli {
     /// Do not record this run in the history database.
     #[arg(long, global = true)]
     pub no_history: bool,
+
+    /// Do not read or write the answer cache for this run.
+    #[arg(long, global = true, conflicts_with = "refresh")]
+    pub no_cache: bool,
+
+    /// Ignore a cached answer and replace it with a fresh provider response.
+    #[arg(long, global = true, conflicts_with = "no_cache")]
+    pub refresh: bool,
 
     /// Command to run. With no command, prints a short getting-started message.
     #[command(subcommand)]
@@ -308,6 +317,8 @@ pub fn run() -> Result<(), DocentError> {
         config_dir: explicit_config_dir,
         source,
         no_history,
+        no_cache,
+        refresh,
         command,
     } = Cli::parse();
     let Some(command) = command else {
@@ -316,6 +327,13 @@ pub fn run() -> Result<(), DocentError> {
     };
     let config_dir = config::config_dir_from_env(explicit_config_dir)?;
     let record_history = !no_history;
+    let cache_mode = if no_cache {
+        cache::Mode::Bypass
+    } else if refresh {
+        cache::Mode::Refresh
+    } else {
+        cache::Mode::Use
+    };
 
     match command {
         Command::Init { force } => {
@@ -331,10 +349,19 @@ pub fn run() -> Result<(), DocentError> {
                 args,
                 &source,
                 record_history,
+                cache_mode,
             )?;
         }
         Command::Ask(args) => {
-            run_human(&config_dir, "ask", "ask", args, &source, record_history)?;
+            run_human(
+                &config_dir,
+                "ask",
+                "ask",
+                args,
+                &source,
+                record_history,
+                cache_mode,
+            )?;
         }
         Command::Translate(args) => {
             run_human(
@@ -344,6 +371,7 @@ pub fn run() -> Result<(), DocentError> {
                 args,
                 &source,
                 record_history,
+                cache_mode,
             )?;
         }
         Command::Summarize(args) => {
@@ -354,10 +382,13 @@ pub fn run() -> Result<(), DocentError> {
                 args,
                 &source,
                 record_history,
+                cache_mode,
             )?;
         }
-        Command::Do(args) => run_do(&config_dir, args, &source, record_history)?,
-        Command::Run(args) => run_request(&config_dir, args, &source, record_history)?,
+        Command::Do(args) => run_do(&config_dir, args, &source, record_history, cache_mode)?,
+        Command::Run(args) => {
+            run_request(&config_dir, args, &source, record_history, cache_mode)?;
+        }
         Command::ConfigPath => println!("{}", config_dir.display()),
     }
 
@@ -386,6 +417,7 @@ fn run_human(
     args: HumanArgs,
     source: &str,
     record_history: bool,
+    cache_mode: cache::Mode,
 ) -> Result<(), DocentError> {
     let HumanArgs {
         file,
@@ -428,6 +460,7 @@ fn run_human(
         profile_name,
         source,
         record_history,
+        cache_mode,
         output,
     )
 }
@@ -437,6 +470,7 @@ fn run_do(
     args: DoArgs,
     source: &str,
     record_history: bool,
+    cache_mode: cache::Mode,
 ) -> Result<(), DocentError> {
     let DoArgs {
         profile,
@@ -455,6 +489,7 @@ fn run_do(
         },
         source,
         record_history,
+        cache_mode,
     )
 }
 
@@ -585,6 +620,7 @@ fn run_request(
     args: RunArgs,
     source: &str,
     record_history: bool,
+    cache_mode: cache::Mode,
 ) -> Result<(), DocentError> {
     let RunArgs {
         profile: profile_name,
@@ -644,6 +680,7 @@ fn run_request(
         &profile_name,
         source,
         record_history,
+        cache_mode,
         output,
     )
 }
@@ -659,6 +696,7 @@ fn execute(
     profile_name: &str,
     source: &str,
     record_history: bool,
+    cache_mode: cache::Mode,
     output: OutputMode,
 ) -> Result<(), DocentError> {
     let context = context::build(
@@ -693,22 +731,58 @@ fn execute(
     let created_at_ms = history::now_ms();
     let started = Instant::now();
     let mut streamed = String::new();
+    let cache_state =
+        cache::State::resolve(config, record_history, cache_mode, settings, &rendered);
 
     let outcome = match &output {
         OutputMode::PrintPrompt => unreachable!("print prompt returns before the provider call"),
-        OutputMode::PlainStreaming => stream_plain(config, settings, &rendered, &mut streamed),
-        OutputMode::PlainBuffered => provider::complete(config, settings, &rendered),
-        OutputMode::Json => provider::complete(config, settings, &rendered),
-        OutputMode::Ndjson => stream_ndjson(config, settings, &rendered, &mut streamed, false),
-        OutputMode::NdjsonHtml => stream_ndjson(config, settings, &rendered, &mut streamed, true),
-        OutputMode::Browser(options) => {
-            stream_browser(config, settings, &rendered, options, &mut streamed)
+        OutputMode::PlainStreaming => stream_plain(
+            config,
+            config_dir,
+            settings,
+            &rendered,
+            &cache_state,
+            &mut streamed,
+        ),
+        OutputMode::PlainBuffered => {
+            obtain_buffered(config, config_dir, settings, &rendered, &cache_state)
         }
+        OutputMode::Json => obtain_buffered(config, config_dir, settings, &rendered, &cache_state),
+        OutputMode::Ndjson => stream_ndjson(
+            config,
+            config_dir,
+            settings,
+            &rendered,
+            &cache_state,
+            &mut streamed,
+            false,
+        ),
+        OutputMode::NdjsonHtml => stream_ndjson(
+            config,
+            config_dir,
+            settings,
+            &rendered,
+            &cache_state,
+            &mut streamed,
+            true,
+        ),
+        OutputMode::Browser(options) => stream_browser(
+            config,
+            config_dir,
+            settings,
+            &rendered,
+            &cache_state,
+            options,
+            &mut streamed,
+        ),
     };
 
     let duration_ms = started.elapsed().as_millis().min(i64::MAX as u128) as i64;
+    let from_cache = matches!(&outcome, Ok(completion) if completion.cached);
 
-    if record_history {
+    // A cache hit is not a provider call, so `runs` stays a record of provider
+    // calls. The cache table counts uses instead.
+    if record_history && !from_cache {
         let run = build_history_run(
             config,
             &request,
@@ -744,20 +818,117 @@ fn execute(
 }
 
 /// Stream one answer into a qutebrowser page.
+#[allow(clippy::too_many_arguments)]
 fn stream_browser(
     config: &config::Config,
+    config_dir: &Path,
     settings: &EffectiveSettings,
     rendered: &prompt::Prompt,
+    cache_state: &cache::State,
     options: &ViewerOptions,
     streamed: &mut String,
 ) -> Result<Completion, DocentError> {
     let mut viewer = Viewer::open(options)?;
-    let result = provider::complete_streaming(config, settings, rendered, &mut |delta| {
-        streamed.push_str(delta);
-        viewer.send_delta(delta)
-    });
+    let result = obtain_streaming(
+        config,
+        config_dir,
+        settings,
+        rendered,
+        cache_state,
+        &mut |delta| {
+            streamed.push_str(delta);
+            viewer.send_delta(delta)
+        },
+    );
     viewer.finish(&result);
     result
+}
+
+/// Returns a stored answer when one is available.
+fn cached_answer(
+    config: &config::Config,
+    config_dir: &Path,
+    cache_state: &cache::State,
+) -> Option<Completion> {
+    if !cache_state.read {
+        return None;
+    }
+    let key = cache_state.key.as_ref()?;
+
+    match cache::lookup(config, config_dir, key) {
+        Ok(Some(answer)) => Some(Completion {
+            text: answer.output,
+            model: answer.model,
+            usage: None,
+            cached: true,
+        }),
+        Ok(None) => None,
+        Err(error) => {
+            log::warn!("could not read the answer cache: {error}");
+            None
+        }
+    }
+}
+
+/// Stores a successful answer for later runs.
+fn remember(
+    config: &config::Config,
+    config_dir: &Path,
+    cache_state: &cache::State,
+    answer: &Completion,
+) {
+    if !cache_state.write {
+        return;
+    }
+    let Some(key) = cache_state.key.as_ref() else {
+        return;
+    };
+
+    if let Err(error) = cache::store(
+        config,
+        config_dir,
+        key,
+        answer.model.as_deref(),
+        &answer.text,
+    ) {
+        log::warn!("could not store the answer in the cache: {error}");
+    }
+}
+
+/// Calls the provider without streaming, reusing a cached answer when possible.
+fn obtain_buffered(
+    config: &config::Config,
+    config_dir: &Path,
+    settings: &EffectiveSettings,
+    rendered: &prompt::Prompt,
+    cache_state: &cache::State,
+) -> Result<Completion, DocentError> {
+    if let Some(answer) = cached_answer(config, config_dir, cache_state) {
+        return Ok(answer);
+    }
+
+    let completion = provider::complete(config, settings, rendered)?;
+    remember(config, config_dir, cache_state, &completion);
+    Ok(completion)
+}
+
+/// Calls the provider with streaming, replaying a cached answer as one delta.
+fn obtain_streaming(
+    config: &config::Config,
+    config_dir: &Path,
+    settings: &EffectiveSettings,
+    rendered: &prompt::Prompt,
+    cache_state: &cache::State,
+    on_delta: &mut dyn FnMut(&str) -> Result<(), DocentError>,
+) -> Result<Completion, DocentError> {
+    if let Some(answer) = cached_answer(config, config_dir, cache_state) {
+        on_delta(&answer.text)?;
+        return Ok(answer);
+    }
+
+    let completion = provider::complete_streaming(config, settings, rendered, on_delta)?;
+    remember(config, config_dir, cache_state, &completion);
+    Ok(completion)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -844,10 +1015,13 @@ fn completion_json(completion: &Completion) -> Result<String, DocentError> {
     Ok(serde_json::to_string(completion)?)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn stream_plain(
     config: &config::Config,
+    config_dir: &Path,
     settings: &EffectiveSettings,
     rendered: &prompt::Prompt,
+    cache_state: &cache::State,
     streamed: &mut String,
 ) -> Result<Completion, DocentError> {
     let stdout = std::io::stdout();
@@ -855,19 +1029,26 @@ fn stream_plain(
     let mut wrote = false;
     let mut ends_with_newline = true;
 
-    let result = provider::complete_streaming(config, settings, rendered, &mut |delta| {
-        if delta.is_empty() {
-            return Ok(());
-        }
-        streamed.push_str(delta);
-        writer
-            .write_all(delta.as_bytes())
-            .map_err(DocentError::WriteStdout)?;
-        writer.flush().map_err(DocentError::WriteStdout)?;
-        wrote = true;
-        ends_with_newline = delta.ends_with('\n');
-        Ok(())
-    });
+    let result = obtain_streaming(
+        config,
+        config_dir,
+        settings,
+        rendered,
+        cache_state,
+        &mut |delta| {
+            if delta.is_empty() {
+                return Ok(());
+            }
+            streamed.push_str(delta);
+            writer
+                .write_all(delta.as_bytes())
+                .map_err(DocentError::WriteStdout)?;
+            writer.flush().map_err(DocentError::WriteStdout)?;
+            wrote = true;
+            ends_with_newline = delta.ends_with('\n');
+            Ok(())
+        },
+    );
 
     match result {
         Ok(completion) => {
@@ -892,25 +1073,35 @@ fn stream_plain(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn stream_ndjson(
     config: &config::Config,
+    config_dir: &Path,
     settings: &EffectiveSettings,
     rendered: &prompt::Prompt,
+    cache_state: &cache::State,
     streamed: &mut String,
     render_html: bool,
 ) -> Result<Completion, DocentError> {
     let stdout = std::io::stdout();
     let mut writer = stdout.lock();
 
-    let result = provider::complete_streaming(config, settings, rendered, &mut |delta| {
-        streamed.push_str(delta);
-        write_stream_event(
-            &mut writer,
-            &provider::StreamEvent::Delta {
-                text: delta.to_string(),
-            },
-        )
-    });
+    let result = obtain_streaming(
+        config,
+        config_dir,
+        settings,
+        rendered,
+        cache_state,
+        &mut |delta| {
+            streamed.push_str(delta);
+            write_stream_event(
+                &mut writer,
+                &provider::StreamEvent::Delta {
+                    text: delta.to_string(),
+                },
+            )
+        },
+    );
 
     match result {
         Ok(completion) => {
@@ -927,6 +1118,7 @@ fn stream_ndjson(
                 &provider::StreamEvent::Done {
                     model: completion.model.clone(),
                     usage: completion.usage.clone(),
+                    cached: completion.cached,
                 },
             )?;
             Ok(completion)

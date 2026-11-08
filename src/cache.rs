@@ -55,6 +55,58 @@ pub fn enabled(config: &Config) -> bool {
     config.cache.enabled && config.history.enabled
 }
 
+/// How one run uses the cache.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// Read a stored answer and write a fresh one.
+    Use,
+    /// Ignore a stored answer and replace it.
+    Refresh,
+    /// Neither read nor write.
+    Bypass,
+}
+
+/// Resolved cache use for one run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct State {
+    /// Whether a stored answer may be reused.
+    pub read: bool,
+    /// Whether a fresh answer may be stored.
+    pub write: bool,
+    /// Cache key, present only when the cache is active.
+    pub key: Option<[u8; 32]>,
+}
+
+impl State {
+    /// Resolves the cache state from config, the history switch, and the flags.
+    pub fn resolve(
+        config: &Config,
+        record_history: bool,
+        mode: Mode,
+        settings: &EffectiveSettings,
+        prompt: &Prompt,
+    ) -> Self {
+        if !record_history || !enabled(config) || mode == Mode::Bypass {
+            return Self::disabled();
+        }
+
+        Self {
+            read: mode == Mode::Use,
+            write: true,
+            key: Some(key(config, settings, prompt)),
+        }
+    }
+
+    /// A state that neither reads nor writes.
+    pub fn disabled() -> Self {
+        Self {
+            read: false,
+            write: false,
+            key: None,
+        }
+    }
+}
+
 /// Looks up a stored answer and records the use.
 pub fn lookup(
     config: &Config,
@@ -390,5 +442,60 @@ mod tests {
         store(&config, directory.path(), &cache_key, None, "answer").unwrap();
 
         assert_eq!(lookup(&config, directory.path(), &cache_key).unwrap(), None);
+    }
+
+    #[test]
+    fn state_reads_and_writes_by_default() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = config(directory.path());
+
+        let state = State::resolve(&config, true, Mode::Use, &settings(), &prompt());
+
+        assert!(state.read);
+        assert!(state.write);
+        assert_eq!(state.key, Some(key(&config, &settings(), &prompt())));
+    }
+
+    #[test]
+    fn refresh_skips_reads_but_still_writes() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = config(directory.path());
+
+        let state = State::resolve(&config, true, Mode::Refresh, &settings(), &prompt());
+
+        assert!(!state.read);
+        assert!(state.write);
+        assert!(state.key.is_some());
+    }
+
+    #[test]
+    fn bypass_touches_nothing() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = config(directory.path());
+
+        let state = State::resolve(&config, true, Mode::Bypass, &settings(), &prompt());
+
+        assert_eq!(state, State::disabled());
+    }
+
+    #[test]
+    fn no_history_disables_the_cache_state() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = config(directory.path());
+
+        let state = State::resolve(&config, false, Mode::Use, &settings(), &prompt());
+
+        assert_eq!(state, State::disabled());
+    }
+
+    #[test]
+    fn a_disabled_cache_config_disables_the_state() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = config(directory.path());
+        config.cache.enabled = false;
+
+        let state = State::resolve(&config, true, Mode::Refresh, &settings(), &prompt());
+
+        assert_eq!(state, State::disabled());
     }
 }
