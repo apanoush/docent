@@ -21,6 +21,7 @@ Add bindings to `~/.config/zathura/zathurarc`:
 map <C-e> exec "/home/you/path/to/reading-assistant/plugins/zathura/docent-zathura explain $FILE $PAGE"
 map <C-a> exec "/home/you/path/to/reading-assistant/plugins/zathura/docent-zathura ask $FILE $PAGE"
 map <C-t> exec "/home/you/path/to/reading-assistant/plugins/zathura/docent-zathura translate $FILE $PAGE"
+map <C-s> exec "/home/you/path/to/reading-assistant/plugins/zathura/docent-zathura summarize $FILE $PAGE"
 ```
 
 Quote the whole `exec` command. Zathura's `map` command stores only one argument after the shortcut function, so an unquoted command drops the subcommand and the `$FILE` and `$PAGE` arguments.
@@ -50,6 +51,8 @@ Select text with the mouse, then press the key. Zathura has no keyboard text sel
 
 The adapter reads both PRIMARY and CLIPBOARD and uses the text that appears in the extracted page, so it works with either `selection-clipboard` value. Pass `--primary` or `--clipboard` to force a target.
 
+`summarize` is the exception to the mouse-first rule: it needs no selection. Without a matching clipboard selection it summarizes the extracted page window, and with one it summarizes that passage.
+
 ## Commands
 
 | Command | Action |
@@ -57,6 +60,7 @@ The adapter reads both PRIMARY and CLIPBOARD and uses the text that appears in t
 | `docent-zathura explain FILE PAGE` | Explain the selection. |
 | `docent-zathura ask FILE PAGE` | Ask a question. The terminal prompts for the question if `--question` is omitted. |
 | `docent-zathura translate FILE PAGE` | Translate the selection. |
+| `docent-zathura summarize FILE PAGE` | Summarize the page window, or the selection when the clipboard matches it. |
 | `docent-zathura do PROFILE FILE PAGE` | Run a custom profile. |
 
 Options:

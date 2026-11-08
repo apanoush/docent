@@ -4,11 +4,22 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["RequestError", "build_request"]
+__all__ = ["RequestError", "build_document_request", "build_request"]
 
 
 class RequestError(Exception):
     """The captured selection cannot form a request."""
+
+
+def build_document_request(document: str, file_label: str) -> dict[str, Any]:
+    """Return a request with no selection, for whole-document profiles."""
+    if not document.strip():
+        raise RequestError("the extracted page is empty")
+
+    return {
+        "document": document,
+        "file": file_label,
+    }
 
 
 def build_request(

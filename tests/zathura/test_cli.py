@@ -150,6 +150,48 @@ def test_capture_runs_a_custom_profile(pdf: Path, capture: dict[str, Any]) -> No
     assert payload["profile"] == "custom"
 
 
+def test_parser_accepts_summarize() -> None:
+    args = cli.build_parser().parse_args(["summarize", "paper.pdf", "2"])
+
+    assert args.command == "summarize"
+    assert not hasattr(args, "question")
+
+
+def test_capture_summarizes_the_page_without_a_selection(
+    pdf: Path, capture: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_selection(document: str, target: str | None) -> str:
+        raise ClipboardError("no text selected; select text with the mouse first")
+
+    monkeypatch.setattr(cli, "read_best_selection", no_selection)
+
+    code = cli.main(
+        ["summarize", str(pdf), "2", "--terminal", "foot", "--docent", "/bin/docent"]
+    )
+
+    assert code == 0
+    payload = _payload(capture)
+    assert payload["profile"] == "summarize"
+    assert payload["request"] == {
+        "document": "alpha beta",
+        "file": "paper.pdf (page 2)",
+    }
+    assert payload["prompt_for_question"] is False
+
+
+def test_capture_summarizes_a_matching_selection(
+    pdf: Path, capture: dict[str, Any]
+) -> None:
+    code = cli.main(["summarize", str(pdf), "2", "--terminal", "foot"])
+
+    assert code == 0
+    payload = _payload(capture)
+    assert payload["profile"] == "summarize"
+    assert payload["request"]["selection"] == "alpha"
+    assert payload["request"]["byte_start"] == 0
+    assert payload["request"]["byte_end"] == 5
+
+
 def test_capture_launches_nvim_viewer(
     pdf: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

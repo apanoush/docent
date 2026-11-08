@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from docent_zathura.request import RequestError, build_request
+from docent_zathura.request import RequestError, build_document_request, build_request
 
 
 def test_build_request_adds_exact_byte_offsets() -> None:
@@ -55,3 +55,17 @@ def test_build_request_ignores_blank_question() -> None:
     request = build_request("alpha", "alpha", "x", question="  ")
 
     assert "question" not in request
+
+
+def test_build_document_request_has_no_selection() -> None:
+    request = build_document_request("alpha beta", "paper.pdf (page 2)")
+
+    assert request == {
+        "document": "alpha beta",
+        "file": "paper.pdf (page 2)",
+    }
+
+
+def test_build_document_request_rejects_an_empty_page() -> None:
+    with pytest.raises(RequestError, match="page is empty"):
+        build_document_request("  \n", "x")

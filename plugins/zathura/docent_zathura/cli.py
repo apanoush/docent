@@ -17,7 +17,7 @@ from .pdf import PDFError, extract_text, page_window
 from .qutebrowser_view import QutebrowserViewError
 from .qutebrowser_view import serve as serve_qutebrowser
 from .render import RenderError, run_render
-from .request import RequestError, build_request
+from .request import RequestError, build_document_request, build_request
 
 __all__ = ["build_parser", "find_docent", "main"]
 
@@ -58,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="target_language",
         help="target language; defaults to the profile setting",
     )
+
+    summarize = subcommands.add_parser(
+        "summarize",
+        help="summarize the page, or the selection when the clipboard matches it",
+    )
+    _add_capture_args(summarize)
 
     custom = subcommands.add_parser("do", help="run a custom profile")
     custom.add_argument("profile", help="profile name")
@@ -200,11 +206,22 @@ def _capture(args: argparse.Namespace) -> int:
         target = "clipboard"
     elif args.primary:
         target = "primary"
-    selection = read_best_selection(document, target)
 
     label = f"{path.name} (page {args.page})"
     question = getattr(args, "question", None)
-    request = build_request(selection, document, label, question)
+    if args.command == "summarize":
+        # A selection is optional: use the clipboard when it matches the page,
+        # otherwise summarize the extracted page window.
+        try:
+            request = build_request(
+                read_best_selection(document, target), document, label
+            )
+        except ClipboardError:
+            request = build_document_request(document, label)
+    else:
+        request = build_request(
+            read_best_selection(document, target), document, label, question
+        )
     docent_cmd = find_docent(args.docent)
 
     payload = {
