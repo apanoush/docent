@@ -309,6 +309,7 @@ browser.menus.onClicked.addListener((info, tab) => {
 });
 
 refreshMenus([]).catch(() => {});
+loadProfiles().catch(() => {});
 
 async function handleMessage(message) {
   if (!message || typeof message !== "object") {
@@ -408,6 +409,7 @@ browser.storage.onChanged.addListener(() => {
   settingsCache = null;
   profilesCache = null;
   cssCache = null;
+  loadProfiles().catch(() => {});
 });
 
 browser.tabs.onRemoved.addListener((tabId) => {
