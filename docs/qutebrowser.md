@@ -160,6 +160,7 @@ A profile that declares `requires = ["question"]` opens a text prompt before the
 - `docent: no profiles found`: run `docent init`, then `:docent-refresh`.
 - `docent: select some text first`: select text with the mouse or enter caret mode before running the command.
 - `docent: could not read this page`: the page is not ready, JavaScript is disabled, or the tab changed while the capture was running. Retry after the page loads.
+- `unexpected argument '--html'`: the installed `docent` predates the shared renderer. Reinstall or update the CLI.
 - No answer appears: check that the request works in a terminal with `docent run --profile explain --print-prompt`, then check the provider settings in `config.toml`.
 - Changes to the adapter do not appear after `:config-source`: Python caches imported modules. Restart qutebrowser.
 

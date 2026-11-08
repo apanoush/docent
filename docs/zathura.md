@@ -119,6 +119,7 @@ The terminal viewer and Neovim viewer use a separate terminal window, not a zath
 - `could not load the docent Neovim plugin`: check that `plugins/nvim/` exists in this checkout and that Neovim is 0.10 or newer.
 - `qutebrowser not found`: install qutebrowser or pass `--qutebrowser` with an absolute path.
 - `qutebrowser did not open the answer page`: qutebrowser did not connect to the local server within the timeout. Check the `--qutebrowser-target` value and the qutebrowser process.
+- `unexpected argument '--html'`: the installed `docent` predates the shared renderer. Reinstall or update the CLI.
 - `could not start docent`: use an absolute `--docent` path or fix `PATH` for the process that starts zathura.
 - `missing API key`: export the variable named by `api_key_env` in the session that starts zathura.
 - The key does nothing: `exec` is disabled in `zathura-sandbox`, and a binding may not apply in every zathura mode. Check `zathura --version` and the `map` mode.
