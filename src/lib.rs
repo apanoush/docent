@@ -1,7 +1,8 @@
 //! Docent library: configuration, profiles, and provider clients.
 //!
-//! The binary lives in `main.rs`. This crate exposes the pieces needed for
-//! testing and for the JSON contract used by the Neovim plugin.
+//! The CLI lives in `main.rs` and the Firefox bridge in
+//! `bin/docent-native-host.rs`. This crate exposes the pieces needed for
+//! testing and for the JSON contracts used by the adapters.
 
 pub mod cli;
 pub mod config;
@@ -9,6 +10,7 @@ pub mod context;
 pub mod defaults;
 pub mod error;
 pub mod history;
+pub mod native_host;
 pub mod profile;
 pub mod prompt;
 pub mod provider;

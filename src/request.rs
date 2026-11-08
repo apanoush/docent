@@ -1,28 +1,28 @@
 //! JSON request received on stdin from the Neovim plugin.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// A request to explain, ask about, or translate a selected passage.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     /// Selected passage. May be empty for whole-document profiles.
     #[serde(default)]
     pub selection: String,
     /// Full document used as context.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document: Option<String>,
     /// Byte offset where the selection starts in `document`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub byte_start: Option<usize>,
     /// Byte offset where the selection ends in `document`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub byte_end: Option<usize>,
     /// File name shown to the model.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
     /// Follow-up question, when the profile needs one.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub question: Option<String>,
 }
 
