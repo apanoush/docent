@@ -218,7 +218,7 @@ pub struct ViewerArgs {
     pub qutebrowser_target: BrowserTarget,
 
     /// CSS file appended after the answer styles.
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, visible_alias = "qutebrowser-css", value_name = "PATH")]
     pub answer_css: Option<PathBuf>,
 }
 

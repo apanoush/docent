@@ -33,7 +33,7 @@ printf '%s' '{"selection":"transformer","document":"A transformer maps a sequenc
 | `--viewer {terminal,qutebrowser}` | `terminal` | Show the answer in the terminal or in qutebrowser. |
 | `--qutebrowser PATH` | `qutebrowser` | Qutebrowser executable or command name. |
 | `--qutebrowser-target TARGET` | `window` | `auto`, `tab`, `tab-bg`, `tab-silent`, `tab-bg-silent`, `window`, or `private-window`. |
-| `--answer-css PATH` | none | Extra CSS appended after the built-in styles and `<config>/answer.css`. |
+| `--answer-css PATH` | none | Extra CSS appended after the built-in styles and `<config>/answer.css`. `--qutebrowser-css` is an alias. |
 | `--header TEXT` | request file | `docent run` only; text shown after the profile in the page header. |
 
 `--qutebrowser-target` is passed to qutebrowser as `--target=TARGET`. Qutebrowser applies that value only when an instance is already running; otherwise it opens a window. Use `--qutebrowser-target tab` to reuse a running qutebrowser window, or `window` for a separate answer window.
