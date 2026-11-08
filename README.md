@@ -91,6 +91,8 @@ Inspect the exact prompt without calling the provider with `--print-prompt`, or 
 
 Every provider run is recorded in a local SQLite database by default, including the prompt, answer, model, parameters, token usage, and source. The database lives in the platform data directory, for example `~/.local/share/docent/docent.db` on Linux. Set `history.database` to move it, `history.enabled = false` to disable it, or pass `--no-history` for one run. See [run history](docs/history.md).
 
+Docent also caches answers in the same database. A repeated request with the same rendered prompt, provider, model, temperature, and token limit returns the stored answer instead of calling the provider, even without an API key. Pass `--no-cache` to skip both reading and writing the cache, or `--refresh` to ignore the stored answer and replace it. Disabling history disables the cache too.
+
 ## Neovim
 
 Add the plugin directory to your configuration with lazy.nvim:

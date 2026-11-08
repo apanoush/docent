@@ -60,6 +60,10 @@ target_language = "English"
 [history]
 enabled = true
 # database = "~/docent.db"
+
+[cache]
+enabled = true
+max_entries = 1000
 ```
 
 ### `[api]`
@@ -178,6 +182,20 @@ The database contains the full rendered prompt, including document context, the 
 History is fail-open: when the database cannot be opened or written, Docent logs a warning and still returns the answer. Disable recording globally with `enabled = false`, or skip one run with the global `--no-history` flag. The global `--source NAME` flag records where a request came from; it defaults to `cli`, and the shipped adapters pass `nvim`, `qutebrowser`, `zathura`, or `firefox`.
 
 See [run history](history.md) for the schema and example queries.
+
+### `[cache]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `enabled` | boolean | `true` | Reuse stored answers for identical requests. |
+| `max_entries` | integer | `1000` | Maximum number of cached answers. Least recently used entries are evicted beyond this. Must be greater than zero. |
+
+The cache reuses an answer when the rendered system and user messages, the provider, the base URL, the model, the temperature, and the maximum output token count all match. Because the rendered prompt contains the selection, the context window, the question, and the languages, changing any of those produces a miss. Byte offsets, the command name, the profile name, the source, and the output mode are not part of the key, so a stored answer can serve a different adapter or output mode.
+
+Hits are fast and work without an API key, which makes previously seen content available offline. The first stored answer wins at a nonzero temperature; use `--refresh` to ask again and replace it, or `--no-cache` to skip both reading and writing. The two flags conflict with each other.
+
+The cache lives in the same SQLite database as history and is disabled when history is disabled: with `history.enabled = false` or `--no-history`, Docent neither reads nor writes cached answers. A cache hit is not recorded as a history row, but it increments the entry's `hits` counter and updates `last_used_at`. See [run history](history.md) for the table and queries.
+
 
 ## Profiles
 

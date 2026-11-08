@@ -18,7 +18,8 @@ The crate has two binary targets and a library target. `src/main.rs` is the CLI:
 | `provider::openai` | OpenAI Chat Completions request and response handling. |
 | `provider::anthropic` | Anthropic Messages request and response handling. |
 | `provider::stream` | Incremental SSE decoding. |
-| `history` | SQLite run history, schema creation, path resolution, and inserts. |
+| `history` | SQLite run history, schema creation and migration, path resolution, and inserts. |
+| `cache` | Exact-match answer cache keyed on the rendered prompt: key construction, lookup, store, hit counters, and eviction. |
 | `markdown` | Safe Markdown-to-HTML rendering shared by the CLI viewer and the `html` stream event. |
 | `viewer` | Qutebrowser and Firefox answer viewer: page shell, loopback SSE server, token, launch, and cancellation. |
 | `native_host` | Firefox native messaging framing, request validation, process spawning, line forwarding, `exec`, and `css`. |
@@ -37,13 +38,14 @@ cli::run
   cli::execute
     context::build -> context::ContextResult
     prompt::render -> prompt::Prompt
-    provider::complete or provider::complete_streaming
+    cache::lookup or provider::complete/complete_streaming
+    cache::store -> SQLite
     history::write -> SQLite
 ```
 
 `docent run` replaces `source::resolve_request` with `cli::read_request`, which parses the JSON document from stdin. Both paths converge on `cli::execute`.
 
-`cli::execute` records one `history::NewRun` after the provider call returns or fails, unless `--no-history` or `history.enabled = false` skips it. Streamed output is accumulated so a failed stream still records the partial answer. A history write error is logged and ignored.
+`cli::execute` resolves a cache key after rendering and, unless the run used `--no-cache` or the cache is disabled, reuses a stored answer or stores the fresh one. A cache hit is delivered through the same delta callback as a provider stream and is not written to `runs`. Every provider call records one `history::NewRun` after it returns or fails, unless `--no-history` or `history.enabled = false` skips it. Streamed output is accumulated so a failed stream still records the partial answer. History and cache errors are logged and ignored.
 
 `--print-prompt` stops after `prompt::render` and serializes the system and user messages. Tests use this path to verify context and precedence without network access.
 
@@ -88,6 +90,14 @@ pub fn complete_streaming(config: &Config, settings: &EffectiveSettings, prompt:
 pub fn database_path(config_dir: &Path, history: &HistoryConfig) -> Result<PathBuf, DocentError>;
 pub fn write(config: &Config, config_dir: &Path, run: &NewRun) -> Result<(), DocentError>;
 
+// cache
+pub fn key(config: &Config, settings: &EffectiveSettings, prompt: &Prompt) -> [u8; 32];
+pub fn lookup(config: &Config, config_dir: &Path, key: &[u8; 32]) -> Result<Option<CachedAnswer>, DocentError>;
+pub fn store(config: &Config, config_dir: &Path, key: &[u8; 32], model: Option<&str>, output: &str) -> Result<(), DocentError>;
+impl State {
+    pub fn resolve(config: &Config, record_history: bool, mode: Mode, settings: &EffectiveSettings, prompt: &Prompt) -> Self;
+}
+
 // native_host
 pub fn read_message(reader: &mut impl Read) -> io::Result<Option<Vec<u8>>>;
 pub fn write_message(writer: &mut impl Write, payload: &[u8]) -> io::Result<()>;
@@ -112,7 +122,7 @@ Profile validation covers TOML fields, numeric ranges, placeholder syntax, requi
 
 `source::resolve_request` reads a file or stdin, applies the profile's `requires` list, and prompts through the `Prompter` trait when stdin is a terminal. `TerminalPrompter` writes labels to stderr and reads one line from stdin. `NoPrompter` is used for piped input, so a document on stdin is never consumed as prompt answers.
 
-`cli::execute` selects one of seven output modes: plain streaming for terminal commands, plain buffered for `--no-stream`, JSON for `docent run --json`, NDJSON for `docent run --stream`, NDJSON with a rendered `html` event for `docent run --stream --html`, prompt JSON for `--print-prompt`, and the qutebrowser or Firefox viewer for `--viewer`. Plain streaming writes each provider fragment directly and flushes it, then adds a final newline if needed. The browser viewer runs the same provider stream, sends deltas over Server-Sent Events, and renders the finished answer with `markdown::render_answer`. When the context was truncated and the request has no resolvable selection, `cli::execute` logs a warning before rendering, so a whole-document run never silently covers only part of the document.
+`cli::execute` selects one of seven output modes: plain streaming for terminal commands, plain buffered for `--no-stream`, JSON for `docent run --json`, NDJSON for `docent run --stream`, NDJSON with a rendered `html` event for `docent run --stream --html`, prompt JSON for `--print-prompt`, and the qutebrowser or Firefox viewer for `--viewer`. Before dispatch it checks the answer cache. A hit is replayed as one delta through the same callback, so all streaming modes and the browser viewer work unchanged, and buffered modes skip the provider call entirely. Plain streaming writes each fragment directly and flushes it, then adds a final newline if needed. The browser viewer runs the same provider stream, sends deltas over Server-Sent Events, and renders the finished answer with `markdown::render_answer`. When the context was truncated and the request has no resolvable selection, `cli::execute` logs a warning before rendering, so a whole-document run never silently covers only part of the document.
 
 `markdown::render` enables tables and strikethrough, converts raw HTML to escaped text, drops images to alt text, restricts links to `http`, `https`, and `mailto`, wraps tables in `.table-wrap`, and adds `target="_blank"` to links. `viewer::Viewer` binds `127.0.0.1:0`, serves a tokenized page and event stream, waits 30 seconds for qutebrowser or Firefox to connect, and treats a closed page as cancellation. `DocentError::ViewerClosed` maps to a successful exit and a history status of `cancelled`.
 
@@ -126,9 +136,9 @@ Streaming clients parse SSE through `provider::stream::stream_sse`. The decoder 
 
 Rust tests are split into four layers:
 
-- Unit tests in each module for parsing, validation, windowing, rendering, request bodies, response parsing, SSE decoding, settings precedence, line ranges, prompt sequencing, terminal request construction, Markdown sanitization, and viewer page/server behavior.
+- Unit tests in each module for parsing, validation, windowing, rendering, request bodies, response parsing, SSE decoding, settings precedence, line ranges, prompt sequencing, terminal request construction, Markdown sanitization, cache keys and eviction, and viewer page/server behavior.
 - Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, the bare getting-started output, and viewer flag conflicts.
-- Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, selection errors, input errors, the `html` event, and the qutebrowser and Firefox viewers with a fake browser. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
+- Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, selection errors, input errors, the `html` event, the qutebrowser and Firefox viewers with a fake browser, and cache reuse, bypass, refresh, invalidation, and uncached failures. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
 - Native host tests in `src/native_host.rs` with a fake `docent` shell script for framing, partial reads, oversized messages, invalid requests, spawn failures, line forwarding, exit codes, `exec`, and `css`.
 
 The coverage gate is `cargo llvm-cov --workspace --all-targets --fail-under-lines 80`. Run `scripts/check.sh` for the full gate, including formatting, clippy, tests, coverage, the Neovim tests, the qutebrowser adapter tests, the zathura tests, and the Firefox tests. The script requires `cargo-llvm-cov`, Neovim, pytest, ruff, ty, and Node on `PATH`; `web-ext` is optional and only adds a manifest lint.

@@ -20,6 +20,7 @@ and prompts                   |                    |                     |
                            |-- resolve effective settings
                            |-- build context window
                            |-- render prompt template
+                           |-- reuse or store a cached answer
                            |-- call provider
                                   |
                                   v
@@ -106,7 +107,7 @@ The terminal commands and `docent run` can open a loopback answer page in qutebr
 
 Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. `--viewer qutebrowser` or `--viewer firefox` streams the answer into a loopback Server-Sent Events page instead of stdout and renders Markdown once at the end. The Neovim, qutebrowser, Firefox, and zathura integrations use `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object, and `--stream --html` adds a rendered HTML event for browser front ends.
 
-The shared executor builds the context and prompt once, then selects the output mode. This keeps buffered, streamed, JSON, and prompt-preview paths on the same request and prompt code.
+The shared executor builds the context and prompt once, then selects the output mode or replays a cached answer. This keeps buffered, streamed, JSON, and prompt-preview paths on the same request and prompt code.
 
 ## Run history
 
@@ -117,6 +118,18 @@ When history is enabled, `cli::execute` records one row after the provider call 
 The global `--source` flag, default `cli`, identifies the caller. The adapters pass `nvim`, `qutebrowser`, `firefox`, or `zathura`; custom plugins pass their own name. The source is only stored in history and does not affect request handling.
 
 The database contains full prompts and answers, including document context, so it is local, unencrypted, and restricted to the owning user on Unix. API keys are not stored. See [run history](history.md) for the schema and queries.
+
+## Answer cache
+
+The executor checks the answer cache after `prompt::render` and before the provider call. The key is a BLAKE3 hash over a version tag, `api.kind`, `api.base_url`, the model, the temperature bits, `max_tokens`, and the rendered system and user messages. The rendered prompt already contains the selection, context window, question, languages, and file label, so those inputs need no separate hashing. Byte offsets, command, profile, source, and output mode are excluded because they do not change the answer.
+
+A hit synthesizes a `Completion` with `cached: true` and no token usage, then delivers its text through the same `on_delta` callback as a provider stream. Every output mode therefore behaves the same way: plain streaming prints one fragment, NDJSON emits one `delta`, the `html` event is rendered locally from the stored Markdown, and the browser viewer streams it normally. A `done` event gains `"cached": true`; the adapters ignore the extra field.
+
+A successful provider answer is stored unless the run used `--no-cache` or the cache is disabled. Failures, cancelled runs, and empty outputs are never stored. A hit is not written to `runs`, because it is not a provider call; the cache row increments `hits` and updates `last_used_at` instead. Entries are evicted least recently used beyond `cache.max_entries`.
+
+The cache lives in the same SQLite database as run history and shares its schema version. It is active only when `history.enabled` is true, the run did not pass `--no-history`, and `cache.enabled` is true. `--no-cache` skips reads and writes; `--refresh` skips reads but replaces the stored answer. Like history, cache reads and writes are fail-open and never change the command result.
+
+A hit does not require an API key, so previously seen content is available offline. At a nonzero temperature the first stored sample wins; `--refresh` is the reroll path. A silent provider model update behind the same model name is masked until the entry is refreshed.
 
 ## Settings and precedence
 
