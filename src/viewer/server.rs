@@ -243,11 +243,11 @@ fn send_events(mut stream: TcpStream, shared: &Shared) -> io::Result<()> {
         );
     };
 
-    let _ = shared.connected.send(());
     stream.write_all(
         b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nTransfer-Encoding: chunked\r\n\r\n",
     )?;
     stream.flush()?;
+    let _ = shared.connected.send(());
 
     loop {
         let event = match events.recv_timeout(KEEPALIVE) {
