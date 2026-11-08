@@ -40,6 +40,10 @@ The answer opens in a new foreground tab and streams as the provider returns it.
 
 The popup's **Refresh** button reloads the profile list; **Options** opens the settings page.
 
+## CLI viewer
+
+`docent explain notes.md --lines 12:20 --viewer firefox` opens a standalone local answer page in Firefox without the extension. It uses the same stylesheet and Markdown renderer as the answer tab, but no selection capture, native host, or extension keybindings. The Firefox extension remains the way to run a profile against a page selection. See [the browser viewer guide](viewer.md).
+
 ## Options
 
 | Option | Default | Meaning |

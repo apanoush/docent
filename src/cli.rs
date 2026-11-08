@@ -18,7 +18,7 @@ use crate::prompt::{self, EffectiveSettings};
 use crate::provider::{self, Completion};
 use crate::request::Request;
 use crate::source::{self, LineRange, NoPrompter, SelectionArg, TerminalPrompter};
-use crate::viewer::{Viewer, ViewerOptions};
+use crate::viewer::{Browser, FirefoxTarget, QutebrowserTarget, Viewer, ViewerOptions};
 
 const AFTER_HELP: &str = "Examples:
   docent explain notes.md --lines 12:20
@@ -26,6 +26,7 @@ const AFTER_HELP: &str = "Examples:
   docent translate notes.md --lines 12:20 --to French
   docent summarize paper.md
   docent explain notes.md --lines 12:20 --viewer qutebrowser
+  docent explain notes.md --lines 12:20 --viewer firefox
   docent init
 
 Machine interface:
@@ -166,43 +167,18 @@ pub enum ViewerKind {
     Terminal,
     /// Stream the answer into a qutebrowser window or tab.
     Qutebrowser,
+    /// Stream the answer into a Firefox window or tab.
+    Firefox,
 }
 
-/// A qutebrowser `--target` value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum BrowserTarget {
-    /// Use qutebrowser's configured new-instance target.
-    Auto,
-    /// Open a new tab.
-    Tab,
-    /// Open a background tab.
-    TabBg,
-    /// Open a tab without activating the window.
-    TabSilent,
-    /// Open a background tab without activating the window.
-    TabBgSilent,
-    /// Open a new window.
-    Window,
-    /// Open a private window.
-    PrivateWindow,
-}
-
-impl BrowserTarget {
-    /// Value passed as `qutebrowser --target=...`.
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Tab => "tab",
-            Self::TabBg => "tab-bg",
-            Self::TabSilent => "tab-silent",
-            Self::TabBgSilent => "tab-bg-silent",
-            Self::Window => "window",
-            Self::PrivateWindow => "private-window",
-        }
+impl ViewerKind {
+    /// True for the viewers that open a browser page.
+    fn is_browser(self) -> bool {
+        !matches!(self, Self::Terminal)
     }
 }
 
-/// Options for the qutebrowser answer viewer.
+/// Options for the browser answer viewers.
 #[derive(Debug, Args)]
 pub struct ViewerArgs {
     /// Where to show the answer.
@@ -215,7 +191,15 @@ pub struct ViewerArgs {
 
     /// Qutebrowser --target value.
     #[arg(long, value_enum, default_value = "window")]
-    pub qutebrowser_target: BrowserTarget,
+    pub qutebrowser_target: QutebrowserTarget,
+
+    /// Firefox executable or command name.
+    #[arg(long, default_value = "firefox")]
+    pub firefox: String,
+
+    /// Firefox answer target.
+    #[arg(long, value_enum, default_value = "window")]
+    pub firefox_target: FirefoxTarget,
 
     /// CSS file appended after the answer styles.
     #[arg(long, visible_alias = "qutebrowser-css", value_name = "PATH")]
@@ -389,6 +373,7 @@ fn print_getting_started() {
     println!("  docent translate notes.md --lines 12:20 --to French");
     println!("  docent summarize paper.md");
     println!("  docent explain notes.md --lines 12:20 --viewer qutebrowser");
+    println!("  docent explain notes.md --lines 12:20 --viewer firefox");
     println!("  docent init");
     println!();
     println!("Run `docent --help` for all commands and options.");
@@ -414,9 +399,9 @@ fn run_human(
         target_language,
         viewer,
     } = common;
-    if viewer.viewer == ViewerKind::Qutebrowser && no_stream {
+    if viewer.viewer.is_browser() && no_stream {
         return Err(DocentError::Input(
-            "--viewer qutebrowser cannot be combined with --no-stream".to_string(),
+            "browser viewers cannot be combined with --no-stream".to_string(),
         ));
     }
     let label = human_label(file.as_deref(), &selection);
@@ -425,7 +410,7 @@ fn run_human(
     let profile = ProfileStore::new(config::profiles_dir(config_dir)).load(profile_name)?;
     let settings = resolve_settings(&config, &profile, context_mode, target_language)?;
     let request = resolve_human_request(&profile, file.as_deref(), selection, question)?;
-    let output = if viewer.viewer == ViewerKind::Qutebrowser {
+    let output = if viewer.viewer.is_browser() {
         OutputMode::Browser(browser_options(config_dir, profile_name, label, &viewer)?)
     } else if no_stream {
         OutputMode::PlainBuffered
@@ -514,12 +499,27 @@ fn browser_options(
     header: String,
     args: &ViewerArgs,
 ) -> Result<ViewerOptions, DocentError> {
-    let qutebrowser = config::expand_path(Path::new(&args.qutebrowser))?;
+    let browser = match args.viewer {
+        ViewerKind::Qutebrowser => Browser::Qutebrowser {
+            command: config::expand_path(Path::new(&args.qutebrowser))?
+                .display()
+                .to_string(),
+            target: args.qutebrowser_target,
+        },
+        ViewerKind::Firefox => Browser::Firefox {
+            command: config::expand_path(Path::new(&args.firefox))?
+                .display()
+                .to_string(),
+            target: args.firefox_target,
+        },
+        ViewerKind::Terminal => {
+            unreachable!("the terminal viewer does not open a browser")
+        }
+    };
     Ok(ViewerOptions {
         profile: profile.to_string(),
         header,
-        qutebrowser: qutebrowser.display().to_string(),
-        target: args.qutebrowser_target.as_str().to_string(),
+        browser,
         custom_css: load_custom_css(config_dir, args.answer_css.as_deref())?,
     })
 }
@@ -598,9 +598,9 @@ fn run_request(
         header,
         viewer,
     } = args;
-    if viewer.viewer == ViewerKind::Qutebrowser && (json || stream || print_prompt || html) {
+    if viewer.viewer.is_browser() && (json || stream || print_prompt || html) {
         return Err(DocentError::Input(
-            "--viewer qutebrowser cannot be combined with --stream, --json, --html, or --print-prompt"
+            "browser viewers cannot be combined with --stream, --json, --html, or --print-prompt"
                 .to_string(),
         ));
     }
@@ -613,7 +613,7 @@ fn run_request(
     }
     let settings = resolve_settings(&config, &profile, context_mode, target_language)?;
 
-    let output = if viewer.viewer == ViewerKind::Qutebrowser {
+    let output = if viewer.viewer.is_browser() {
         OutputMode::Browser(browser_options(
             config_dir,
             &profile_name,

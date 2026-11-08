@@ -692,8 +692,7 @@ fn html_requires_a_stream() {
 }
 
 #[cfg(unix)]
-#[test]
-fn browser_viewer_streams_into_qutebrowser() {
+fn check_browser_viewer(viewer: &str, browser_flag: &str, expected_target: &str) {
     use std::os::unix::fs::PermissionsExt;
 
     let body = concat!(
@@ -712,7 +711,7 @@ fn browser_viewer_streams_into_qutebrowser() {
     fs::write(&css, ".markdown h2 { color: red; }").unwrap();
     let output_file = temp.path().join("browser.json");
 
-    let browser = temp.path().join("fake-qutebrowser");
+    let browser = temp.path().join("fake-browser");
     fs::write(
         &browser,
         r#"#!/usr/bin/env python3
@@ -733,8 +732,8 @@ with urllib.request.urlopen(url.rstrip("/") + "/events") as response:
         events.append(event)
         if event["type"] in {"done", "error"}:
             break
-with open(os.environ["FAKE_QUTEBROWSER_OUTPUT"], "w", encoding="utf-8") as handle:
-    json.dump({"page": page, "events": events}, handle)
+with open(os.environ["FAKE_BROWSER_OUTPUT"], "w", encoding="utf-8") as handle:
+    json.dump({"page": page, "events": events, "argv": sys.argv[1:]}, handle)
 "#,
     )
     .unwrap();
@@ -750,15 +749,15 @@ with open(os.environ["FAKE_QUTEBROWSER_OUTPUT"], "w", encoding="utf-8") as handl
             "--lines",
             "1:1",
             "--viewer",
-            "qutebrowser",
-            "--qutebrowser",
+            viewer,
+            browser_flag,
             browser.to_str().unwrap(),
             "--answer-css",
             css.to_str().unwrap(),
         ],
         "",
         Some("secret"),
-        &[("FAKE_QUTEBROWSER_OUTPUT", output_file.to_str().unwrap())],
+        &[("FAKE_BROWSER_OUTPUT", output_file.to_str().unwrap())],
     );
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert!(output.stdout.is_empty());
@@ -768,6 +767,10 @@ with open(os.environ["FAKE_QUTEBROWSER_OUTPUT"], "w", encoding="utf-8") as handl
     assert!(page.contains("docent: explain"));
     assert!(page.contains("notes.md (lines 1)"));
     assert!(page.contains(".markdown h2 { color: red; }"));
+
+    let argv = captured["argv"].as_array().unwrap();
+    assert_eq!(argv[0].as_str().unwrap(), expected_target);
+    assert!(argv[1].as_str().unwrap().starts_with("http://127.0.0.1:"));
 
     let events = captured["events"].as_array().unwrap();
     let kinds: Vec<_> = events.iter().map(|event| event["type"].as_str()).collect();
@@ -786,6 +789,18 @@ with open(os.environ["FAKE_QUTEBROWSER_OUTPUT"], "w", encoding="utf-8") as handl
         .unwrap();
     assert_eq!(status, "success");
     assert_eq!(mode, "browser");
+}
+
+#[cfg(unix)]
+#[test]
+fn browser_viewer_streams_into_qutebrowser() {
+    check_browser_viewer("qutebrowser", "--qutebrowser", "--target=window");
+}
+
+#[cfg(unix)]
+#[test]
+fn browser_viewer_streams_into_firefox() {
+    check_browser_viewer("firefox", "--firefox", "--new-window");
 }
 
 #[test]

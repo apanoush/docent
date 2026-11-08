@@ -1,10 +1,13 @@
-//! Qutebrowser answer viewer backed by a loopback Server-Sent Events server.
+//! Qutebrowser and Firefox answer viewers backed by a loopback Server-Sent
+//! Events server.
 
 mod page;
 mod server;
 
 use std::process::{Command, Stdio};
 use std::time::Duration;
+
+use clap::ValueEnum;
 
 use crate::error::DocentError;
 use crate::markdown;
@@ -14,6 +17,128 @@ use server::{Server, ServerEvent};
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const FINISH_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// A qutebrowser `--target` value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum QutebrowserTarget {
+    /// Use qutebrowser's configured new-instance target.
+    Auto,
+    /// Open a new tab.
+    Tab,
+    /// Open a background tab.
+    TabBg,
+    /// Open a tab without activating the window.
+    TabSilent,
+    /// Open a background tab without activating the window.
+    TabBgSilent,
+    /// Open a new window.
+    Window,
+    /// Open a private window.
+    PrivateWindow,
+}
+
+impl QutebrowserTarget {
+    /// Value passed as `qutebrowser --target=...`.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Tab => "tab",
+            Self::TabBg => "tab-bg",
+            Self::TabSilent => "tab-silent",
+            Self::TabBgSilent => "tab-bg-silent",
+            Self::Window => "window",
+            Self::PrivateWindow => "private-window",
+        }
+    }
+}
+
+/// A Firefox URL target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum FirefoxTarget {
+    /// Let Firefox use its normal new-instance behavior.
+    Auto,
+    /// Open a new tab.
+    Tab,
+    /// Open a new window.
+    Window,
+    /// Open a new private window.
+    PrivateWindow,
+}
+
+impl FirefoxTarget {
+    /// Arguments that open `url` in this target.
+    fn arguments(self) -> &'static [&'static str] {
+        match self {
+            Self::Auto => &[],
+            Self::Tab => &["--new-tab"],
+            Self::Window => &["--new-window"],
+            Self::PrivateWindow => &["--private-window"],
+        }
+    }
+}
+
+/// Browser program and target used by the answer viewer.
+#[derive(Debug, Clone)]
+pub enum Browser {
+    /// Qutebrowser with its `--target` flag.
+    Qutebrowser {
+        /// Executable or command name.
+        command: String,
+        /// Qutebrowser target.
+        target: QutebrowserTarget,
+    },
+    /// Firefox with its URL flags.
+    Firefox {
+        /// Executable or command name.
+        command: String,
+        /// Firefox target.
+        target: FirefoxTarget,
+    },
+}
+
+impl Browser {
+    /// Name used in user-facing errors.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Qutebrowser { .. } => "qutebrowser",
+            Self::Firefox { .. } => "Firefox",
+        }
+    }
+
+    /// Target flag named in a connection timeout error.
+    pub fn target_flag(&self) -> &'static str {
+        match self {
+            Self::Qutebrowser { .. } => "--qutebrowser-target",
+            Self::Firefox { .. } => "--firefox-target",
+        }
+    }
+
+    fn command(&self) -> &str {
+        match self {
+            Self::Qutebrowser { command, .. } | Self::Firefox { command, .. } => command,
+        }
+    }
+
+    fn arguments(&self) -> Vec<String> {
+        match self {
+            Self::Qutebrowser { target, .. } => {
+                vec![format!("--target={}", target.as_str())]
+            }
+            Self::Firefox { target, .. } => target
+                .arguments()
+                .iter()
+                .map(|arg| (*arg).to_string())
+                .collect(),
+        }
+    }
+
+    /// Command and arguments, including the answer page URL.
+    fn launch(&self, url: &str) -> (String, Vec<String>) {
+        let mut arguments = self.arguments();
+        arguments.push(url.to_string());
+        (self.command().to_string(), arguments)
+    }
+}
+
 /// Settings for one browser answer page.
 #[derive(Debug, Clone)]
 pub struct ViewerOptions {
@@ -21,10 +146,8 @@ pub struct ViewerOptions {
     pub profile: String,
     /// File or page label shown after the profile. May be empty.
     pub header: String,
-    /// Qutebrowser executable or command name.
-    pub qutebrowser: String,
-    /// Qutebrowser `--target` value.
-    pub target: String,
+    /// Browser and target.
+    pub browser: Browser,
     /// CSS appended after the built-in answer styles.
     pub custom_css: Option<String>,
 }
@@ -37,19 +160,19 @@ pub struct Viewer {
 }
 
 impl Viewer {
-    /// Start the server, open qutebrowser, and wait for the page to connect.
+    /// Start the server, open the browser, and wait for the page to connect.
     pub fn open(options: &ViewerOptions) -> Result<Self, DocentError> {
-        require_graphical_session()?;
+        require_graphical_session(options.browser.name())?;
         let page = page::build_page(
             &options.profile,
             &options.header,
             options.custom_css.as_deref(),
         );
         let mut server = Server::start(page)?;
+        let (command, arguments) = options.browser.launch(&server.url());
 
-        let mut child = match Command::new(&options.qutebrowser)
-            .arg(format!("--target={}", options.target))
-            .arg(server.url())
+        let mut child = match Command::new(&command)
+            .args(&arguments)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -60,7 +183,7 @@ impl Viewer {
                 server.stop();
                 return Err(DocentError::Viewer(format!(
                     "could not start {}: {error}",
-                    options.qutebrowser
+                    options.browser.name()
                 )));
             }
         };
@@ -69,10 +192,12 @@ impl Viewer {
             let _ = child.kill();
             let _ = child.wait();
             server.stop();
-            return Err(DocentError::Viewer(
-                "qutebrowser did not open the answer page; check --qutebrowser-target and the qutebrowser process"
-                    .to_string(),
-            ));
+            return Err(DocentError::Viewer(format!(
+                "{} did not open the answer page; check {} and the {} process",
+                options.browser.name(),
+                options.browser.target_flag(),
+                options.browser.name()
+            )));
         }
 
         Ok(Self {
@@ -133,12 +258,11 @@ impl Drop for Viewer {
     }
 }
 
-fn require_graphical_session() -> Result<(), DocentError> {
+fn require_graphical_session(browser: &str) -> Result<(), DocentError> {
     if std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
-        return Err(DocentError::Viewer(
-            "no graphical session; --viewer qutebrowser needs DISPLAY or WAYLAND_DISPLAY"
-                .to_string(),
-        ));
+        return Err(DocentError::Viewer(format!(
+            "no graphical session; {browser} answer pages need DISPLAY or WAYLAND_DISPLAY"
+        )));
     }
     Ok(())
 }
@@ -158,5 +282,81 @@ mod tests {
             "docent: explain - notes.md"
         );
         assert_eq!(make_label("explain", "", None), "docent: explain");
+    }
+
+    #[test]
+    fn qutebrowser_launch_uses_the_target_flag() {
+        let browser = Browser::Qutebrowser {
+            command: "qutebrowser".to_string(),
+            target: QutebrowserTarget::TabBg,
+        };
+        assert_eq!(
+            browser.launch("http://127.0.0.1:1/token/"),
+            (
+                "qutebrowser".to_string(),
+                vec![
+                    "--target=tab-bg".to_string(),
+                    "http://127.0.0.1:1/token/".to_string()
+                ]
+            )
+        );
+        assert_eq!(browser.name(), "qutebrowser");
+        assert_eq!(browser.target_flag(), "--qutebrowser-target");
+    }
+
+    #[test]
+    fn firefox_launch_maps_every_target() {
+        let launch = |target| {
+            Browser::Firefox {
+                command: "/usr/bin/firefox".to_string(),
+                target,
+            }
+            .launch("http://127.0.0.1:1/token/")
+        };
+
+        assert_eq!(
+            launch(FirefoxTarget::Auto),
+            (
+                "/usr/bin/firefox".to_string(),
+                vec!["http://127.0.0.1:1/token/".to_string()]
+            )
+        );
+        assert_eq!(
+            launch(FirefoxTarget::Tab).1,
+            vec![
+                "--new-tab".to_string(),
+                "http://127.0.0.1:1/token/".to_string()
+            ]
+        );
+        assert_eq!(
+            launch(FirefoxTarget::Window).1,
+            vec![
+                "--new-window".to_string(),
+                "http://127.0.0.1:1/token/".to_string()
+            ]
+        );
+        assert_eq!(
+            launch(FirefoxTarget::PrivateWindow).1,
+            vec![
+                "--private-window".to_string(),
+                "http://127.0.0.1:1/token/".to_string()
+            ]
+        );
+        assert_eq!(
+            Browser::Firefox {
+                command: "firefox".to_string(),
+                target: FirefoxTarget::Window
+            }
+            .name(),
+            "Firefox"
+        );
+        assert_eq!(
+            Browser::Firefox {
+                command: "firefox".to_string(),
+                target: FirefoxTarget::Window
+            }
+            .target_flag(),
+            "--firefox-target"
+        );
     }
 }

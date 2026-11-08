@@ -4,7 +4,7 @@ A context-aware reading companion for the terminal, Neovim, qutebrowser, Firefox
 
 Docent has five pieces:
 
-- `docent`, a Rust CLI with terminal commands for files, line ranges, pasted text, and questions. It also accepts JSON on stdin for machine integrations, builds the prompt, calls an OpenAI-compatible or Anthropic API, and returns, streams, or shows the answer in qutebrowser.
+- `docent`, a Rust CLI with terminal commands for files, line ranges, pasted text, and questions. It also accepts JSON on stdin for machine integrations, builds the prompt, calls an OpenAI-compatible or Anthropic API, and returns, streams, or shows the answer in qutebrowser or Firefox.
 - `plugins/nvim/`, a Neovim plugin that captures the selection and buffer, calls the CLI asynchronously, and streams the answer into a floating window.
 - `plugins/qutebrowser/`, a qutebrowser adapter that captures the page selection and rendered text, calls the CLI asynchronously, and streams the answer into a new tab.
 - `plugins/firefox/`, a Firefox extension plus a native messaging host that captures the page selection and rendered text and streams the answer into a new tab.
@@ -16,7 +16,7 @@ Most lookup tools treat a word or phrase in isolation. Docent sends the selectio
 
 ## Install
 
-Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, the Firefox adapter needs Firefox 140 or newer, and the zathura adapter needs zathura plus `pdftotext`. The CLI browser viewer and the zathura `--viewer qutebrowser` option need qutebrowser 3.7 or newer, and the zathura `--viewer nvim` option needs Neovim 0.10 or newer. The adapter tests need Node 18 or newer.
+Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, the Firefox adapter needs Firefox 140 or newer, and the zathura adapter needs zathura plus `pdftotext`. The CLI browser viewers need qutebrowser 3.7 or newer for `--viewer qutebrowser`, and Firefox with the standard `--new-tab`, `--new-window`, and `--private-window` flags for `--viewer firefox`. The zathura `--viewer nvim` option needs Neovim 0.10 or newer. The adapter tests need Node 18 or newer.
 
 ```bash
 cargo install --path .
@@ -67,14 +67,17 @@ cat notes.md | docent explain - --line 12
 
 If a required input is missing and stdin is a terminal, Docent prompts for it. Piped stdin is always treated as the document. Answers stream by default; add `--no-stream` to wait for the complete answer.
 
-Stream the answer into a qutebrowser window or tab instead of the terminal:
+Stream the answer into a browser window or tab instead of the terminal:
 
 ```bash
 docent explain notes.md --lines 12:20 --viewer qutebrowser
-docent summarize paper.md --viewer qutebrowser --qutebrowser-target tab
+docent explain notes.md --lines 12:20 --viewer firefox --firefox-target tab
+docent summarize paper.md --viewer firefox
 ```
 
-The page uses the same answer styles as the qutebrowser adapter. Pass `--answer-css PATH` for extra overrides, or edit `<config dir>/answer.css`. See [the browser viewer guide](docs/viewer.md).
+The page uses the same answer styles as the qutebrowser and Firefox adapters. Pass `--answer-css PATH` for extra overrides, or edit `<config dir>/answer.css`. See [the browser viewer guide](docs/viewer.md).
+
+`--viewer firefox` opens a standalone local answer page. It does not use the Docent Firefox extension; the extension remains the way to capture a page selection from inside Firefox.
 
 When a run has no selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. Use `--context-mode full` to send everything, raise `context.max_chars`, or narrow the subject with `--lines`.
 
@@ -144,6 +147,8 @@ scripts/firefox-host-install.sh
 ```
 
 Open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `plugins/firefox/manifest.json`. Select text with the mouse and click the Docent toolbar button or press `Alt+Shift+D`. The popup lists the profiles and runs the one you choose. The answer streams into a new tab. Press `d` to close the tab; closing it while the request is still running cancels the request. Permanent installs need a signed add-on from addons.mozilla.org. See [the Firefox guide](docs/firefox.md).
+
+The extension is for capturing a page selection. To show a terminal answer in Firefox without the extension, use `--viewer firefox` as described in [the browser viewer guide](docs/viewer.md).
 
 ## Zathura
 

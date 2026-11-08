@@ -6,7 +6,7 @@ Docent explains, translates, summarizes, or answers questions about a selected p
 
 - [README](../README.md): install, quickstart, and the editor, browser, and PDF viewer setup snippets.
 - [Configuration and profiles](config.md): config file, provider examples, profile schema, and placeholders.
-- [Browser viewer](viewer.md): stream a terminal answer into a qutebrowser window or tab, and style it.
+- [Browser viewer](viewer.md): stream a terminal answer into a qutebrowser or Firefox window or tab, and style it.
 - [Run history](history.md): SQLite location, schema, source tagging, privacy, and example queries.
 - [Neovim plugin](nvim.md): commands, keymaps, float behavior, and Lua API.
 - [qutebrowser adapter](qutebrowser.md): commands, keymaps, answer tabs, and browser limitations.
