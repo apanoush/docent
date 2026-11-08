@@ -1,6 +1,6 @@
 # Rust crate modules
 
-The crate has one binary target, `src/main.rs`, and a library target, `src/lib.rs`. The binary initializes logging, calls `cli::run`, prints errors to stderr, and maps errors to exit codes. Everything else lives in library modules so it can be tested without a terminal.
+The crate has two binary targets and a library target. `src/main.rs` is the CLI: it initializes logging, calls `cli::run`, prints errors to stderr, and maps errors to exit codes. `src/bin/docent-native-host.rs` is the Firefox native messaging bridge, which delegates to `native_host::run`. Everything else lives in library modules so it can be tested without a terminal or a browser.
 
 ## Module map
 
@@ -19,6 +19,7 @@ The crate has one binary target, `src/main.rs`, and a library target, `src/lib.r
 | `provider::anthropic` | Anthropic Messages request and response handling. |
 | `provider::stream` | Incremental SSE decoding. |
 | `history` | SQLite run history, schema creation, path resolution, and inserts. |
+| `native_host` | Firefox native messaging framing, request validation, process spawning, line forwarding, `exec`, and `css`. |
 | `error` | `DocentError` and process exit codes. |
 
 ## Data flow
@@ -84,6 +85,11 @@ pub fn complete_streaming(config: &Config, settings: &EffectiveSettings, prompt:
 // history
 pub fn database_path(config_dir: &Path, history: &HistoryConfig) -> Result<PathBuf, DocentError>;
 pub fn write(config: &Config, config_dir: &Path, run: &NewRun) -> Result<(), DocentError>;
+
+// native_host
+pub fn read_message(reader: &mut impl Read) -> io::Result<Option<Vec<u8>>>;
+pub fn write_message(writer: &mut impl Write, payload: &[u8]) -> io::Result<()>;
+pub fn serve(request: HostRequest, writer: &mut impl Write) -> io::Result<()>;
 ```
 
 ## Config and profile loading
@@ -119,5 +125,6 @@ Rust tests are split into three layers:
 - Unit tests in each module for parsing, validation, windowing, rendering, request bodies, response parsing, SSE decoding, settings precedence, line ranges, prompt sequencing, and terminal request construction.
 - Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, and the bare getting-started output.
 - Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, selection errors, and input errors. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
+- Native host tests in `src/native_host.rs` with a fake `docent` shell script for framing, partial reads, oversized messages, invalid requests, spawn failures, line forwarding, exit codes, `exec`, and `css`.
 
-The coverage gate is `cargo llvm-cov --workspace --all-targets --fail-under-lines 80`. Run `scripts/check.sh` for the full gate, including formatting, clippy, tests, coverage, the Neovim tests, and the qutebrowser adapter tests. The script requires `cargo-llvm-cov`, Neovim, pytest, ruff, and ty on `PATH`.
+The coverage gate is `cargo llvm-cov --workspace --all-targets --fail-under-lines 80`. Run `scripts/check.sh` for the full gate, including formatting, clippy, tests, coverage, the Neovim tests, the qutebrowser adapter tests, the zathura tests, and the Firefox tests. The script requires `cargo-llvm-cov`, Neovim, pytest, ruff, ty, and Node on `PATH`; `web-ext` is optional and only adds a manifest lint.

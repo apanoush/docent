@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>docent: connecting</title>
+    <link rel="stylesheet" href="answer.css" />
+    <link rel="stylesheet" href="page.css" />
+  </head>
+  <body>
+    <header>
+      <span id="status">docent: connecting</span>
+      <span id="hint">d close</span>
+    </header>
+    <div id="warnings"></div>
+    <main>
+      <form id="question-form" hidden>
+        <label for="question-input">Question</label>
+        <textarea id="question-input" rows="2" spellcheck="true"></textarea>
+        <button type="submit">Ask</button>
+      </form>
+      <pre id="answer" data-placeholder="1">Thinking...</pre>
+    </main>
+    <script type="module" src="answer.js"></script>
+  </body>
+</html>

@@ -9,3 +9,4 @@ cargo llvm-cov --workspace --all-targets --fail-under-lines 80
 tests/nvim/run.sh
 tests/qutebrowser/run.sh
 tests/zathura/run.sh
+tests/firefox/run.sh

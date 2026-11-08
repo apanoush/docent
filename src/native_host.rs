@@ -454,6 +454,22 @@ mod tests {
         use super::*;
         use std::os::unix::fs::PermissionsExt;
         use std::path::PathBuf;
+        use std::sync::{Mutex, MutexGuard};
+
+        /// Serialize tests that spawn child processes, so a burst of forks
+        /// cannot exhaust the process table and turn a spawn into a `fail`.
+        static SPAWN_LOCK: Mutex<()> = Mutex::new(());
+
+        fn spawn_guard() -> MutexGuard<'static, ()> {
+            SPAWN_LOCK
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+        }
+
+        fn serve_guarded<W: Write>(request: HostRequest, writer: &mut W) -> io::Result<()> {
+            let _guard = spawn_guard();
+            serve(request, writer)
+        }
 
         fn fake_docent(directory: &Path, script: &str) -> PathBuf {
             let path = directory.join("docent");
@@ -494,10 +510,13 @@ mod tests {
             };
 
             let mut output = Vec::new();
-            serve(request, &mut output).unwrap();
+            serve_guarded(request, &mut output).unwrap();
             let messages = messages(&output);
 
-            assert_eq!(messages[0]["type"], "line");
+            assert_eq!(
+                messages[0]["type"], "line",
+                "unexpected messages: {messages:?}"
+            );
             assert_eq!(messages[0]["line"], "{\"type\":\"delta\",\"text\":\"hi\"}");
             assert_eq!(messages[1]["type"], "line");
             let exit = messages.last().unwrap();
@@ -521,7 +540,7 @@ mod tests {
             };
 
             let mut output = Vec::new();
-            serve(request, &mut output).unwrap();
+            serve_guarded(request, &mut output).unwrap();
             let messages = messages(&output);
             assert_eq!(messages[0]["line"], "{\"type\":\"delta\"}");
         }
@@ -533,7 +552,7 @@ mod tests {
                 args: Vec::new(),
             };
             let mut output = Vec::new();
-            serve(request, &mut output).unwrap();
+            serve_guarded(request, &mut output).unwrap();
             let messages = messages(&output);
             assert_eq!(messages[0]["type"], "fail");
             assert!(
@@ -556,7 +575,7 @@ mod tests {
                 args: vec!["profiles".to_string(), "--json".to_string()],
             };
             let mut output = Vec::new();
-            serve(request, &mut output).unwrap();
+            serve_guarded(request, &mut output).unwrap();
             let messages = messages(&output);
             assert_eq!(messages[0]["type"], "result");
             assert_eq!(messages[0]["code"], 3);
@@ -578,7 +597,7 @@ mod tests {
                 args: Vec::new(),
             };
             let mut output = Vec::new();
-            serve(request, &mut output).unwrap();
+            serve_guarded(request, &mut output).unwrap();
             let messages = messages(&output);
             assert_eq!(messages[0]["type"], "result");
             assert_eq!(messages[0]["code"], 0);
@@ -598,7 +617,7 @@ mod tests {
                 args: Vec::new(),
             };
             let mut output = Vec::new();
-            serve(request, &mut output).unwrap();
+            serve_guarded(request, &mut output).unwrap();
             let messages = messages(&output);
             assert_eq!(messages[0]["code"], 0);
             assert_eq!(messages[0]["stdout"], "");
@@ -611,7 +630,7 @@ mod tests {
                 args: Vec::new(),
             };
             let mut output = Vec::new();
-            serve(request, &mut output).unwrap();
+            serve_guarded(request, &mut output).unwrap();
             let messages = messages(&output);
             assert_eq!(messages[0]["type"], "fail");
         }

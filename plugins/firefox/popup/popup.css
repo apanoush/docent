@@ -1,0 +1,140 @@
+:root {
+  color-scheme: light dark;
+  --docent-bg: Canvas;
+  --docent-fg: CanvasText;
+  --docent-muted: color-mix(in srgb, CanvasText 60%, transparent);
+  --docent-line: color-mix(in srgb, CanvasText 18%, transparent);
+  --docent-accent: #6aa9ff;
+  --docent-error: #d33;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 340px;
+  margin: 0;
+  padding: 0.75rem 0.9rem 0.9rem;
+  background: var(--docent-bg);
+  color: var(--docent-fg);
+  font: 13px/1.45 system-ui, sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 1rem;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: color-mix(in srgb, var(--docent-fg) 8%, transparent);
+  border: 1px solid var(--docent-line);
+  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--docent-accent);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#refresh {
+  font-size: 0.85em;
+  padding: 0.15rem 0.45rem;
+  background: none;
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.profile {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.35rem 0.4rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.profile:hover {
+  background: color-mix(in srgb, var(--docent-fg) 6%, transparent);
+}
+
+.profile input {
+  margin: 0;
+}
+
+.profile .name {
+  font-weight: 600;
+}
+
+.profile .description {
+  color: var(--docent-muted);
+  font-size: 0.9em;
+}
+
+.question {
+  display: block;
+  margin-top: 0.6rem;
+}
+
+.question span {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--docent-muted);
+  font-size: 0.9em;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  color: inherit;
+  background: color-mix(in srgb, var(--docent-fg) 4%, transparent);
+  border: 1px solid var(--docent-line);
+  border-radius: 4px;
+  padding: 0.35rem 0.45rem;
+}
+
+#status {
+  min-height: 1.3em;
+  margin: 0.6rem 0 0;
+  color: var(--docent-muted);
+  font-size: 0.9em;
+}
+
+#status.error {
+  color: var(--docent-error);
+}
+
+menu {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin: 0.4rem 0 0;
+  padding: 0;
+}
+
+#run {
+  border-color: var(--docent-accent);
+  background: color-mix(in srgb, var(--docent-accent) 20%, transparent);
+  font-weight: 600;
+}

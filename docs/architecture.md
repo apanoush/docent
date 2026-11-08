@@ -1,19 +1,20 @@
 # Architecture
 
-Docent is a one-shot CLI with a terminal front end, an editor adapter, a browser adapter, and a document-viewer adapter. Neovim owns the buffer and the editor UI; qutebrowser owns the page and the browser UI; zathura owns the PDF view; the CLI owns configuration, input resolution, prompting, context assembly, and provider communication.
+Docent is a one-shot CLI with a terminal front end, an editor adapter, browser adapters, and a document-viewer adapter. Neovim owns the buffer and the editor UI; qutebrowser and Firefox own the page and the browser UI; zathura owns the PDF view; the CLI owns configuration, input resolution, prompting, context assembly, and provider communication.
 
 ```text
-Terminal input              Neovim buffer              qutebrowser page
-FILE, stdin, --lines,       selection, document,       selection, innerText,
---select, --text            byte offsets, file name    page URL and title
-        |                         |                          |
-        v                         v                          v
-source adapter and prompts      JSON on stdin          JSON on stdin
-        |                         |                          |
-        +-------------------------+--------------------------+
-                                  |
-                                  v
-                           docent executor
+Terminal input          Neovim buffer        qutebrowser page      Firefox page
+FILE, stdin, --lines,   selection, document, selection, innerText, selection, innerText,
+--select, --text        byte offsets, file   page URL and title   page URL and title
+        |                     |                    |                     |
+        v                     v                    v                     v
+source adapter          JSON on stdin        JSON on stdin        native host -> JSON
+and prompts                   |                    |                     |
+        |                     |                    |                     |
+        +---------------------+--------------------+---------------------+
+                                            |
+                                            v
+                                     docent executor
                            |-- load config.toml
                            |-- load profiles/<name>.toml
                            |-- resolve effective settings
@@ -24,10 +25,10 @@ source adapter and prompts      JSON on stdin          JSON on stdin
                                   v
                     plain text, JSON, or NDJSON events
                                   |
-                    +-------------+-------------+
-                    |             |             |
-                    v             v             v
-             terminal output  Neovim float  qutebrowser answer tab
+              +-------------------+-------------------+
+              |                   |                   |
+              v                   v                   v
+       terminal output     Neovim float      browser answer tabs
 ```
 
 ## Request contract
@@ -73,6 +74,16 @@ qutebrowser does not expose a stable third-party plugin API. The loader only wal
 
 The first UI is a tab rather than a floating window. qutebrowser's application-wide key filter handles keys before widgets, and `q` is bound to macro recording in normal mode, so a float-like overlay would need insert/passthrough mode or a plugin key filter. A tab keeps normal qutebrowser bindings, including `d` to close and `j`/`k` to scroll.
 
+## Firefox adapter
+
+Firefox extensions cannot start processes, so the adapter has two parts. `plugins/firefox/` is a Manifest V2 WebExtension, and `docent-native-host` is a small Rust binary that Firefox starts through native messaging. The extension captures the selection and `document.body.innerText` with `tabs.executeScript` after an `activeTab` grant, builds the same JSON request as the other adapters, and sends it through the host. The host starts `docent run --profile NAME --stream --source firefox`, forwards each stdout line as one native message, and reports the exit code with the captured stderr.
+
+Closing the answer tab disconnects the native port. Firefox sends `SIGTERM` to the host and its child, then `SIGKILL` after a grace period, so the request is cancelled without host-side signal handling. One host process handles one run. The profile catalog and the user stylesheet use `runtime.sendNativeMessage`, which starts a short-lived host per call.
+
+The answer page is an extension page with its own CSP, so it does not inject scripts into the source page. It renders the final Markdown with a JavaScript port of the qutebrowser renderer and applies `<config dir>/answer.css` when the host can read it.
+
+The extension requests `activeTab` rather than host permissions, so it cannot read pages until the user clicks the toolbar button, uses the shortcut, or picks a context-menu item. Firefox extension shortcuts are modifier combinations, not key chains, so a toolbar popup and a context menu replace qutebrowser's `,de` bindings. Offsets are omitted for the same reason as qutebrowser. Reader view, the PDF viewer, view-source, and browser UI pages cannot be scripted.
+
 ## Zathura adapter
 
 Zathura has no third-party UI plugin API. Its plugin system loads document backends by MIME type, and the only scripting hooks are `zathurarc` commands, `exec`, and D-Bus. The adapter therefore uses a `zathurarc` binding:
@@ -85,11 +96,11 @@ map <C-e> exec "/path/to/docent-zathura explain $FILE $PAGE"
 
 The helper extracts the current page plus one page on each side with `pdftotext`, builds the same JSON request as the other adapters, and writes it to a private temporary file. It resolves `docent` through `PATH` and then through common install locations such as `~/.local/bin` and `~/.cargo/bin`, because desktop-launched zathura often has a minimal `PATH`. It then starts a terminal window running `docent-zathura render REQUEST_FILE`. The render process reads and deletes the request file, runs `docent run --profile NAME --stream --source zathura`, prints the `delta` events, and waits for Enter before closing. This two-process split keeps the selection out of argv and gives the answer a window that stays open after the stream ends.
 
-The answer is a terminal window rather than a zathura overlay. An overlay would require patching zathura's GTK/C core. The terminal window streams naturally, supports the CLI's existing output, and can be floated with a compositor rule. With `--viewer nvim`, the same request file is handed to the existing Neovim plugin, which streams into its Markdown float. That reuses the plugin's stream parser, cancellation, and buffer setup instead of duplicating them in the zathura adapter. With `--viewer qutebrowser`, the adapter starts a loopback HTTP server, opens a tokenized URL with `qutebrowser --target=TARGET`, streams raw text over Server-Sent Events, and renders the final Markdown with the qutebrowser adapter's renderer. The URL approach is required because qutebrowser's `--target` applies to URLs, not commands. The first version is PDF only; DjVu, PostScript, and comic-book files need different text extractors.
+The answer is a terminal window rather than a zathura overlay. An overlay would require patching zathura's GTK/C core. The terminal window streams naturally, supports the CLI's existing output, and can be floated with a compositor rule. With `--viewer nvim`, the same request file is handed to the existing Neovim plugin, which streams into its Markdown float. That reuses the plugin's stream parser, cancellation, and buffer setup instead of duplicating them in the zathura adapter. With `--viewer qutebrowser`, the adapter starts a loopback HTTP server, opens a tokenized URL with `qutebrowser --target=TARGET`, streams raw text over Server-Sent Events, and renders the final Markdown with the qutebrowser adapter's renderer. The page also reuses the qutebrowser adapter's answer shell and `answer.css`, so the visual style matches the answer tab. The URL approach is required because qutebrowser's `--target` applies to URLs, not commands. The first version is PDF only; DjVu, PostScript, and comic-book files need different text extractors.
 
 ## Output modes
 
-Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. The Neovim, qutebrowser, and zathura integrations use `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object.
+Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. The Neovim, qutebrowser, Firefox, and zathura integrations use `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object.
 
 The shared executor builds the context and prompt once, then selects the output mode. This keeps buffered, streamed, JSON, and prompt-preview paths on the same request and prompt code.
 
@@ -99,7 +110,7 @@ When history is enabled, `cli::execute` records one row after the provider call 
 
 `history` opens the SQLite database once per run, enables WAL mode, applies a busy timeout, and creates the schema on first use. Schema changes are tracked with `PRAGMA user_version`. The database path comes from `history.database` or the platform data directory. A failed write is logged as a warning and never changes the command result.
 
-The global `--source` flag, default `cli`, identifies the caller. The adapters pass `nvim`, `qutebrowser`, or `zathura`; custom plugins pass their own name. The source is only stored in history and does not affect request handling.
+The global `--source` flag, default `cli`, identifies the caller. The adapters pass `nvim`, `qutebrowser`, `firefox`, or `zathura`; custom plugins pass their own name. The source is only stored in history and does not affect request handling.
 
 The database contains full prompts and answers, including document context, so it is local, unencrypted, and restricted to the owning user on Unix. API keys are not stored. See [run history](history.md) for the schema and queries.
 
@@ -167,7 +178,7 @@ Errors emitted after streaming starts use the same channel:
 {"type":"error","message":"provider request failed with HTTP 401: bad key"}
 ```
 
-The CLI also writes the error to stderr and exits with the provider exit code. Neovim and qutebrowser parse complete lines only, so a chunk boundary can never split a JSON object or a UTF-8 character. The parser handles SSE `data:` frames that are split at arbitrary byte boundaries.
+The CLI also writes the error to stderr and exits with the provider exit code. Neovim, qutebrowser, and Firefox parse complete lines only, so a chunk boundary can never split a JSON object or a UTF-8 character. The parser handles SSE `data:` frames that are split at arbitrary byte boundaries.
 
 The stream ends with `done` or an error. A stream that ends without either is treated as a failure by the adapter if the child process exits non-zero, or as a completed answer if it exits zero.
 
@@ -185,7 +196,8 @@ Diagnostics and prompt labels go to stderr. The answer goes to stdout. A CLI inv
 ## Security boundaries
 
 - Profiles are loaded from `profiles/<name>.toml`. Names are restricted to letters, digits, underscores, and hyphens, so `--profile ../secret` cannot escape the directory.
-- `vim.system` and `QProcess` receive argument arrays, not shell command lines, so buffer and page text cannot become shell syntax. Terminal commands likewise treat file paths and selection text as data, never as shell input.
+- `vim.system` and `QProcess` receive argument arrays, not shell command lines, so buffer and page text cannot become shell syntax. Terminal commands likewise treat file paths and selection text as data, never as shell input. The Firefox extension uses `tabs.executeScript` with a fixed snippet and never builds a command line from page text.
+- The Firefox host manifest lists the add-on ID that may connect, and the host refuses to start a program whose basename does not begin with `docent`. The extension requests `activeTab`, not host permissions, so it can read a page only after an explicit user action.
 - API keys are referenced by environment variable name. The generated config contains no secrets, and the history database never stores a key.
 - The history database stores full prompts and answers, including document context. It is local and unencrypted, and on Unix it is created with mode `0600` under a `0700` default data directory.
 - Error messages include provider messages and truncated response bodies, never request headers.
@@ -201,4 +213,6 @@ Diagnostics and prompt labels go to stderr. The answer goes to stdout. A CLI inv
 - **A generic command provider** would unlock subscription-only tools, but its output contracts, permissions, and process lifecycle vary too much for the first release.
 - **A full-screen terminal UI or REPL** would duplicate the Neovim experience and add a terminal rendering stack. Plain commands with prompts cover the terminal use case with much less surface area.
 - **A qutebrowser userscript** is the documented extension mechanism and needs no internal API, but it cannot stream into a live view or prompt cleanly for the ask profile. The adapter uses a Python module instead and accepts the compatibility risk.
+- **A Firefox extension that calls providers directly** would avoid the native host, but it duplicates configuration, profiles, prompt assembly, history, and both provider clients in JavaScript and puts the API key in browser storage. The host keeps the CLI as the single implementation.
+- **A local HTTP daemon for Firefox** avoids the native messaging manifest but adds a long-running server, port discovery, and localhost security concerns. Native messaging mirrors the qutebrowser process model and cancels with the tab.
 - **An answer tab instead of a float overlay** avoids qutebrowser's application-wide key filter and keeps native tab navigation. The overlay is deferred until the tab workflow is stable.

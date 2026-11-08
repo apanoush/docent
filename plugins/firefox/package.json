@@ -1,0 +1,6 @@
+{
+  "name": "docent-firefox",
+  "private": true,
+  "type": "module",
+  "description": "Docent Firefox adapter. This file marks the sources as ES modules for the Node test runner and is not an npm package."
+}

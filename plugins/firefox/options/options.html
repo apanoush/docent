@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="options.css" />
+    <title>Docent options</title>
+  </head>
+  <body>
+    <h1>Docent options</h1>
+    <form id="form">
+      <label>
+        <span>Command</span>
+        <input id="cmd" type="text" spellcheck="false" placeholder="docent" />
+        <small>Executable name on Firefox's PATH, or an absolute path.</small>
+      </label>
+
+      <label>
+        <span>Config directory</span>
+        <input id="config-dir" type="text" spellcheck="false" placeholder="(platform default)" />
+        <small>Passed to the CLI as <code>--config-dir</code>.</small>
+      </label>
+
+      <label>
+        <span>Default profile</span>
+        <input id="default-profile" type="text" spellcheck="false" placeholder="explain" />
+      </label>
+
+      <label>
+        <span>Context mode</span>
+        <select id="context-mode">
+          <option value="">Use the config default</option>
+          <option value="auto">auto</option>
+          <option value="full">full</option>
+          <option value="none">none</option>
+        </select>
+      </label>
+
+      <label>
+        <span>Target language</span>
+        <input id="target-language" type="text" placeholder="Use the config default" />
+        <small>Passed as <code>--target-language</code> when set.</small>
+      </label>
+
+      <label class="check">
+        <input id="open-in-background" type="checkbox" />
+        <span>Open answers in a background tab</span>
+      </label>
+
+      <menu>
+        <button id="test" type="button">Test</button>
+        <button id="reset" type="button">Reset</button>
+        <button id="save" type="submit">Save</button>
+      </menu>
+      <p id="status" role="status"></p>
+    </form>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

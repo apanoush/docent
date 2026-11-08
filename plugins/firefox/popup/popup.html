@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Docent</title>
+  </head>
+  <body>
+    <header>
+      <h1>Docent</h1>
+      <button id="refresh" type="button" title="Reload profiles">Refresh</button>
+    </header>
+    <form id="form">
+      <fieldset id="profiles" aria-label="Profile"></fieldset>
+      <label id="question-row" class="question" hidden>
+        <span>Question</span>
+        <textarea id="question" rows="2" spellcheck="true"></textarea>
+      </label>
+      <p id="status" role="status"></p>
+      <menu>
+        <button id="options" type="button">Options</button>
+        <button id="run" type="submit" disabled>Run</button>
+      </menu>
+    </form>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

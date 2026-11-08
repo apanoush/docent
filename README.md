@@ -1,12 +1,13 @@
 # Docent
 
-A context-aware reading companion for the terminal, Neovim, qutebrowser, and zathura. Select a passage, ask Docent to explain it, translate it, summarize it, or answer a question about it, and Docent sends the surrounding document as context to an AI provider.
+A context-aware reading companion for the terminal, Neovim, qutebrowser, Firefox, and zathura. Select a passage, ask Docent to explain it, translate it, summarize it, or answer a question about it, and Docent sends the surrounding document as context to an AI provider.
 
-Docent has four pieces:
+Docent has five pieces:
 
 - `docent`, a Rust CLI with terminal commands for files, line ranges, pasted text, and questions. It also accepts JSON on stdin for machine integrations, builds the prompt, calls an OpenAI-compatible or Anthropic API, and returns or streams the answer.
 - `plugins/nvim/`, a Neovim plugin that captures the selection and buffer, calls the CLI asynchronously, and streams the answer into a floating window.
 - `plugins/qutebrowser/`, a qutebrowser adapter that captures the page selection and rendered text, calls the CLI asynchronously, and streams the answer into a new tab.
+- `plugins/firefox/`, a Firefox extension plus a native messaging host that captures the page selection and rendered text and streams the answer into a new tab.
 - `plugins/zathura/`, a zathura adapter that reads the selection from the clipboard, extracts the current page with `pdftotext`, calls the CLI, and streams the answer into a terminal window.
 
 ## Why
@@ -15,7 +16,7 @@ Most lookup tools treat a word or phrase in isolation. Docent sends the selectio
 
 ## Install
 
-Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, and the zathura adapter needs zathura plus `pdftotext`. The zathura `--viewer nvim` option also needs Neovim 0.10 or newer, and `--viewer qutebrowser` needs qutebrowser 3.7 or newer.
+Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, the Firefox adapter needs Firefox 140 or newer, and the zathura adapter needs zathura plus `pdftotext`. The zathura `--viewer nvim` option also needs Neovim 0.10 or newer, and `--viewer qutebrowser` needs qutebrowser 3.7 or newer. The adapter tests need Node 18 or newer.
 
 ```bash
 cargo install --path .
@@ -68,7 +69,7 @@ If a required input is missing and stdin is a terminal, Docent prompts for it. P
 
 When a run has no selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. Use `--context-mode full` to send everything, raise `context.max_chars`, or narrow the subject with `--lines`.
 
-The JSON stdin interface used by Neovim and qutebrowser remains available:
+The JSON stdin interface used by Neovim, qutebrowser, Firefox, and zathura remains available:
 
 ```bash
 printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence using attention.","byte_start":2,"byte_end":13,"file":"notes.md"}' | docent run --profile explain
@@ -124,6 +125,17 @@ docent.setup(
 
 Select text with the mouse or in caret mode and press `,de`, or run `:docent explain`. The answer streams into a new tab. Press `d` to close the tab; closing it while the request is still running cancels the request. See [the qutebrowser guide](docs/qutebrowser.md).
 
+## Firefox
+
+Install the CLI and the native messaging host manifest, then load the extension temporarily:
+
+```bash
+cargo install --path .
+scripts/firefox-host-install.sh
+```
+
+Open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `plugins/firefox/manifest.json`. Select text with the mouse and click the Docent toolbar button or press `Alt+Shift+D`. The popup lists the profiles and runs the one you choose. The answer streams into a new tab. Press `d` to close the tab; closing it while the request is still running cancels the request. Permanent installs need a signed add-on from addons.mozilla.org. See [the Firefox guide](docs/firefox.md).
+
 ## Zathura
 
 Add a binding to `~/.config/zathura/zathurarc`:
@@ -136,7 +148,7 @@ Select text with the mouse and press `<C-e>`. The answer streams into a terminal
 
 ## Status
 
-Early development, version 0.1.0. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, and zathura adapter work. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
+Early development, version 0.1.0. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, Firefox adapter, and zathura adapter work. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
 
 ## Documentation
 
@@ -144,10 +156,12 @@ Early development, version 0.1.0. The terminal commands, streaming, profile syst
 - [Configuration and profiles](docs/config.md)
 - [Neovim plugin](docs/nvim.md)
 - [qutebrowser adapter](docs/qutebrowser.md)
+- [Firefox adapter](docs/firefox.md)
 - [Zathura adapter](docs/zathura.md)
 - [Architecture](docs/architecture.md)
 - [Rust module reference](docs/modules/docent.md)
 - [qutebrowser module reference](docs/modules/qutebrowser.md)
+- [Firefox module reference](docs/modules/firefox.md)
 - [Zathura module reference](docs/modules/zathura.md)
 
 ## License

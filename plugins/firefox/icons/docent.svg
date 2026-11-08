@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Docent">
+  <rect width="96" height="96" rx="20" fill="#1e1e1e" />
+  <path d="M22 30 L46 25 L46 71 L22 76 Z" fill="#e6e6e6" />
+  <path d="M50 25 L74 30 L74 76 L50 71 Z" fill="#e6e6e6" />
+  <path d="M48 27 L48 73" stroke="#1e1e1e" stroke-width="3" />
+  <path d="M54 40 H68 M54 48 H68 M54 56 H64" stroke="#1e1e1e" stroke-width="3" stroke-linecap="round" />
+</svg>

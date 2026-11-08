@@ -30,6 +30,8 @@ profiles/
 docent.setup(config, custom_css="~/.config/docent/answer.css")
 ```
 
+The Firefox adapter reads the same file automatically through its native messaging host and applies it after the bundled styles.
+
 The default answer styles ship with the adapter, so the file only needs the rules you want to change. `docent init --force` replaces it like the other shipped defaults. See [the qutebrowser adapter](qutebrowser.md#customizing-the-answer-style) for the available variables and examples.
 
 ## `config.toml`
@@ -173,7 +175,7 @@ An explicit `database` path wins over the platform data directory. `~` and envir
 
 The database contains the full rendered prompt, including document context, the question, and the answer. Treat it as sensitive. On Unix, Docent creates the file with mode `0600` and the default data directory with mode `0700`. It is not encrypted.
 
-History is fail-open: when the database cannot be opened or written, Docent logs a warning and still returns the answer. Disable recording globally with `enabled = false`, or skip one run with the global `--no-history` flag. The global `--source NAME` flag records where a request came from; it defaults to `cli`, and the shipped adapters pass `nvim`, `qutebrowser`, or `zathura`.
+History is fail-open: when the database cannot be opened or written, Docent logs a warning and still returns the answer. Disable recording globally with `enabled = false`, or skip one run with the global `--no-history` flag. The global `--source NAME` flag records where a request came from; it defaults to `cli`, and the shipped adapters pass `nvim`, `qutebrowser`, `zathura`, or `firefox`.
 
 See [run history](history.md) for the schema and example queries.
 
@@ -187,7 +189,7 @@ A profile is one TOML file in `profiles/`. The filename without `.toml` is the p
 |---|---|---|---|
 | `user_prompt` | string | yes | User message template. Must not be empty. |
 | `system_prompt` | string | no | Replaces the built-in system message for this profile. |
-| `description` | string | no | Short description shown by the Neovim and qutebrowser profile pickers. |
+| `description` | string | no | Short description shown by the Neovim, qutebrowser, and Firefox profile pickers. |
 | `requires` | array | no | Inputs required before the profile can run. Values are `selection`, `question`, and `context`. |
 | `context_mode` | `"auto"`, `"full"`, or `"none"` | no | Per-profile context mode override. |
 | `model` | string | no | Per-profile model override. |
@@ -211,7 +213,7 @@ Unknown fields are rejected, so typos fail loudly instead of being ignored.
 
 Placeholders use `{{name}}`; whitespace inside the braces is allowed. Unknown placeholders are rejected at load time. Substituted values are not scanned again, so a document that contains `{{question}}` cannot inject another placeholder.
 
-If a prompt uses `{{selection}}` or `{{question}}`, the profile must also declare the matching entry in `requires`. This lets the Neovim and qutebrowser adapters prompt for a question before starting the request. A profile may use `{{context}}` without declaring `requires = ["context"]`; in that case an empty document renders the fallback note instead of failing.
+If a prompt uses `{{selection}}` or `{{question}}`, the profile must also declare the matching entry in `requires`. This lets the Neovim, qutebrowser, and Firefox adapters prompt for a question before starting the request. A profile may use `{{context}}` without declaring `requires = ["context"]`; in that case an empty document renders the fallback note instead of failing.
 
 Each declared requirement must be used by `user_prompt` or `system_prompt`. Duplicate requirements are rejected. A profile that requires `context` cannot be combined with an effective `context_mode = "none"`.
 
@@ -302,7 +304,7 @@ Piped stdin is always the document, never prompt input. Prompts only appear when
 
 When a run has no resolvable selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. `--context-mode full` sends the whole document, raising `context.max_chars` widens the window, and `--lines` narrows the subject.
 
-A bare `docent` prints a short getting-started message. `docent profiles` prints `name: description`; `docent profiles --json` remains the machine-readable form used by the Neovim and qutebrowser pickers.
+A bare `docent` prints a short getting-started message. `docent profiles` prints `name: description`; `docent profiles --json` remains the machine-readable form used by the Neovim, qutebrowser, and Firefox pickers.
 
 Terminal commands stream plain text by default. `--no-stream` waits for the complete answer and prints it once. `--json` and `--stream` are reserved for `docent run`, where `--stream` means newline-delimited JSON events.
 

@@ -40,6 +40,7 @@ The global `--source NAME` flag records where a request came from. It defaults t
 
 - Neovim: `nvim`
 - qutebrowser: `qutebrowser`
+- Firefox: `firefox`
 - zathura: `zathura`
 
 A custom plugin can pass any short name, for example `--source my-plugin`. Names may contain letters, digits, `-`, `_`, and `.`.
@@ -55,7 +56,7 @@ Schema version 1 has one table:
 | `duration_ms` | integer | Provider call duration in milliseconds. |
 | `command` | text | `explain`, `ask`, `translate`, `summarize`, `do`, or `run`. |
 | `profile` | text | Profile name. |
-| `source` | text | `cli`, `nvim`, `qutebrowser`, `zathura`, or a custom name. |
+| `source` | text | `cli`, `nvim`, `qutebrowser`, `firefox`, `zathura`, or a custom name. |
 | `output_mode` | text | `plain_stream`, `plain`, `json`, or `ndjson`. |
 | `status` | text | `success` or `error`. |
 | `error` | text | Error message on failure. |
