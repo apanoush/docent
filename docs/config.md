@@ -12,6 +12,7 @@ The directory contains:
 
 ```text
 config.toml
+answer.css
 profiles/
   explain.toml
   ask.toml
@@ -20,6 +21,16 @@ profiles/
 ```
 
 `docent init` creates the directory and the default files. It skips files that already exist and only overwrites the shipped defaults with `--force`. Profile files you add yourself are never removed.
+
+## `answer.css`
+
+`docent init` writes a commented example `answer.css` for browser answer-tab styling. The CLI does not read it. Point a browser adapter at it with its custom CSS option, for example the qutebrowser adapter:
+
+```python
+docent.setup(config, custom_css="~/.config/docent/answer.css")
+```
+
+The default answer styles ship with the adapter, so the file only needs the rules you want to change. `docent init --force` replaces it like the other shipped defaults. See [the qutebrowser adapter](qutebrowser.md#customizing-the-answer-style) for the available variables and examples.
 
 ## `config.toml`
 

@@ -23,7 +23,7 @@ export OPENCODE_API_KEY=...
 docent init
 ```
 
-`docent init` writes `~/.config/docent/config.toml` and four profiles: explain, ask, translate, and summarize. The generated config points at OpenCode Go. Edit it to use OpenAI, Anthropic, another OpenAI-compatible endpoint, or a local server. The key can also be stored directly in `config.toml` with `api_key` instead of an environment variable; a set environment variable wins, and `api_key_env` remains the safer choice for shared machines and dotfiles. See [configuration](docs/config.md).
+`docent init` writes `~/.config/docent/config.toml`, four profiles (explain, ask, translate, and summarize), and an example `answer.css` for browser answer styling. The generated config points at OpenCode Go. Edit it to use OpenAI, Anthropic, another OpenAI-compatible endpoint, or a local server. The key can also be stored directly in `config.toml` with `api_key` instead of an environment variable; a set environment variable wins, and `api_key_env` remains the safer choice for shared machines and dotfiles. See [configuration](docs/config.md).
 
 ## Quickstart
 

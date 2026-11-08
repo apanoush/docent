@@ -105,14 +105,16 @@ The answer tab loads `plugins/qutebrowser/docent/answer.css`. The file is plain 
 | `--docent-font-body` | Prose, headings, lists, tables |
 | `--docent-font-code` | Inline code and fenced code blocks |
 
-Pass a CSS file to `custom_css` to override them or any other rule:
+Pass a CSS file to `custom_css` to override them or any other rule. `docent init` creates a commented example at `<config dir>/answer.css`; on Linux that is `~/.config/docent/answer.css`. Edit it and point `custom_css` at it:
 
 ```python
 docent.setup(
     config,
-    custom_css="~/.config/qutebrowser/docent.css",
+    custom_css="~/.config/docent/answer.css",
 )
 ```
+
+If the config directory is somewhere else, use the path printed by `docent init`, or run `docent config-path` and append `answer.css`.
 
 ```css
 :root {

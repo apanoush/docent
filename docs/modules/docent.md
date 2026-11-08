@@ -8,7 +8,7 @@ The crate has one binary target, `src/main.rs`, and a library target, `src/lib.r
 |---|---|
 | `cli` | Clap definitions, subcommand dispatch, terminal prompts, stdin request reading, output modes, NDJSON writing. |
 | `config` | Config directory resolution, `config.toml` parsing and validation, default file creation. |
-| `defaults` | `include_str!` copies of the shipped `config.toml` and profiles. |
+| `defaults` | `include_str!` copies of the shipped `config.toml`, `answer.css`, and profiles. |
 | `profile` | Profile schema, validation, placeholder parsing, discovery, and metadata for `docent profiles`. |
 | `request` | The JSON request type and selection range resolution. |
 | `source` | Terminal input adapters: file and stdin documents, line ranges, phrase and text selection, prompts, and request construction. |

@@ -1,0 +1,32 @@
+/*
+ * Example overrides for the browser answer tab.
+ *
+ * The default styles ship with the browser adapter. This file is appended
+ * after them, so add only the rules you want to change.
+ *
+ * Pass it to the qutebrowser adapter from config.py:
+ *
+ *   docent.setup(config, custom_css="~/.config/docent/answer.css")
+ *
+ * Use the path printed by `docent init` when the config directory is not
+ * ~/.config/docent. Uncomment the examples below to try them.
+ *
+ * Available custom properties:
+ *   --docent-bg, --docent-fg, --docent-error
+ *   --docent-font-body, --docent-font-code
+ */
+
+/*
+:root {
+  --docent-font-body: "Source Serif 4", Georgia, serif;
+  --docent-font-code: "Iosevka", "JetBrains Mono", monospace;
+}
+
+.markdown h2 {
+  border-bottom: 1px solid color-mix(in srgb, var(--docent-fg) 20%, transparent);
+}
+
+.markdown blockquote {
+  border-left-color: color-mix(in srgb, var(--docent-fg) 45%, transparent);
+}
+*/

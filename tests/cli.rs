@@ -22,9 +22,14 @@ fn init_creates_defaults_and_profiles_lists_them() {
         .unwrap();
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert!(dir.join("config.toml").exists());
+    assert!(dir.join("answer.css").exists());
+    let css = fs::read_to_string(dir.join("answer.css")).unwrap();
+    assert!(css.contains("--docent-font-body"));
     for name in ["explain", "ask", "translate", "summarize"] {
         assert!(dir.join(format!("profiles/{name}.toml")).exists());
     }
+    let init_stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(init_stdout.contains("answer.css"));
 
     let output = docent()
         .args(["--config-dir", dir.to_str().unwrap(), "profiles", "--json"])

@@ -14,6 +14,7 @@ use crate::error::DocentError;
 pub const CONFIG_DIR_ENV: &str = "DOCENT_CONFIG_DIR";
 
 const CONFIG_FILE: &str = "config.toml";
+const ANSWER_CSS_FILE: &str = "answer.css";
 const PROFILES_DIR: &str = "profiles";
 
 /// Top level `config.toml` structure.
@@ -375,7 +376,8 @@ pub struct InitReport {
     pub skipped: Vec<PathBuf>,
 }
 
-/// Creates the config directory, `config.toml`, and the default profiles.
+/// Creates the config directory, `config.toml`, the example `answer.css`, and
+/// the default profiles.
 ///
 /// Existing files are skipped unless `force` is set. Profiles not shipped as
 /// defaults are never removed.
@@ -399,6 +401,12 @@ pub fn init(config_dir: &Path, force: bool) -> Result<InitReport, DocentError> {
     if report.created.contains(&config_path) {
         restrict_permissions(&config_path)?;
     }
+    write_default(
+        &config_dir.join(ANSWER_CSS_FILE),
+        defaults::ANSWER_CSS,
+        force,
+        &mut report,
+    )?;
     for (name, contents) in defaults::PROFILES {
         write_default(
             &profile_dir.join(format!("{name}.toml")),
@@ -646,23 +654,58 @@ temperature = 0.1
         let dir = temp.path().join("docent");
 
         let report = init(&dir, false).unwrap();
-        assert_eq!(report.created.len(), 1 + defaults::PROFILES.len());
+        assert_eq!(report.created.len(), 2 + defaults::PROFILES.len());
         assert!(config_file(&dir).exists());
+        assert!(dir.join(ANSWER_CSS_FILE).exists());
         for (name, _) in defaults::PROFILES {
             assert!(profiles_dir(&dir).join(format!("{name}.toml")).exists());
         }
 
         let report = init(&dir, false).unwrap();
         assert!(report.created.is_empty());
-        assert_eq!(report.skipped.len(), 1 + defaults::PROFILES.len());
+        assert_eq!(report.skipped.len(), 2 + defaults::PROFILES.len());
 
         fs::write(config_file(&dir), "garbage").unwrap();
         let report = init(&dir, true).unwrap();
-        assert_eq!(report.created.len(), 1 + defaults::PROFILES.len());
+        assert_eq!(report.created.len(), 2 + defaults::PROFILES.len());
         assert!(
             fs::read_to_string(config_file(&dir))
                 .unwrap()
                 .contains("[api]")
+        );
+    }
+
+    #[test]
+    fn init_creates_an_answer_css_example() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("docent");
+
+        let report = init(&dir, false).unwrap();
+
+        let css_path = dir.join(ANSWER_CSS_FILE);
+        assert!(report.created.contains(&css_path));
+        let css = fs::read_to_string(&css_path).unwrap();
+        assert!(css.contains("--docent-font-body"));
+        assert!(css.contains("custom_css"));
+    }
+
+    #[test]
+    fn init_skips_and_forces_answer_css() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("docent");
+        init(&dir, false).unwrap();
+
+        let css_path = dir.join(ANSWER_CSS_FILE);
+        fs::write(&css_path, "/* custom */\n").unwrap();
+
+        init(&dir, false).unwrap();
+        assert_eq!(fs::read_to_string(&css_path).unwrap(), "/* custom */\n");
+
+        init(&dir, true).unwrap();
+        assert!(
+            fs::read_to_string(&css_path)
+                .unwrap()
+                .contains("--docent-font-body")
         );
     }
 
