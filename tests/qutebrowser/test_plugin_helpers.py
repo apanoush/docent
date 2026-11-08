@@ -51,6 +51,8 @@ class FakePage:
         self.text: list[str] = []
         self.errors: list[str] = []
         self.models: list[str | None] = []
+        self.done_calls: list[tuple[str | None, str | None]] = []
+        self.finish_calls: list[str | None] = []
         self.finished = 0
         self.closed = False
 
@@ -60,11 +62,13 @@ class FakePage:
     def set_error(self, message: str) -> None:
         self.errors.append(message)
 
-    def done(self, model: str | None = None) -> None:
+    def done(self, model: str | None = None, html_body: str | None = None) -> None:
         self.models.append(model)
+        self.done_calls.append((model, html_body))
 
-    def finish(self) -> None:
+    def finish(self, html_body: str | None = None) -> None:
         self.finished += 1
+        self.finish_calls.append(html_body)
 
     def close(self) -> None:
         self.closed = True
@@ -223,12 +227,12 @@ def test_answer_page_done_updates_title_and_stops_updates() -> None:
     assert "docent: explain - test-model" in tab.codes[0]
 
 
-def test_answer_page_done_renders_accumulated_markdown() -> None:
+def test_answer_page_done_uses_the_rendered_html() -> None:
     tab = FakeTab()
     page = ui.AnswerPage(tab, "explain")
 
     page.append_text("# Title\n\nBody with **bold**.")
-    page.done("test-model")
+    page.done("test-model", "<h1>Title</h1>\n<p>Body with <strong>bold</strong>.</p>")
 
     rendered = tab.codes[-1]
     assert "<h1>Title</h1>" in rendered
@@ -236,38 +240,41 @@ def test_answer_page_done_renders_accumulated_markdown() -> None:
     assert "docent: explain - test-model" in rendered
 
 
-def test_answer_page_finish_renders_accumulated_markdown() -> None:
+def test_answer_page_finish_uses_the_rendered_html() -> None:
     tab = FakeTab()
     page = ui.AnswerPage(tab, "explain")
 
     page.append_text("- one")
-    page.finish()
+    page.finish("<ul><li>one</li></ul>")
 
     rendered = tab.codes[-1]
     assert "<ul><li>one</li></ul>" in rendered
     assert "(no output)" not in rendered
 
 
-def test_answer_page_done_escapes_model_output() -> None:
+def test_answer_page_does_not_insert_untrusted_html() -> None:
     tab = FakeTab()
     page = ui.AnswerPage(tab, "explain")
 
     page.append_text("<script>alert(1)</script>")
-    page.done()
+    page.done(None, "&lt;script&gt;alert(1)&lt;/script&gt;")
 
     rendered = tab.codes[-1]
     assert "<script>" not in rendered
     assert "&lt;script&gt;" in rendered
 
 
-def test_answer_page_finish_reports_no_output() -> None:
+def test_answer_page_finish_without_html_keeps_the_streamed_text() -> None:
     tab = FakeTab()
     page = ui.AnswerPage(tab, "explain")
 
+    page.append_text("- one")
     page.finish()
 
     assert page.finished
-    assert "(no output)" in tab.codes[0]
+    assert len(tab.codes) == 2
+    assert "docent: explain" in tab.codes[-1]
+    assert "(no output)" not in tab.codes[-1]
 
 
 def test_answer_page_close_stops_updates() -> None:
@@ -385,12 +392,14 @@ def test_session_handles_delta_done_and_error_events() -> None:
     )
 
     session._handle_event({"type": "delta", "text": "hello"})
+    session._handle_event({"type": "html", "html": "<p>hello</p>"})
     session._handle_event({"type": "done", "model": "test-model"})
     session._handle_event({"type": "error", "message": "boom"})
     session._handle_event({"type": "unknown"})
 
     assert page.text == ["hello"]
     assert page.models == ["test-model"]
+    assert page.done_calls == [("test-model", "<p>hello</p>")]
     assert page.errors == ["boom", "invalid stream event"]
     assert session.done
     assert session.error
@@ -410,7 +419,25 @@ def test_session_finishes_cleanly_on_success_exit() -> None:
     session._finished(0, None)  # type: ignore[arg-type]
 
     assert page.finished == 1
+    assert page.finish_calls == [None]
     assert page.errors == []
+
+
+def test_session_passes_rendered_html_to_finish() -> None:
+    page = FakePage()
+    session = plugin.Session(
+        tabbed_browser=None,
+        source_tab=FakeTab(),
+        answer_tab=FakeTab(),
+        profile="explain",
+        page=page,  # type: ignore[arg-type]
+        settings=_settings(),
+    )
+    session._handle_event({"type": "html", "html": "<p>hello</p>"})
+
+    session._finished(0, None)  # type: ignore[arg-type]
+
+    assert page.finish_calls == ["<p>hello</p>"]
 
 
 def test_session_warns_on_stderr_after_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -667,6 +694,7 @@ def test_run_arguments_tags_the_source() -> None:
         "--profile",
         "explain",
         "--stream",
+        "--html",
         "--target-language",
         "French",
         "--context-mode",
@@ -689,6 +717,7 @@ def test_run_arguments_include_config_dir() -> None:
         "--profile",
         "ask",
         "--stream",
+        "--html",
         "--source",
         "qutebrowser",
     ]

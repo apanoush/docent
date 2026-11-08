@@ -23,7 +23,7 @@ export function profilesArgs(settings) {
 
 /** Arguments for `docent run`. */
 export function runArgs(settings, profile, overrides = {}) {
-  const args = ["run", "--profile", profile, "--stream"];
+  const args = ["run", "--profile", profile, "--stream", "--html"];
   const targetLanguage = overrides.targetLanguage ?? settings.targetLanguage;
   const mode = contextMode(overrides.contextMode ?? settings.contextMode);
   if (targetLanguage) {

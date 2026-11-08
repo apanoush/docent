@@ -23,7 +23,7 @@ and prompts                   |                    |                     |
                            |-- call provider
                                   |
                                   v
-                    plain text, JSON, or NDJSON events
+                    plain text, JSON, NDJSON events, or browser SSE
                                   |
               +-------------------+-------------------+
               |                   |                   |
@@ -68,7 +68,7 @@ Prompts use a small `Prompter` trait. The real implementation reads from stdin a
 
 The adapter is a Python module loaded from qutebrowser's `config.py`. It captures the page selection with `window.getSelection()` and the rendered page text with `document.body.innerText` through `tab.run_js_async`. The page URL has its query and fragment removed before it is used as the `file` label. A profile that declares `requires = ["question"]` opens a `QInputDialog` before the request starts.
 
-The adapter starts `docent run --profile NAME --stream --source qutebrowser` with `QProcess`, writes the request JSON to stdin, and parses stdout with the same NDJSON line parser as the Neovim plugin. The answer streams into a new tab. Closing the tab calls `terminate()` and then `kill()` if needed. The question travels in the JSON request rather than in argv so it does not appear in the process list.
+The adapter starts `docent run --profile NAME --stream --html --source qutebrowser` with `QProcess`, writes the request JSON to stdin, and parses stdout with the same NDJSON line parser as the Neovim plugin. The answer streams into a new tab, and the CLI's final `html` event replaces the raw text with the rendered Markdown. Closing the tab calls `terminate()` and then `kill()` if needed. The question travels in the JSON request rather than in argv so it does not appear in the process list.
 
 qutebrowser does not expose a stable third-party plugin API. The loader only walks built-in components, and `qutebrowser/api/__init__.py` says the extension API is not exposed to third-party extensions yet. The adapter therefore imports internal modules and must be retested on qutebrowser upgrades. It also requires JavaScript for selection capture and answer rendering. `window.getSelection()` sees the top frame only, so iframes, shadow DOM, and PDF viewers are not supported in the first version.
 
@@ -76,11 +76,11 @@ The first UI is a tab rather than a floating window. qutebrowser's application-w
 
 ## Firefox adapter
 
-Firefox extensions cannot start processes, so the adapter has two parts. `plugins/firefox/` is a Manifest V2 WebExtension, and `docent-native-host` is a small Rust binary that Firefox starts through native messaging. The extension captures the selection and `document.body.innerText` with `tabs.executeScript` after an `activeTab` grant, builds the same JSON request as the other adapters, and sends it through the host. The host starts `docent run --profile NAME --stream --source firefox`, forwards each stdout line as one native message, and reports the exit code with the captured stderr.
+Firefox extensions cannot start processes, so the adapter has two parts. `plugins/firefox/` is a Manifest V2 WebExtension, and `docent-native-host` is a small Rust binary that Firefox starts through native messaging. The extension captures the selection and `document.body.innerText` with `tabs.executeScript` after an `activeTab` grant, builds the same JSON request as the other adapters, and sends it through the host. The host starts `docent run --profile NAME --stream --html --source firefox`, forwards each stdout line as one native message, and reports the exit code with the captured stderr.
 
 Closing the answer tab disconnects the native port. Firefox sends `SIGTERM` to the host and its child, then `SIGKILL` after a grace period, so the request is cancelled without host-side signal handling. One host process handles one run. The profile catalog and the user stylesheet use `runtime.sendNativeMessage`, which starts a short-lived host per call.
 
-The answer page is an extension page with its own CSP, so it does not inject scripts into the source page. It renders the final Markdown with a JavaScript port of the qutebrowser renderer and applies `<config dir>/answer.css` when the host can read it.
+The answer page is an extension page with its own CSP, so it does not inject scripts into the source page. It shows the HTML from the CLI's `html` event and applies `<config dir>/answer.css` when the host can read it.
 
 The extension requests `activeTab` rather than host permissions, so it cannot read pages until the user clicks the toolbar button, uses the shortcut, or picks a context-menu item. Firefox extension shortcuts are modifier combinations, not key chains, so a toolbar popup and a context menu replace qutebrowser's `,de` bindings. Offsets are omitted for the same reason as qutebrowser. Reader view, the PDF viewer, view-source, and browser UI pages cannot be scripted.
 
@@ -96,11 +96,11 @@ map <C-e> exec "/path/to/docent-zathura explain $FILE $PAGE"
 
 The helper extracts the current page plus one page on each side with `pdftotext`, builds the same JSON request as the other adapters, and writes it to a private temporary file. It resolves `docent` through `PATH` and then through common install locations such as `~/.local/bin` and `~/.cargo/bin`, because desktop-launched zathura often has a minimal `PATH`. It then starts a terminal window running `docent-zathura render REQUEST_FILE`. The render process reads and deletes the request file, runs `docent run --profile NAME --stream --source zathura`, prints the `delta` events, and waits for Enter before closing. This two-process split keeps the selection out of argv and gives the answer a window that stays open after the stream ends.
 
-The answer is a terminal window rather than a zathura overlay. An overlay would require patching zathura's GTK/C core. The terminal window streams naturally, supports the CLI's existing output, and can be floated with a compositor rule. With `--viewer nvim`, the same request file is handed to the existing Neovim plugin, which streams into its Markdown float. That reuses the plugin's stream parser, cancellation, and buffer setup instead of duplicating them in the zathura adapter. With `--viewer qutebrowser`, the adapter starts a loopback HTTP server, opens a tokenized URL with `qutebrowser --target=TARGET`, streams raw text over Server-Sent Events, and renders the final Markdown with the qutebrowser adapter's renderer. The page also reuses the qutebrowser adapter's answer shell and `answer.css`, so the visual style matches the answer tab. The URL approach is required because qutebrowser's `--target` applies to URLs, not commands. The first version is PDF only; DjVu, PostScript, and comic-book files need different text extractors.
+The answer is a terminal window rather than a zathura overlay. An overlay would require patching zathura's GTK/C core. The terminal window streams naturally, supports the CLI's existing output, and can be floated with a compositor rule. With `--viewer nvim`, the same request file is handed to the existing Neovim plugin, which streams into its Markdown float. That reuses the plugin's stream parser, cancellation, and buffer setup instead of duplicating them in the zathura adapter. With `--viewer qutebrowser`, the adapter starts a loopback HTTP server, opens a tokenized URL with `qutebrowser --target=TARGET`, streams raw text over Server-Sent Events, and forwards the CLI's final `html` event. The page also reuses the qutebrowser adapter's answer shell and `answer.css`, so the visual style matches the answer tab. The URL approach is required because qutebrowser's `--target` applies to URLs, not commands. The first version is PDF only; DjVu, PostScript, and comic-book files need different text extractors.
 
 ## Output modes
 
-Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. The Neovim, qutebrowser, Firefox, and zathura integrations use `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object.
+Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. `--viewer qutebrowser` streams the answer into a loopback Server-Sent Events page instead of stdout and renders Markdown once at the end. The Neovim, qutebrowser, Firefox, and zathura integrations use `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object, and `--stream --html` adds a rendered HTML event for browser front ends.
 
 The shared executor builds the context and prompt once, then selects the output mode. This keeps buffered, streamed, JSON, and prompt-preview paths on the same request and prompt code.
 
@@ -169,8 +169,11 @@ With `docent run --stream`, stdout contains one JSON object per line:
 ```json
 {"type":"delta","text":"Hello"}
 {"type":"delta","text":" world"}
+{"type":"html","html":"<p>Hello world</p>\n"}
 {"type":"done","model":"test-model","usage":{"input_tokens":3,"output_tokens":4}}
 ```
+
+The `html` event is emitted only with `--html` (which requires `--stream`), after the last delta and before `done`. It is the CLI-rendered Markdown answer: raw HTML is escaped, images stay alt text, and only `http`, `https`, and `mailto` links are active. The qutebrowser, Firefox, and zathura adapters use it, so they no longer carry their own renderers.
 
 Errors emitted after streaming starts use the same channel:
 
@@ -202,6 +205,8 @@ Diagnostics and prompt labels go to stderr. The answer goes to stdout. A CLI inv
 - The history database stores full prompts and answers, including document context. It is local and unencrypted, and on Unix it is created with mode `0600` under a `0700` default data directory.
 - Error messages include provider messages and truncated response bodies, never request headers.
 - The document is treated as untrusted content. The default system prompt tells the model not to follow instructions inside it.
+- The CLI browser viewer binds only to `127.0.0.1`, uses a random 128-bit token path, serves only the answer page and its event stream, and closes when the page closes.
+- The shared Markdown renderer treats model output as untrusted: raw HTML is escaped, images are replaced by alt text, and links are limited to `http`, `https`, and `mailto`.
 
 ## Alternatives considered
 

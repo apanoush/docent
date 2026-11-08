@@ -19,6 +19,8 @@ The crate has two binary targets and a library target. `src/main.rs` is the CLI:
 | `provider::anthropic` | Anthropic Messages request and response handling. |
 | `provider::stream` | Incremental SSE decoding. |
 | `history` | SQLite run history, schema creation, path resolution, and inserts. |
+| `markdown` | Safe Markdown-to-HTML rendering shared by the CLI viewer and the `html` stream event. |
+| `viewer` | Qutebrowser answer viewer: page shell, loopback SSE server, token, launch, and cancellation. |
 | `native_host` | Firefox native messaging framing, request validation, process spawning, line forwarding, `exec`, and `css`. |
 | `error` | `DocentError` and process exit codes. |
 
@@ -110,7 +112,9 @@ Profile validation covers TOML fields, numeric ranges, placeholder syntax, requi
 
 `source::resolve_request` reads a file or stdin, applies the profile's `requires` list, and prompts through the `Prompter` trait when stdin is a terminal. `TerminalPrompter` writes labels to stderr and reads one line from stdin. `NoPrompter` is used for piped input, so a document on stdin is never consumed as prompt answers.
 
-`cli::execute` selects one of five output modes: plain streaming for terminal commands, plain buffered for `--no-stream`, JSON for `docent run --json`, NDJSON for `docent run --stream`, and prompt JSON for `--print-prompt`. Plain streaming writes each provider fragment directly and flushes it, then adds a final newline if needed. When the context was truncated and the request has no resolvable selection, `cli::execute` logs a warning before rendering, so a whole-document run never silently covers only part of the document.
+`cli::execute` selects one of seven output modes: plain streaming for terminal commands, plain buffered for `--no-stream`, JSON for `docent run --json`, NDJSON for `docent run --stream`, NDJSON with a rendered `html` event for `docent run --stream --html`, prompt JSON for `--print-prompt`, and the qutebrowser viewer for `--viewer qutebrowser`. Plain streaming writes each provider fragment directly and flushes it, then adds a final newline if needed. The browser viewer runs the same provider stream, sends deltas over Server-Sent Events, and renders the finished answer with `markdown::render_answer`. When the context was truncated and the request has no resolvable selection, `cli::execute` logs a warning before rendering, so a whole-document run never silently covers only part of the document.
+
+`markdown::render` enables tables and strikethrough, converts raw HTML to escaped text, drops images to alt text, restricts links to `http`, `https`, and `mailto`, wraps tables in `.table-wrap`, and adds `target="_blank"` to links. `viewer::Viewer` binds `127.0.0.1:0`, serves a tokenized page and event stream, waits 30 seconds for qutebrowser to connect, and treats a closed page as cancellation. `DocentError::ViewerClosed` maps to a successful exit and a history status of `cancelled`.
 
 ## Provider clients
 
@@ -120,11 +124,11 @@ Streaming clients parse SSE through `provider::stream::stream_sse`. The decoder 
 
 ## Tests
 
-Rust tests are split into three layers:
+Rust tests are split into four layers:
 
-- Unit tests in each module for parsing, validation, windowing, rendering, request bodies, response parsing, SSE decoding, settings precedence, line ranges, prompt sequencing, and terminal request construction.
-- Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, and the bare getting-started output.
-- Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, selection errors, and input errors. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
+- Unit tests in each module for parsing, validation, windowing, rendering, request bodies, response parsing, SSE decoding, settings precedence, line ranges, prompt sequencing, terminal request construction, Markdown sanitization, and viewer page/server behavior.
+- Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, the bare getting-started output, and viewer flag conflicts.
+- Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, selection errors, input errors, the `html` event, and the qutebrowser viewer with a fake browser. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
 - Native host tests in `src/native_host.rs` with a fake `docent` shell script for framing, partial reads, oversized messages, invalid requests, spawn failures, line forwarding, exit codes, `exec`, and `css`.
 
 The coverage gate is `cargo llvm-cov --workspace --all-targets --fail-under-lines 80`. Run `scripts/check.sh` for the full gate, including formatting, clippy, tests, coverage, the Neovim tests, the qutebrowser adapter tests, the zathura tests, and the Firefox tests. The script requires `cargo-llvm-cov`, Neovim, pytest, ruff, ty, and Node on `PATH`; `web-ext` is optional and only adds a manifest lint.

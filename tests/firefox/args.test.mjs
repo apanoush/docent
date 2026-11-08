@@ -30,6 +30,7 @@ test("builds a run request", () => {
     "--profile",
     "explain",
     "--stream",
+    "--html",
     "--source",
     "firefox",
   ]);
@@ -46,6 +47,7 @@ test("adds language and context overrides", () => {
       "--profile",
       "translate",
       "--stream",
+      "--html",
       "--target-language",
       "French",
       "--context-mode",
@@ -67,6 +69,7 @@ test("uses settings defaults", () => {
       "--profile",
       "translate",
       "--stream",
+      "--html",
       "--target-language",
       "German",
       "--context-mode",
@@ -82,6 +85,6 @@ test("rejects an unknown context mode", () => {
   assert.equal(contextMode("auto"), "auto");
   assert.deepEqual(
     runArgs(settings, "explain", { contextMode: "everything" }),
-    ["run", "--profile", "explain", "--stream", "--source", "firefox"],
+    ["run", "--profile", "explain", "--stream", "--html", "--source", "firefox"],
   );
 });

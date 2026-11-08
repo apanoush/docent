@@ -164,6 +164,7 @@ test("background flow", async (t) => {
       "--profile",
       "explain",
       "--stream",
+      "--html",
       "--source",
       "firefox",
     ]);

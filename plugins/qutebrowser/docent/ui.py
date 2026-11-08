@@ -10,10 +10,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-from . import markdown
-
 __all__ = ["AnswerPage", "build_shell", "stylesheet"]
-
 _SAFE_COLOR = re.compile(r"^[#a-zA-Z0-9(),.% -]+$")
 _STYLESHEET = Path(__file__).with_name("answer.css")
 
@@ -90,13 +87,11 @@ class AnswerPage:
         self.closed = False
         self.finished = False
         self.failed = False
-        self._chunks: list[str] = []
 
     def append_text(self, text: str) -> None:
         """Append a streamed delta to the answer."""
         if not text or self.finished or self.failed or self.closed:
             return
-        self._chunks.append(text)
         self._run(
             """
 (() => {
@@ -140,25 +135,32 @@ class AnswerPage:
 """.replace("MESSAGE", _js_string("\n\nerror: " + message))
         )
 
-    def done(self, model: str | None = None) -> None:
-        """Render the accumulated answer and set the final title."""
+    def done(self, model: str | None = None, html_body: str | None = None) -> None:
+        """Show the rendered answer and set the final title."""
         if self.closed or self.failed:
             return
         self.finished = True
-        self._show(self._label(model))
+        label = self._label(model)
+        if html_body is None:
+            self._label_only(label)
+        else:
+            self._show(html_body, label)
 
-    def finish(self) -> None:
-        """Render the answer when the stream ends without a done event."""
+    def finish(self, html_body: str | None = None) -> None:
+        """Finish when the stream ends without a done event."""
         if self.closed or self.finished or self.failed:
             return
         self.finished = True
-        self._show(self._label(None))
+        label = self._label(None)
+        if html_body is None:
+            self._label_only(label)
+        else:
+            self._show(html_body, label)
 
-    def _show(self, label: str) -> None:
-        """Replace the raw answer with rendered Markdown."""
-        body = markdown.render("".join(self._chunks)) or "<p>(no output)</p>"
+    def _show(self, body: str, label: str) -> None:
+        """Replace the raw answer with the HTML rendered by the CLI."""
+        body = body or "<p>(no output)</p>"
         block = f'<div id="answer" class="markdown">{body}</div>'
-        self._chunks.clear()
         payload = json.dumps({"block": block, "label": label}, ensure_ascii=False)
         payload = payload.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
         self._run(
@@ -177,6 +179,18 @@ class AnswerPage:
   document.title = payload.label;
 })()
 """.replace("PAYLOAD", payload)
+        )
+
+    def _label_only(self, label: str) -> None:
+        """Update the header and title without replacing the answer text."""
+        self._run(
+            """
+(() => {
+  const status = document.getElementById('status');
+  if (status) status.textContent = LABEL;
+  document.title = LABEL;
+})()
+""".replace("LABEL", _js_string(label))
         )
 
     def close(self) -> None:

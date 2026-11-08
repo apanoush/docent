@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import html
 import json
 import queue
 import secrets
@@ -18,7 +17,6 @@ from urllib.parse import urlsplit
 __all__ = [
     "QutebrowserViewError",
     "build_page",
-    "render_markdown",
     "serve",
 ]
 
@@ -35,16 +33,6 @@ def _ensure_qutebrowser_path() -> None:
     path = _qutebrowser_dir()
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
-
-
-def render_markdown(text: str) -> str:
-    """Render Markdown with the qutebrowser adapter's renderer."""
-    _ensure_qutebrowser_path()
-    try:
-        from docent.markdown import render
-    except ImportError as exc:
-        raise QutebrowserViewError("Markdown renderer not found") from exc
-    return render(text)
 
 
 _SSE_SCRIPT = """
@@ -137,7 +125,7 @@ class _Viewer:
         self.started = threading.Event()
         self.start_lock = threading.Lock()
         self.process: subprocess.Popen[str] | None = None
-        self.chunks: list[str] = []
+        self.html: str | None = None
         self.error = False
 
     def handler_class(self) -> type[BaseHTTPRequestHandler]:
@@ -227,6 +215,7 @@ class _Viewer:
             "--profile",
             self.profile,
             "--stream",
+            "--html",
             "--source",
             "zathura",
         ]
@@ -291,8 +280,11 @@ class _Viewer:
                 if kind == "delta":
                     text = event.get("text")
                     if isinstance(text, str):
-                        self.chunks.append(text)
                         self.queue.put({"type": "delta", "text": text})
+                elif kind == "html":
+                    body = event.get("html")
+                    if isinstance(body, str):
+                        self.html = body
                 elif kind == "done":
                     model = (
                         event.get("model")
@@ -339,11 +331,8 @@ class _Viewer:
             self.queue.put({"type": "error", "message": message})
             return
 
-        try:
-            body = render_markdown("".join(self.chunks)) or "<p>(no output)</p>"
-        except QutebrowserViewError as exc:
-            body = f"<p>{html.escape(str(exc))}</p>"
-        self.queue.put({"type": "html", "html": body})
+        if self.html is not None:
+            self.queue.put({"type": "html", "html": self.html})
         self.queue.put({"type": "done", "label": self.label(model)})
 
     def label(self, model: str | None) -> str:

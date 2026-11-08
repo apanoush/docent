@@ -15,7 +15,6 @@ The adapter has two halves. `plugins/firefox/` is a WebExtension with no build s
 | `plugins/firefox/lib/stream.js` | NDJSON line parser and stream error. |
 | `plugins/firefox/lib/profiles.js` | Profile metadata parser and requirement checks. |
 | `plugins/firefox/lib/args.js` | `docent` argv construction. |
-| `plugins/firefox/lib/markdown.js` | Markdown subset renderer, ported from the qutebrowser renderer. |
 | `plugins/firefox/popup/` | Profile picker and question input. |
 | `plugins/firefox/answer/` | Answer tab, question form, bundled and user styles. |
 | `plugins/firefox/options/` | Settings page. |
@@ -24,7 +23,7 @@ The adapter has two halves. `plugins/firefox/` is a WebExtension with no build s
 | `src/native_host.rs` | Framing, request parsing, spawn, forwarding, `exec`, `css`. |
 | `src/bin/docent-native-host.rs` | Thin entry point for the host binary. |
 
-`lib/stream.js`, `lib/request.js`, `lib/profiles.js`, `lib/args.js`, and `lib/markdown.js` do not touch the `browser` API. The Node tests exercise them without Firefox.
+`lib/stream.js`, `lib/request.js`, `lib/profiles.js`, and `lib/args.js` do not touch the `browser` API. The Node tests exercise them without Firefox.
 
 ## Loading and permissions
 
@@ -53,7 +52,7 @@ Messages are a 4-byte native-endian length prefix followed by UTF-8 JSON.
 The extension sends one of:
 
 ```json
-{"type":"run","cmd":["docent"],"args":["run","--profile","explain","--stream"],"request":{"selection":"...","document":"..."}}
+{"type":"run","cmd":["docent"],"args":["run","--profile","explain","--stream","--html"],"request":{"selection":"...","document":"..."}}
 {"type":"exec","cmd":["docent"],"args":["profiles","--json"]}
 {"type":"css","cmd":["docent"],"args":[]}
 ```
@@ -73,9 +72,9 @@ The host refuses to start a program whose basename does not begin with `docent`.
 
 ## Answer page
 
-The answer page accumulates `delta` text in a `<pre>` and keeps the reader pinned to the bottom only when they are already there. At `done`, or at a zero exit without `done`, it renders the accumulated text with the Markdown subset renderer and replaces the `<pre>` with a `<div class="markdown">`. The header and tab title show the profile, model, and elapsed time. A non-zero exit or an `error` event adds a red error line. `[WARN` lines from stderr are shown above the answer.
+The answer page accumulates `delta` text in a `<pre>` and keeps the reader pinned to the bottom only when they are already there. The CLI renders the Markdown and sends an `html` event before `done`. At `done`, or at a zero exit without `done`, the page replaces the `<pre>` with a `<div class="markdown">` built from that HTML. Without an `html` event it only updates the label and leaves the streamed text visible. The header and tab title show the profile, model, and elapsed time. A non-zero exit or an `error` event adds a red error line. `[WARN` lines from stderr are shown above the answer.
 
-The renderer escapes all text, keeps raw HTML and images literal, and only turns `http`, `https`, and `mailto` URLs into links. Links open in a new tab.
+The CLI escapes raw HTML, keeps images as alt text, and only turns `http`, `https`, and `mailto` URLs into links. Links open in a new tab.
 
 Press `d` to close the tab unless focus is in an input. `window.close()` closes an extension tab; `tabs.remove` is the fallback.
 
@@ -95,6 +94,6 @@ The options page stores the command, config directory, default profile, context 
 
 `tests/firefox/run.sh` runs the Node test runner, checks that the two answer stylesheets match, validates the manifest fields the host depends on, and runs `web-ext lint` when it is installed.
 
-The Node tests cover NDJSON parsing (including a surrogate pair split across chunks), the Markdown renderer and its escaping rules, request building, URL cleaning, profile parsing, and argv construction. `background.test.mjs` mocks the `browser` API and exercises the full background flow: profile loading, capture, session creation, attach, streaming, exit, question deferral, and cancellation. `tests/firefox/e2e.sh` is a manual harness that starts Firefox through `web-ext run` with a fake `docent` and a temporary native host manifest.
+The Node tests cover NDJSON parsing (including a surrogate pair split across chunks), request building, URL cleaning, profile parsing, and argv construction. `background.test.mjs` mocks the `browser` API and exercises the full background flow: profile loading, capture, session creation, attach, streaming, exit, question deferral, and cancellation. `tests/firefox/e2e.sh` is a manual harness that starts Firefox through `web-ext run` with a fake `docent` and a temporary native host manifest.
 
 The Rust side is tested in `src/native_host.rs` with a fake `docent` shell script: framing, partial headers, oversized messages, invalid requests, spawn failures, line forwarding, exit codes, `exec`, and `css`.

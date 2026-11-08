@@ -1,6 +1,5 @@
-/** Answer tab: receive streamed events and render the final Markdown. */
+/** Answer tab: receive streamed events and show the rendered answer. */
 
-import { render } from "../lib/markdown.js";
 import { parseEvent, StreamError } from "../lib/stream.js";
 
 const statusEl = document.getElementById("status");
@@ -13,7 +12,7 @@ const sessionId = location.hash.slice(1);
 const started = performance.now();
 
 let profile = "docent";
-let chunks = [];
+let htmlBody = null;
 let placeholder = true;
 let finished = false;
 let failed = false;
@@ -42,7 +41,6 @@ function appendText(text) {
       answerEl.dataset.placeholder = "0";
       placeholder = false;
     }
-    chunks.push(text);
     answerEl.appendChild(document.createTextNode(text));
   });
 }
@@ -74,18 +72,19 @@ function showAnswer(model) {
   }
   finished = true;
 
-  const body = render(chunks.join("")) || "<p>(no output)</p>";
-  const block = document.createElement("div");
-  block.id = "answer";
-  block.className = "markdown";
-  const parsed = new DOMParser().parseFromString(body, "text/html");
-  block.replaceChildren(...parsed.body.childNodes);
+  if (htmlBody !== null) {
+    const block = document.createElement("div");
+    block.id = "answer";
+    block.className = "markdown";
+    const parsed = new DOMParser().parseFromString(htmlBody, "text/html");
+    block.replaceChildren(...parsed.body.childNodes);
 
-  scrollIfAtBottom(() => {
-    answerEl.replaceWith(block);
-  });
-  answerEl = block;
-  chunks = [];
+    scrollIfAtBottom(() => {
+      answerEl.replaceWith(block);
+    });
+    answerEl = block;
+    htmlBody = null;
+  }
 
   const elapsed = ((performance.now() - started) / 1000).toFixed(1);
   const label = `docent: ${profile}${model ? ` - ${model}` : ""} (${elapsed}s)`;
@@ -130,6 +129,12 @@ function handleLine(line) {
   if (event.type === "delta") {
     if (typeof event.text === "string") {
       appendText(event.text);
+    } else {
+      setError("invalid stream event");
+    }
+  } else if (event.type === "html") {
+    if (typeof event.html === "string") {
+      htmlBody = event.html;
     } else {
       setError("invalid stream event");
     }

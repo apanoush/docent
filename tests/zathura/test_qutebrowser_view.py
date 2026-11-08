@@ -9,7 +9,6 @@ import pytest
 from docent_zathura.qutebrowser_view import (
     QutebrowserViewError,
     build_page,
-    render_markdown,
     serve,
 )
 
@@ -18,11 +17,15 @@ import json
 import sys
 
 request = json.loads(sys.stdin.read())
+if "--html" not in sys.argv:
+    print(json.dumps({"type": "error", "message": "missing --html"}), flush=True)
+    raise SystemExit(2)
 if request.get("selection") == "fail":
     print(json.dumps({"type": "error", "message": "boom"}), flush=True)
     raise SystemExit(1)
 
 print(json.dumps({"type": "delta", "text": "**bold** and `code`"}), flush=True)
+print(json.dumps({"type": "html", "html": "<p><strong>bold</strong> and <code>code</code></p>"}), flush=True)
 print(json.dumps({"type": "done", "model": "fake"}), flush=True)
 """
 
@@ -92,12 +95,7 @@ def test_build_page_appends_custom_css() -> None:
     assert "--docent-bg: #123456;" in page
 
 
-def test_render_markdown_uses_the_shared_renderer() -> None:
-    assert "<strong>bold</strong>" in render_markdown("**bold**")
-    assert "&lt;script&gt;" in render_markdown("<script>alert(1)</script>")
-
-
-def test_serve_streams_rendered_markdown(
+def test_serve_streams_the_rendered_html(
     fake_docent: Path,
     fake_qutebrowser: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -117,8 +115,7 @@ def test_serve_streams_rendered_markdown(
     assert code == 0
     event = json.loads(output.read_text(encoding="utf-8"))
     assert event["type"] == "html"
-    assert "<strong>bold</strong>" in event["html"]
-    assert "<code>code</code>" in event["html"]
+    assert event["html"] == "<p><strong>bold</strong> and <code>code</code></p>"
 
 
 def test_serve_reports_stream_errors(

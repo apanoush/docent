@@ -74,7 +74,7 @@ def run_arguments(
     args = list(settings.cmd[1:])
     if settings.config_dir:
         args.extend(["--config-dir", settings.config_dir])
-    args.extend(["run", "--profile", profile, "--stream"])
+    args.extend(["run", "--profile", profile, "--stream", "--html"])
     if target_language:
         args.extend(["--target-language", target_language])
     if context_mode:
@@ -112,6 +112,7 @@ class Session:
     done: bool = False
     error: bool = False
     cancelled: bool = False
+    html: str | None = None
 
     def start(
         self,
@@ -218,10 +219,17 @@ class Session:
             text = event.get("text")
             if isinstance(text, str):
                 self.page.append_text(text)
+        elif kind == "html":
+            body = event.get("html")
+            if isinstance(body, str):
+                self.html = body
         elif kind == "done":
             self.done = True
             model = event.get("model")
-            self.page.done(model if isinstance(model, str) else None)
+            self.page.done(
+                model if isinstance(model, str) else None,
+                self.html,
+            )
         elif kind == "error":
             self.error = True
             detail = event.get("message")
@@ -252,7 +260,7 @@ class Session:
                 for warning in _warning_lines(bytes(self.stderr)):
                     message.warning(f"docent: {warning}")
                 if not self.done:
-                    self.page.finish()
+                    self.page.finish(self.html)
         self._cleanup()
 
     def _process_error(self, error: QProcess.ProcessError) -> None:

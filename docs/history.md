@@ -57,8 +57,8 @@ Schema version 1 has one table:
 | `command` | text | `explain`, `ask`, `translate`, `summarize`, `do`, or `run`. |
 | `profile` | text | Profile name. |
 | `source` | text | `cli`, `nvim`, `qutebrowser`, `firefox`, `zathura`, or a custom name. |
-| `output_mode` | text | `plain_stream`, `plain`, `json`, or `ndjson`. |
-| `status` | text | `success` or `error`. |
+| `output_mode` | text | `plain_stream`, `plain`, `json`, `ndjson`, `ndjson_html`, or `browser`. |
+| `status` | text | `success`, `cancelled`, or `error`. |
 | `error` | text | Error message on failure. |
 | `file` | text | File name used for context. |
 | `selection` | text | Selected passage. |
@@ -86,6 +86,8 @@ Schema version 1 has one table:
 | `docent_version` | text | Docent version that produced the row. |
 
 Indexes cover `created_at`, `profile`, and `source`.
+
+A browser viewer run that is cancelled by closing the page is recorded with status `cancelled` and the partial answer.
 
 The raw document is not stored separately. The rendered `user_prompt` already contains the context window that the model received. `document_bytes` records the original size.
 

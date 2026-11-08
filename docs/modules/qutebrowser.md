@@ -11,11 +11,10 @@ The adapter source lives in `plugins/qutebrowser/`, separate from the Rust crate
 | `docent/stream.py` | Pure incremental NDJSON parser. |
 | `docent/profiles.py` | Pure profile metadata loader around `docent profiles --json`. |
 | `docent/plugin.py` | Commands, setup, JavaScript capture, `QProcess` lifecycle, and sessions. |
-| `docent/markdown.py` | Pure Markdown subset renderer used by the answer tab. |
 | `docent/answer.css` | Default answer-tab stylesheet; plain CSS with `--docent-*` variables, reusable by another browser front end. |
 | `docent/ui.py` | Answer-tab HTML shell, stylesheet loading, and streaming DOM updates. |
 
-`request.py`, `stream.py`, `profiles.py`, and `markdown.py` do not import qutebrowser. The unit tests exercise them without a browser.
+`request.py`, `stream.py`, and `profiles.py` do not import qutebrowser. The unit tests exercise them without a browser.
 
 ## Loading and commands
 
@@ -46,7 +45,7 @@ The callback runs after the user has already left the command line, but the page
 
 `Session` owns one `QProcess` and one answer tab. The process is started only after the answer tab's small HTML shell has finished loading. The request is written to stdin as UTF-8 JSON, and the write channel is closed immediately. stdout is parsed incrementally with `NdjsonParser`; stderr is buffered. Warnings the CLI logged (`[WARN ...]` lines) are shown as qutebrowser messages after a successful run, and the rest of stderr is shown only when the process fails without an `error` event.
 
-The process runs with `docent [--config-dir PATH] run --profile NAME --stream [--target-language LANG] [--context-mode MODE] --source qutebrowser`. The question travels inside the JSON request rather than on the command line, so it does not appear in the process list.
+The process runs with `docent [--config-dir PATH] run --profile NAME --stream --html [--target-language LANG] [--context-mode MODE] --source qutebrowser`. The question travels inside the JSON request rather than on the command line, so it does not appear in the process list.
 
 `QProcess` inherits qutebrowser's environment, including the API-key variable. There is no shell: the program and arguments are passed as an array.
 
@@ -60,13 +59,13 @@ Closing the answer tab emits `shutting_down`, which calls `Session.cancel`. Canc
 
 `ui.AnswerPage` injects JavaScript with `run_js_async`:
 
-- `append_text` creates a text node in the raw answer element, accumulates the text for rendering, and auto-scrolls only when the reader is already near the bottom.
+- `append_text` creates a text node in the raw answer element and auto-scrolls only when the reader is already near the bottom.
 - `set_error` appends a red error line and changes the title to `docent: error`.
-- `done` replaces the raw block with the rendered Markdown answer and updates the header and tab title with the profile, model, and elapsed time.
-- `finish` does the same when a process exits successfully without a `done` event, showing `(no output)` if the stream was empty.
+- `done` replaces the raw block with the HTML from the CLI's `html` event and updates the header and tab title with the profile, model, and elapsed time. Without an `html` event it only updates the label and leaves the streamed text visible.
+- `finish` does the same when a process exits successfully without a `done` event.
 - `close` stops accepting updates after the tab is closed or the process is cancelled.
 
-Rendering happens once, after the stream ends, so partial Markdown does not reflow as it arrives. `markdown.render` handles headings, paragraphs, lists, fenced code, blockquotes, rules, GFM tables, emphasis, strikethrough, and links. It escapes all text, keeps raw HTML and images literal, and only turns `http`, `https`, and `mailto` URLs into links, which open in a new tab. Nested lists are flattened; task lists and footnotes are not supported.
+Rendering happens once, after the stream ends. The CLI renders the Markdown and sends it as an `html` event before `done`; the adapter no longer carries a renderer. The CLI escapes raw HTML, keeps images as alt text, and only turns `http`, `https`, and `mailto` URLs into links, which open in a new tab.
 
 The JavaScript runs in qutebrowser's application world. It manipulates the generated page directly by element ID, so it does not depend on page scripts or globals.
 
@@ -85,7 +84,7 @@ Sessions are stored by answer-tab ID. `docent-close` closes the current answer t
 - Profile metadata parsing and error paths.
 - URL cleaning, request capture, answer-tab shell escaping, and streaming updates.
 - Stylesheet loading and composition order, custom CSS setup, and the package export.
-- Markdown block and inline rendering, tables, and escaping of raw HTML and unsafe links.
-- Profile requirements, question prompting, picker dispatch, and process-failure reporting.
+- Answer HTML insertion, label-only fallback, and process-failure reporting.
+- Profile requirements, question prompting, picker dispatch, and cancellation.
 
 The qutebrowser integration is also checked end to end with `tests/qutebrowser/e2e.sh`. It starts a qutebrowser with a temporary base directory, a test `config.py`, and a fake `docent` executable that emits NDJSON. It selects page text with `jseval`, runs `:docent`, and reads the answer tab back with `jseval`. The startup sequence uses `:cmd-later`, not the deprecated `:later` alias. The script is manual and is not called by `scripts/check.sh` because it needs a display and QtWebEngine.
