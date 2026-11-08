@@ -623,6 +623,61 @@ fn openai_streaming_events() {
 }
 
 #[test]
+fn html_streaming_event_renders_the_answer() {
+    let body = concat!(
+        "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let input =
+        r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain", "--stream", "--html"],
+        input,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let events: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.len(), 4);
+    assert_eq!(events[0]["type"], "delta");
+    assert_eq!(events[1]["type"], "delta");
+    assert_eq!(events[2]["type"], "html");
+    assert_eq!(events[2]["html"], "<p>Hello world</p>\n");
+    assert_eq!(events[3]["type"], "done");
+}
+
+#[test]
+fn html_requires_a_stream() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", "http://127.0.0.1:1");
+
+    let input =
+        r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
+    let output = run(
+        &dir,
+        &["run", "--profile", "explain", "--html"],
+        input,
+        Some("secret"),
+    );
+    assert_eq!(output.status.code(), Some(2));
+    let error = stderr(&output);
+    assert!(error.contains("--html"), "stderr: {error}");
+    assert!(error.contains("--stream"), "stderr: {error}");
+}
+
+#[test]
 fn anthropic_streaming_events() {
     let body = concat!(
         "event: message_start\n",

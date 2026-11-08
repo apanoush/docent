@@ -11,6 +11,7 @@ use crate::config::{self, ContextMode, InitReport};
 use crate::context;
 use crate::error::DocentError;
 use crate::history;
+use crate::markdown;
 use crate::profile::{Profile, ProfileInfo, ProfileStore};
 use crate::prompt::{self, EffectiveSettings};
 use crate::provider::{self, Completion};
@@ -207,6 +208,9 @@ pub struct RunArgs {
     /// Stream newline-delimited JSON events.
     #[arg(long)]
     pub stream: bool,
+    /// Include the final answer as rendered HTML in the stream.
+    #[arg(long, requires = "stream", conflicts_with_all = ["json", "print_prompt"])]
+    pub html: bool,
     /// Print the assembled prompt and exit without calling the provider.
     #[arg(long)]
     pub print_prompt: bool,
@@ -218,6 +222,7 @@ enum OutputMode {
     PlainBuffered,
     Json,
     Ndjson,
+    NdjsonHtml,
     PrintPrompt,
 }
 
@@ -229,6 +234,7 @@ impl OutputMode {
             Self::PlainBuffered => "plain",
             Self::Json => "json",
             Self::Ndjson => "ndjson",
+            Self::NdjsonHtml => "ndjson_html",
             Self::PrintPrompt => "print_prompt",
         }
     }
@@ -433,6 +439,7 @@ fn run_request(
         context_mode,
         json,
         stream,
+        html,
         print_prompt,
     } = args;
 
@@ -447,7 +454,11 @@ fn run_request(
     let output = if print_prompt {
         OutputMode::PrintPrompt
     } else if stream {
-        OutputMode::Ndjson
+        if html {
+            OutputMode::NdjsonHtml
+        } else {
+            OutputMode::Ndjson
+        }
     } else if json {
         OutputMode::Json
     } else {
@@ -519,7 +530,8 @@ fn execute(
         OutputMode::PlainStreaming => stream_plain(config, settings, &rendered, &mut streamed),
         OutputMode::PlainBuffered => provider::complete(config, settings, &rendered),
         OutputMode::Json => provider::complete(config, settings, &rendered),
-        OutputMode::Ndjson => stream_ndjson(config, settings, &rendered, &mut streamed),
+        OutputMode::Ndjson => stream_ndjson(config, settings, &rendered, &mut streamed, false),
+        OutputMode::NdjsonHtml => stream_ndjson(config, settings, &rendered, &mut streamed, true),
     };
 
     let duration_ms = started.elapsed().as_millis().min(i64::MAX as u128) as i64;
@@ -692,6 +704,7 @@ fn stream_ndjson(
     settings: &EffectiveSettings,
     rendered: &prompt::Prompt,
     streamed: &mut String,
+    render_html: bool,
 ) -> Result<Completion, DocentError> {
     let stdout = std::io::stdout();
     let mut writer = stdout.lock();
@@ -708,6 +721,14 @@ fn stream_ndjson(
 
     match result {
         Ok(completion) => {
+            if render_html {
+                write_stream_event(
+                    &mut writer,
+                    &provider::StreamEvent::Html {
+                        html: answer_html(&completion.text),
+                    },
+                )?;
+            }
             write_stream_event(
                 &mut writer,
                 &provider::StreamEvent::Done {
@@ -726,6 +747,16 @@ fn stream_ndjson(
             );
             Err(error)
         }
+    }
+}
+
+/// Render an answer, falling back to a placeholder when the model was silent.
+fn answer_html(text: &str) -> String {
+    let body = markdown::render(text);
+    if body.trim().is_empty() {
+        "<p>(no output)</p>".to_string()
+    } else {
+        body
     }
 }
 

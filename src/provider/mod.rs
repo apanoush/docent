@@ -64,6 +64,14 @@ pub enum StreamEvent {
         /// Fragment text.
         text: String,
     },
+    /// The complete answer rendered as a safe HTML fragment.
+    ///
+    /// Only emitted by `docent run --stream --html`, after the last delta and
+    /// before the `done` event.
+    Html {
+        /// Rendered answer body.
+        html: String,
+    },
     /// The stream completed successfully.
     Done {
         /// Model reported by the provider.
@@ -411,6 +419,13 @@ mod tests {
             })
             .unwrap(),
             r#"{"type":"delta","text":"hi"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&StreamEvent::Html {
+                html: "<p>hi</p>".to_string()
+            })
+            .unwrap(),
+            r#"{"type":"html","html":"<p>hi</p>"}"#
         );
         assert_eq!(
             serde_json::to_string(&StreamEvent::Done {
