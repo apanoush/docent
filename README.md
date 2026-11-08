@@ -8,7 +8,7 @@ Docent has five pieces:
 - `plugins/nvim/`, a Neovim plugin that captures the selection and buffer, calls the CLI asynchronously, and streams the answer into a floating window.
 - `plugins/qutebrowser/`, a qutebrowser adapter that captures the page selection and rendered text, calls the CLI asynchronously, and streams the answer into a new tab.
 - `plugins/firefox/`, a Firefox extension plus a native messaging host that captures the page selection and rendered text and streams the answer into a new tab.
-- `plugins/zathura/`, a zathura adapter that reads the selection from the clipboard, extracts the current page with `pdftotext`, calls the CLI, and streams the answer into a terminal window.
+- `plugins/zathura/`, a zathura adapter that reads the selection from the clipboard, extracts the current page with `pdftotext`, calls the CLI, and streams the answer into a terminal window, a Neovim float, or a qutebrowser window or tab.
 
 ## Why
 
