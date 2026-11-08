@@ -99,6 +99,9 @@ function M.capture_visual(buf)
 end
 
 --- Builds a request table from a visual selection, a line range, or the current line.
+---
+--- `opts.select_current_line = false` skips the normal-mode fallback, so a
+--- profile that does not require a selection receives the document alone.
 function M.build_request(opts)
   opts = opts or {}
 
@@ -118,6 +121,13 @@ function M.build_request(opts)
   end
   if is_visual_mode(vim.fn.mode()) then
     return M.capture_visual(buf)
+  end
+  if opts.select_current_line == false then
+    return {
+      selection = "",
+      document = M.buffer_text(buf),
+      file = M.file_name(buf),
+    }
   end
   return M.capture_line(buf)
 end

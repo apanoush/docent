@@ -400,6 +400,51 @@ def test_session_finishes_cleanly_on_success_exit() -> None:
     assert page.errors == []
 
 
+def test_session_warns_on_stderr_after_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    page = FakePage()
+    session = plugin.Session(
+        tabbed_browser=None,
+        source_tab=FakeTab(),
+        answer_tab=FakeTab(),
+        profile="summarize",
+        page=page,  # type: ignore[arg-type]
+        settings=_settings(),
+    )
+    session.stderr.extend(
+        b"[WARN  docent::cli] document context truncated to 40 characters\n"
+    )
+    warnings: list[str] = []
+    monkeypatch.setattr(plugin.message, "warning", warnings.append)
+
+    session._finished(0, None)  # type: ignore[arg-type]
+
+    assert warnings == ["docent: document context truncated to 40 characters"]
+    assert page.finished == 1
+    assert page.errors == []
+
+
+def test_session_ignores_non_warning_stderr_after_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = FakePage()
+    session = plugin.Session(
+        tabbed_browser=None,
+        source_tab=FakeTab(),
+        answer_tab=FakeTab(),
+        profile="summarize",
+        page=page,  # type: ignore[arg-type]
+        settings=_settings(),
+    )
+    session.stderr.extend(b"error: something else\n")
+    warnings: list[str] = []
+    monkeypatch.setattr(plugin.message, "warning", warnings.append)
+
+    session._finished(0, None)  # type: ignore[arg-type]
+
+    assert warnings == []
+    assert page.finished == 1
+
+
 def test_session_reports_stderr_on_failed_exit() -> None:
     page = FakePage()
     session = plugin.Session(

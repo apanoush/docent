@@ -48,6 +48,7 @@ test("setup registers commands and keymaps", function()
     keymaps = {
       explain = "<F5>",
       pick = "<F6>",
+      summarize = "<F7>",
     },
   })
 
@@ -55,9 +56,11 @@ test("setup registers commands and keymaps", function()
   assert_eq(vim.fn.exists(":DocentProfiles"), 2)
   assert_true(vim.fn.maparg("<F5>", "v") ~= "")
   assert_true(vim.fn.maparg("<F6>", "n") ~= "")
+  assert_true(vim.fn.maparg("<F7>", "v") ~= "")
 
   vim.keymap.del("v", "<F5>")
   vim.keymap.del("n", "<F6>")
+  vim.keymap.del("v", "<F7>")
 end)
 
 test("capture_range returns exact selection and offsets", function()
@@ -127,6 +130,21 @@ test("build_request uses the current buffer for a range", function()
   assert_eq(request.byte_start, 4)
   assert_eq(request.byte_end, 7)
   assert_eq(request.document, "one\ntwo\nthree")
+end)
+
+test("build_request can skip the current line", function()
+  local buf = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "one", "two", "three" })
+  vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+  local selected = context.build_request({})
+  assert_eq(selected.selection, "two")
+
+  local document_only = context.build_request({ select_current_line = false })
+  assert_eq(document_only.selection, "")
+  assert_nil(document_only.byte_start)
+  assert_nil(document_only.byte_end)
+  assert_eq(document_only.document, "one\ntwo\nthree")
 end)
 
 test("ui appends deltas and finishes", function()
@@ -328,6 +346,168 @@ test(":Docent uses a single-line count as a range", function()
     )
   end)
 
+  if not ok then
+    error(err)
+  end
+end)
+
+test("run sends the document alone when no selection is required", function()
+  docent.setup({ cmd = "docent" })
+  docent.refresh()
+
+  local ok, err = pcall(function()
+    stub_streaming_run(
+      '{"profiles":[{"name":"summarize","description":"Summarize","requires":["context"]}]}',
+      function(captured)
+        local buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "alpha", "beta", "gamma" })
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+        docent.run("summarize")
+
+        assert_true(vim.wait(500, function()
+          return docent._last_ui and docent._last_ui:is_done()
+        end))
+
+        local request = vim.json.decode(captured.opts.stdin)
+        assert_eq(request.document, "alpha\nbeta\ngamma")
+        assert_eq(request.selection, "")
+        assert_nil(request.byte_start)
+        assert_nil(request.byte_end)
+
+        docent._last_ui:close(false)
+      end
+    )
+  end)
+
+  if not ok then
+    error(err)
+  end
+end)
+
+test(":Docent summarize sends the whole buffer without a selection", function()
+  docent.setup({ cmd = "docent" })
+  docent.refresh()
+
+  local ok, err = pcall(function()
+    stub_streaming_run(
+      '{"profiles":[{"name":"summarize","requires":["context"]}]}',
+      function(captured)
+        local buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "alpha", "beta", "gamma" })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+        vim.cmd("Docent summarize")
+        assert_true(vim.wait(500, function()
+          return docent._last_ui and docent._last_ui:is_done()
+        end))
+
+        local request = vim.json.decode(captured.opts.stdin)
+        assert_eq(request.document, "alpha\nbeta\ngamma")
+        assert_eq(request.selection, "")
+
+        docent._last_ui:close(false)
+      end
+    )
+  end)
+
+  if not ok then
+    error(err)
+  end
+end)
+
+test(":Docent summarize with a count still sends that line", function()
+  docent.setup({ cmd = "docent" })
+  docent.refresh()
+
+  local ok, err = pcall(function()
+    stub_streaming_run(
+      '{"profiles":[{"name":"summarize","requires":["context"]}]}',
+      function(captured)
+        local buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "alpha", "beta", "gamma" })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+        vim.cmd("2Docent summarize")
+        assert_true(vim.wait(500, function()
+          return docent._last_ui and docent._last_ui:is_done()
+        end))
+
+        local request = vim.json.decode(captured.opts.stdin)
+        assert_eq(request.selection, "beta")
+        assert_eq(request.document, "alpha\nbeta\ngamma")
+
+        docent._last_ui:close(false)
+      end
+    )
+  end)
+
+  if not ok then
+    error(err)
+  end
+end)
+
+test("run notifies CLI warnings on success", function()
+  docent.setup({ cmd = "docent" })
+  docent.refresh()
+
+  local original_system = vim.system
+  local original_notify = vim.notify
+  local notifications = {}
+
+  vim.notify = function(message, level)
+    table.insert(notifications, { message = message, level = level })
+  end
+  vim.system = function(cmd, opts, on_exit)
+    if vim.tbl_contains(cmd, "profiles") then
+      return {
+        wait = function()
+          return {
+            code = 0,
+            stdout = '{"profiles":[{"name":"explain","requires":["selection"]}]}',
+            stderr = "",
+          }
+        end,
+      }
+    end
+
+    local process = { kill = function() end }
+    vim.schedule(function()
+      opts.stdout(nil, '{"type":"delta","text":"Hello"}\n')
+      on_exit({
+        code = 0,
+        signal = 0,
+        stdout = "",
+        stderr = "[WARN  docent::cli] document context truncated to 40 characters\n",
+      })
+    end)
+    return process
+  end
+
+  local ok, err = pcall(function()
+    docent.run("explain", {
+      selection = "beta",
+      document = "alpha beta",
+      byte_start = 6,
+      byte_end = 10,
+    })
+
+    assert_true(vim.wait(500, function()
+      return docent._last_ui and docent._last_ui:is_done()
+    end))
+
+    assert_true(#notifications > 0, "expected a notification")
+    assert_eq(notifications[1].level, vim.log.levels.WARN)
+    assert_true(
+      notifications[1].message:find("document context truncated", 1, true) ~= nil,
+      "expected the CLI warning text"
+    )
+
+    docent._last_ui:close(false)
+  end)
+
+  vim.system = original_system
+  vim.notify = original_notify
   if not ok then
     error(err)
   end

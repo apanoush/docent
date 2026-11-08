@@ -20,6 +20,7 @@ With lazy.nvim, point `dir` at the `plugins/nvim/` directory inside this reposit
         explain = "<leader>de",
         ask = "<leader>da",
         translate = "<leader>dt",
+        summarize = "<leader>ds",
         pick = "<leader>dp",
       },
     })
@@ -49,6 +50,7 @@ Keymaps are opt-in. The plugin never sets a mapping unless you list it in `keyma
 | `keymaps.explain` | string | `nil` | Visual-mode mapping for the explain profile. |
 | `keymaps.ask` | string | `nil` | Visual-mode mapping for the ask profile. |
 | `keymaps.translate` | string | `nil` | Visual-mode mapping for the translate profile. |
+| `keymaps.summarize` | string | `nil` | Visual-mode mapping for the summarize profile. |
 | `keymaps.pick` | string | `nil` | Normal-mode mapping for the profile picker. |
 | `window.width` | number | `0.8` | Float width. Values up to 1 are fractions of the editor width; larger values are columns. |
 | `window.height` | number | `0.6` | Float height. Values up to 1 are fractions of the editor height; larger values are rows. |
@@ -71,15 +73,15 @@ require("docent").setup({
 | `:Docent [profile]` | Run a profile against the visual selection, the given range, or the current line. |
 | `:DocentProfiles` | Open a profile picker with descriptions from `docent profiles --json`. |
 
-`:Docent` accepts a range, so `:'<,'>Docent explain` uses the selected lines. Without a range it uses the current line. Because the summarize profile needs no selection, use `:%Docent summarize` to summarize the whole buffer, or select a region and run `:'<,'>Docent summarize` for just that region.
+`:Docent` accepts a range, so `:'<,'>Docent explain` uses the selected lines. Without a range, profiles that require a selection use the current line. Profiles that do not require one, like summarize, receive the whole buffer: `:Docent summarize` summarizes the buffer, `:'<,'>Docent summarize` a region, and `:2Docent summarize` a single line.
 
 ## What gets captured
 
 - Charwise visual selections are captured exactly.
 - Linewise visual selections capture the full lines.
 - Blockwise visual selections capture the full line span, not only the rectangular block.
-- Normal-mode calls, including `:Docent` without a range, capture the current line.
-- The request includes the full buffer, byte offsets for the selection, and the buffer name. Unnamed buffers use `[No Name]`.
+- Normal-mode calls capture the current line when the profile requires a selection. A profile that does not require one, like summarize, receives the document alone.
+- The request includes the full buffer, byte offsets for a selection, and the buffer name. Unnamed buffers use `[No Name]`.
 
 The CLI decides how much of the buffer to send. You can set `context_mode = "none"` for a selection-only request or `"full"` to always send the whole document.
 
@@ -96,6 +98,7 @@ The plugin caches profile metadata for the session. Add or edit a profile, then 
 - Closing while the request is running sends `SIGTERM` to the CLI.
 - The title shows the profile, the model, and the elapsed time when the answer completes.
 - Errors are shown in the float with the `ErrorMsg` highlight. Preflight errors such as an empty selection or a missing profile are reported with `vim.notify`.
+- Warnings logged by the CLI, such as a truncated document, are reported with `vim.notify` after a successful run.
 
 ## Lua API
 
@@ -107,6 +110,7 @@ docent.run("explain", opts)
 docent.explain(opts)
 docent.ask(opts)
 docent.translate(opts)
+docent.summarize(opts)
 docent.pick()
 docent.profiles(force)
 docent.refresh()

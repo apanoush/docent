@@ -23,6 +23,7 @@ docent.setup(
         "explain": ",de",
         "ask": ",da",
         "translate": ",dt",
+        "summarize": ",ds",
         "pick": ",dp",
     },
 )
@@ -67,7 +68,7 @@ Examples:
 :docent summarize
 ```
 
-The summarize profile needs no selection: with nothing selected, `:docent summarize` summarizes the whole page.
+The summarize profile needs no selection: with nothing selected, `:docent summarize` summarizes the whole page. Warnings logged by the CLI, such as a truncated page, appear as qutebrowser messages after a successful run.
 
 Quote a question that contains spaces. qutebrowser's command parser splits unquoted words into separate arguments, so the command above needs the double quotes.
 
@@ -148,7 +149,7 @@ A profile that declares `requires = ["question"]` opens a text prompt before the
 | `default_profile` | string | `"explain"` | Profile used by `:docent` without an argument. |
 | `context_mode` | string | `None` | Default `--context-mode` for every request. Values are `auto`, `full`, and `none`. |
 | `target_language` | string | `None` | Default `--target-language` for every request. |
-| `keymaps` | dict | `{}` | Maps `explain`, `ask`, `translate`, or `pick` to a key chain. Bindings are installed in normal and caret modes. |
+| `keymaps` | dict | `{}` | Maps `explain`, `ask`, `translate`, `summarize`, or `pick` to a key chain. Bindings are installed in normal and caret modes. |
 | `open_in_background` | bool | `False` | Open answer tabs in the background. |
 | `custom_css` | string | `None` | Path to a CSS file appended after the default answer styles. Read during `setup`, so `:config-source` reloads it. |
 

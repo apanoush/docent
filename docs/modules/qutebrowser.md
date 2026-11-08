@@ -44,7 +44,7 @@ The callback runs after the user has already left the command line, but the page
 
 ## Process lifecycle
 
-`Session` owns one `QProcess` and one answer tab. The process is started only after the answer tab's small HTML shell has finished loading. The request is written to stdin as UTF-8 JSON, and the write channel is closed immediately. stdout is parsed incrementally with `NdjsonParser`; stderr is buffered and shown only when the process fails without an `error` event.
+`Session` owns one `QProcess` and one answer tab. The process is started only after the answer tab's small HTML shell has finished loading. The request is written to stdin as UTF-8 JSON, and the write channel is closed immediately. stdout is parsed incrementally with `NdjsonParser`; stderr is buffered. Warnings the CLI logged (`[WARN ...]` lines) are shown as qutebrowser messages after a successful run, and the rest of stderr is shown only when the process fails without an `error` event.
 
 The process runs with `docent [--config-dir PATH] run --profile NAME --stream [--target-language LANG] [--context-mode MODE] --source qutebrowser`. The question travels inside the JSON request rather than on the command line, so it does not appear in the process list.
 

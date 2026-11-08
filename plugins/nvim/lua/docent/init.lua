@@ -23,6 +23,20 @@ local function trim(value)
   return (tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
+--- Extracts the warnings the CLI logged to stderr, without env_logger prefixes.
+local function stderr_warnings(stderr)
+  local warnings = {}
+  for line in (stderr or ""):gmatch("[^\r\n]+") do
+    if line:sub(1, 5) == "[WARN" then
+      local text = line:match("^%[[^%]]*%]%s*(.+)$")
+      if text and text ~= "" then
+        table.insert(warnings, text)
+      end
+    end
+  end
+  return warnings
+end
+
 local function command(extra)
   local cmd = type(M.config.cmd) == "table" and vim.deepcopy(M.config.cmd) or { M.config.cmd }
   if M.config.config_dir then
@@ -234,8 +248,13 @@ local function start_job(profile, request, opts)
           end
           ui:set_error(message)
         end
-      elseif not ui:is_done() then
-        ui:finish()
+      else
+        for _, warning in ipairs(stderr_warnings(result.stderr)) do
+          vim.notify("docent: " .. warning, vim.log.levels.WARN)
+        end
+        if not ui:is_done() then
+          ui:finish()
+        end
       end
     end)
   end
@@ -254,14 +273,10 @@ local function start_job(profile, request, opts)
 end
 
 --- Runs a profile against the current selection, line range, or current line.
+--- Profiles that do not require a selection receive the document alone.
 function M.run(profile, opts)
   profile = profile or M.config.default_profile
   opts = opts or {}
-
-  local request = require("docent.context").build_request(opts)
-  if opts.question ~= nil then
-    request.question = opts.question
-  end
 
   local profiles, err = M.profiles()
   if not profiles then
@@ -273,6 +288,13 @@ function M.run(profile, opts)
   if not info then
     M.notify_error("unknown profile '" .. profile .. "'")
     return
+  end
+
+  local request_opts = vim.tbl_extend("force", {}, opts)
+  request_opts.select_current_line = has_requirement(info, "selection")
+  local request = require("docent.context").build_request(request_opts)
+  if opts.question ~= nil then
+    request.question = opts.question
   end
 
   if has_requirement(info, "selection") and trim(request.selection) == "" then
@@ -314,6 +336,11 @@ function M.translate(opts)
   M.run("translate", opts)
 end
 
+--- Runs the built-in summarize profile. Without a selection or range it summarizes the buffer.
+function M.summarize(opts)
+  M.run("summarize", opts)
+end
+
 --- Configures the plugin and registers commands and keymaps.
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
@@ -330,7 +357,7 @@ function M.setup(opts)
     end, {
       nargs = "?",
       range = true,
-      desc = "Docent: explain, ask about, or translate a selection",
+      desc = "Docent: explain, ask about, translate, or summarize a passage",
       complete = function(lead)
         return M.complete(lead)
       end,
@@ -358,6 +385,11 @@ function M.setup(opts)
     vim.keymap.set("v", maps.translate, function()
       M.run("translate")
     end, { desc = "Docent: translate selection" })
+  end
+  if maps.summarize then
+    vim.keymap.set("v", maps.summarize, function()
+      M.run("summarize")
+    end, { desc = "Docent: summarize selection" })
   end
   if maps.pick then
     vim.keymap.set("n", maps.pick, function()

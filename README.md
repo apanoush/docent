@@ -91,6 +91,7 @@ Add the plugin directory to your configuration with lazy.nvim:
         explain = "<leader>de",
         ask = "<leader>da",
         translate = "<leader>dt",
+        summarize = "<leader>ds",
         pick = "<leader>dp",
       },
     })
@@ -115,6 +116,7 @@ docent.setup(
         "explain": ",de",
         "ask": ",da",
         "translate": ",dt",
+        "summarize": ",ds",
         "pick": ",dp",
     },
 )

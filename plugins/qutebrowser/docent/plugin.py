@@ -83,6 +83,18 @@ def run_arguments(
     return args
 
 
+def _warning_lines(stderr: bytes) -> list[str]:
+    """Extracts the warnings the CLI logged to stderr, without log prefixes."""
+    warnings = []
+    for line in stderr.decode("utf-8", "replace").splitlines():
+        if not line.startswith("[WARN"):
+            continue
+        _, separator, text = line.partition("] ")
+        if separator and text:
+            warnings.append(text)
+    return warnings
+
+
 @dataclass
 class Session:
     """One request and the answer tab that displays it."""
@@ -236,8 +248,11 @@ class Session:
             if exit_code != 0:
                 stderr = self.stderr.decode("utf-8", "replace").strip()
                 self.page.set_error(stderr or f"docent exited with code {exit_code}")
-            elif not self.done:
-                self.page.finish()
+            else:
+                for warning in _warning_lines(bytes(self.stderr)):
+                    message.warning(f"docent: {warning}")
+                if not self.done:
+                    self.page.finish()
         self._cleanup()
 
     def _process_error(self, error: QProcess.ProcessError) -> None:
