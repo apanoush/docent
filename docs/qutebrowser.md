@@ -103,6 +103,7 @@ The answer tab loads `plugins/qutebrowser/docent/answer.css`. The file is plain 
 | `--docent-bg` | Page and header background |
 | `--docent-fg` | Body text and derived borders |
 | `--docent-error` | Error text |
+| `--docent-warning` | Border of the CLI warning blocks in the zathura qutebrowser viewer |
 | `--docent-font-body` | Prose, headings, lists, tables |
 | `--docent-font-code` | Inline code and fenced code blocks |
 

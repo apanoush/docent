@@ -55,7 +55,7 @@ Closing the answer tab emits `shutting_down`, which calls `Session.cancel`. Canc
 
 `ui.build_shell` returns a small HTML document with a sticky header, a status label, a `d close` hint, and a `<pre id="answer">` body. The `<style>` block is composed from `answer.css` first, then `:root` overrides from qutebrowser's status bar colors, then the optional user CSS from `setup(custom_css=...)`. Profile names are HTML-escaped before insertion.
 
-`answer.css` owns the default palette and font stacks through `--docent-bg`, `--docent-fg`, `--docent-error`, `--docent-font-body`, and `--docent-font-code`. It has no qutebrowser-specific selectors, so another browser adapter can reuse it and set the same variables. `docent.stylesheet()` exports the default CSS for Python callers.
+`answer.css` owns the default palette and font stacks through `--docent-bg`, `--docent-fg`, `--docent-error`, `--docent-warning`, `--docent-font-body`, and `--docent-font-code`. It has no qutebrowser-specific selectors, so another browser adapter can reuse it and set the same variables. The `.docent-warning` rule styles CLI warnings that the zathura qutebrowser viewer appends to the answer. `docent.stylesheet()` exports the default CSS for Python callers.
 
 `ui.AnswerPage` injects JavaScript with `run_js_async`:
 

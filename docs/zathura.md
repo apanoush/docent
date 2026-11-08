@@ -106,6 +106,8 @@ The page uses the same answer shell and `answer.css` as the qutebrowser adapter,
 map <C-e> exec "/home/you/path/to/reading-assistant/plugins/zathura/docent-zathura explain $FILE $PAGE --viewer qutebrowser --qutebrowser-css /home/you/.config/docent/answer.css"
 ```
 
+Warnings the CLI logs after a successful run stay visible in every viewer: the terminal viewer prints `warning: ...` lines after the answer, the Neovim viewer reports them with `vim.notify`, and the qutebrowser viewer appends a warning block styled by `.docent-warning`.
+
 The terminal viewer and Neovim viewer use a separate terminal window, not a zathura overlay. On a tiling compositor, add a float rule for the `docent` app id (foot and kitty) or the `Docent` class (xterm). The adapter sets those names for the supported terminals. On an error, the terminal stays open so the message is readable.
 
 ## Troubleshooting

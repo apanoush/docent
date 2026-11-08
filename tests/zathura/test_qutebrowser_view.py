@@ -23,6 +23,10 @@ if "--html" not in sys.argv:
 if request.get("selection") == "fail":
     print(json.dumps({"type": "error", "message": "boom"}), flush=True)
     raise SystemExit(1)
+if request.get("selection") == "warn":
+    print(
+        "[WARN  docent::cli] document context truncated", file=sys.stderr, flush=True
+    )
 
 print(json.dumps({"type": "delta", "text": "**bold** and `code`"}), flush=True)
 print(json.dumps({"type": "html", "html": "<p><strong>bold</strong> and <code>code</code></p>"}), flush=True)
@@ -38,17 +42,19 @@ import urllib.request
 url = sys.argv[-1]
 urllib.request.urlopen(url).read()
 
+events = []
 with urllib.request.urlopen(url.rstrip("/") + "/events") as response:
     for raw in response:
         line = raw.decode("utf-8").strip()
         if not line.startswith("data: "):
             continue
         event = json.loads(line[6:])
-        if event["type"] in {"html", "error"}:
-            with open(os.environ["FAKE_QUTEBROWSER_OUTPUT"], "w", encoding="utf-8") as handle:
-                json.dump(event, handle)
+        events.append(event)
         if event["type"] in {"done", "error"}:
             break
+
+with open(os.environ["FAKE_QUTEBROWSER_OUTPUT"], "w", encoding="utf-8") as handle:
+    json.dump(events, handle)
 """
 
 
@@ -86,6 +92,7 @@ def test_build_page_uses_the_shared_shell_and_starts_event_source() -> None:
     assert "docent: &lt;profile&gt; - &lt;header&gt;" in page
     assert "--docent-bg" in page
     assert "EventSource('events')" in page
+    assert "event.type === 'warning'" in page
     assert "d close" not in page
 
 
@@ -113,9 +120,44 @@ def test_serve_streams_the_rendered_html(
     )
 
     assert code == 0
-    event = json.loads(output.read_text(encoding="utf-8"))
-    assert event["type"] == "html"
-    assert event["html"] == "<p><strong>bold</strong> and <code>code</code></p>"
+    events = json.loads(output.read_text(encoding="utf-8"))
+    html = [event for event in events if event["type"] == "html"]
+    assert html == [
+        {
+            "type": "html",
+            "html": "<p><strong>bold</strong> and <code>code</code></p>",
+        }
+    ]
+    assert events[-1]["type"] == "done"
+
+
+def test_serve_reports_cli_warnings(
+    fake_docent: Path,
+    fake_qutebrowser: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "answer.json"
+    monkeypatch.setenv("FAKE_QUTEBROWSER_OUTPUT", str(output))
+
+    code = serve(
+        _payload("warn"),
+        docent_cmd=str(fake_docent),
+        target="window",
+        qutebrowser_cmd=str(fake_qutebrowser),
+        timeout=5,
+    )
+
+    assert code == 0
+    events = json.loads(output.read_text(encoding="utf-8"))
+    kinds = [event["type"] for event in events]
+    assert "warning" in kinds
+    warning = events[kinds.index("warning")]
+    assert warning == {
+        "type": "warning",
+        "message": "document context truncated",
+    }
+    assert kinds.index("html") < kinds.index("warning") < kinds.index("done")
 
 
 def test_serve_reports_stream_errors(
@@ -136,8 +178,8 @@ def test_serve_reports_stream_errors(
     )
 
     assert code == 1
-    event = json.loads(output.read_text(encoding="utf-8"))
-    assert event == {"type": "error", "message": "boom"}
+    events = json.loads(output.read_text(encoding="utf-8"))
+    assert events[-1] == {"type": "error", "message": "boom"}
 
 
 def test_serve_reports_a_missing_qutebrowser(tmp_path: Path) -> None:

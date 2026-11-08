@@ -11,6 +11,7 @@
   --docent-bg: #1e1e1e;
   --docent-fg: #e6e6e6;
   --docent-error: #ff6b6b;
+  --docent-warning: #d7a650;
   --docent-font-body: ui-sans-serif, system-ui, sans-serif;
   --docent-font-code: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -174,4 +175,12 @@ pre#answer {
 
 .error {
   color: var(--docent-error);
+}
+
+.docent-warning {
+  margin-top: 1em;
+  padding: 0.4rem 0.75rem;
+  border-left: 3px solid var(--docent-warning);
+  font-size: 0.9em;
+  font-style: italic;
 }

@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from .logs import warning_lines
+
 __all__ = [
     "QutebrowserViewError",
     "build_page",
@@ -62,6 +64,13 @@ source.onmessage = (message) => {
     block.innerHTML = event.html;
     answerElement.replaceWith(block);
     answerElement = block;
+    if (stick) window.scrollTo(0, document.documentElement.scrollHeight);
+  } else if (event.type === 'warning') {
+    const stick = atBottom();
+    const warning = document.createElement('div');
+    warning.className = 'docent-warning';
+    warning.textContent = event.message;
+    answerElement.appendChild(warning);
     if (stick) window.scrollTo(0, document.documentElement.scrollHeight);
   } else if (event.type === 'done') {
     status.textContent = event.label || 'done';
@@ -333,6 +342,8 @@ class _Viewer:
 
         if self.html is not None:
             self.queue.put({"type": "html", "html": self.html})
+        for warning in warning_lines("".join(stderr_lines)):
+            self.queue.put({"type": "warning", "message": warning})
         self.queue.put({"type": "done", "label": self.label(model)})
 
     def label(self, model: str | None) -> str:

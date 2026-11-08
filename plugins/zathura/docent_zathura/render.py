@@ -9,6 +9,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TextIO
 
+from .logs import warning_lines
+
 __all__ = [
     "RenderError",
     "docent_arguments",
@@ -194,6 +196,11 @@ def render_request(
 
     stdout.write("\n")
     stdout.flush()
+
+    warnings = warning_lines("".join(stderr_lines))
+    if warnings:
+        stderr.writelines(f"warning: {warning}\n" for warning in warnings)
+        stderr.flush()
     return 0
 
 

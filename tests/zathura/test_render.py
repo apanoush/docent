@@ -32,6 +32,13 @@ if selection == "exit":
     raise SystemExit(2)
 if selection == "silent":
     raise SystemExit(0)
+if selection == "warn":
+    print(
+        "[WARN  docent::cli] document context truncated", file=sys.stderr, flush=True
+    )
+    print(json.dumps({"type": "delta", "text": "Hello"}), flush=True)
+    print(json.dumps({"type": "done", "model": "fake"}), flush=True)
+    raise SystemExit(0)
 
 print(json.dumps({"type": "delta", "text": "Hello "}), flush=True)
 print(json.dumps({"type": "delta", "text": selection}), flush=True)
@@ -95,6 +102,23 @@ def test_render_request_streams_deltas(fake_docent: Path) -> None:
     assert code == 0
     assert out.getvalue() == "[explain] paper.pdf (page 1)\n\nHello beta\n"
     assert err.getvalue() == ""
+
+
+def test_render_request_prints_cli_warnings(fake_docent: Path) -> None:
+    out = io.StringIO()
+    err = io.StringIO()
+
+    code = render_request(
+        _payload("warn", header="paper.pdf (page 1)"),
+        docent_cmd=str(fake_docent),
+        stdin=io.StringIO(""),
+        stdout=out,
+        stderr=err,
+    )
+
+    assert code == 0
+    assert out.getvalue() == "[explain] paper.pdf (page 1)\n\nHello\n"
+    assert err.getvalue() == "warning: document context truncated\n"
 
 
 def test_render_request_prompts_for_question(fake_docent: Path) -> None:

@@ -9,8 +9,9 @@ The adapter lives in `plugins/zathura/`, separate from the Rust crate. It has no
 | `docent-zathura` | Executable entry point. Adds the package directory to `sys.path` and calls `cli.main`. |
 | `docent_zathura/clipboard.py` | Selects and runs `wl-paste`, `xclip`, or `xsel`; returns the selected text. |
 | `docent_zathura/pdf.py` | Page window calculation and `pdftotext` invocation. |
-| `docent_zathura/request.py` | Builds the JSON request and optional UTF-8 byte offsets. |
+| `docent_zathura/request.py` | Builds the JSON request, document-only requests for summarize, and optional UTF-8 byte offsets. |
 | `docent_zathura/render.py` | Parses NDJSON, prints deltas, handles errors, and keeps the terminal open. |
+| `docent_zathura/logs.py` | Extracts `[WARN ...]` lines from CLI stderr, without the log prefix. |
 | `docent_zathura/viewer.lua` | Neovim viewer. Reads the request file, loads the plugin, and calls `docent.run`. |
 | `docent_zathura/qutebrowser_view.py` | qutebrowser viewer. Loopback HTTP server, SSE stream, shared answer shell, and final Markdown rendering. |
 | `docent_zathura/launch.py` | Detects a terminal emulator and builds its argv. |
