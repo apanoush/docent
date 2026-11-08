@@ -1,10 +1,11 @@
 //! Command line interface for `docent`.
 
+use std::fs;
 use std::io::{IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 
 use crate::config::{self, ContextMode, InitReport};
@@ -17,12 +18,14 @@ use crate::prompt::{self, EffectiveSettings};
 use crate::provider::{self, Completion};
 use crate::request::Request;
 use crate::source::{self, LineRange, NoPrompter, SelectionArg, TerminalPrompter};
+use crate::viewer::{Viewer, ViewerOptions};
 
 const AFTER_HELP: &str = "Examples:
   docent explain notes.md --lines 12:20
   docent ask notes.md --lines 12:20 --question \"Why does this work?\"
   docent translate notes.md --lines 12:20 --to French
   docent summarize paper.md
+  docent explain notes.md --lines 12:20 --viewer qutebrowser
   docent init
 
 Machine interface:
@@ -150,6 +153,73 @@ pub struct CommonArgs {
     /// Translation target language.
     #[arg(long, visible_alias = "to", value_name = "LANG")]
     pub target_language: Option<String>,
+
+    /// Answer viewer options.
+    #[command(flatten)]
+    pub viewer: ViewerArgs,
+}
+
+/// Where to show the answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ViewerKind {
+    /// Print the answer in the terminal.
+    Terminal,
+    /// Stream the answer into a qutebrowser window or tab.
+    Qutebrowser,
+}
+
+/// A qutebrowser `--target` value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum BrowserTarget {
+    /// Use qutebrowser's configured new-instance target.
+    Auto,
+    /// Open a new tab.
+    Tab,
+    /// Open a background tab.
+    TabBg,
+    /// Open a tab without activating the window.
+    TabSilent,
+    /// Open a background tab without activating the window.
+    TabBgSilent,
+    /// Open a new window.
+    Window,
+    /// Open a private window.
+    PrivateWindow,
+}
+
+impl BrowserTarget {
+    /// Value passed as `qutebrowser --target=...`.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Tab => "tab",
+            Self::TabBg => "tab-bg",
+            Self::TabSilent => "tab-silent",
+            Self::TabBgSilent => "tab-bg-silent",
+            Self::Window => "window",
+            Self::PrivateWindow => "private-window",
+        }
+    }
+}
+
+/// Options for the qutebrowser answer viewer.
+#[derive(Debug, Args)]
+pub struct ViewerArgs {
+    /// Where to show the answer.
+    #[arg(long, value_enum, default_value = "terminal")]
+    pub viewer: ViewerKind,
+
+    /// Qutebrowser executable or command name.
+    #[arg(long, default_value = "qutebrowser")]
+    pub qutebrowser: String,
+
+    /// Qutebrowser --target value.
+    #[arg(long, value_enum, default_value = "window")]
+    pub qutebrowser_target: BrowserTarget,
+
+    /// CSS file appended after the answer styles.
+    #[arg(long, value_name = "PATH")]
+    pub answer_css: Option<PathBuf>,
 }
 
 /// How the terminal selected a passage.
@@ -214,9 +284,15 @@ pub struct RunArgs {
     /// Print the assembled prompt and exit without calling the provider.
     #[arg(long)]
     pub print_prompt: bool,
+    /// Header shown on the browser answer page.
+    #[arg(long, value_name = "TEXT")]
+    pub header: Option<String>,
+    /// Answer viewer options.
+    #[command(flatten)]
+    pub viewer: ViewerArgs,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 enum OutputMode {
     PlainStreaming,
     PlainBuffered,
@@ -224,11 +300,12 @@ enum OutputMode {
     Ndjson,
     NdjsonHtml,
     PrintPrompt,
+    Browser(ViewerOptions),
 }
 
 impl OutputMode {
     /// Stable identifier used in the history database.
-    fn as_str(self) -> &'static str {
+    fn as_str(&self) -> &'static str {
         match self {
             Self::PlainStreaming => "plain_stream",
             Self::PlainBuffered => "plain",
@@ -236,6 +313,7 @@ impl OutputMode {
             Self::Ndjson => "ndjson",
             Self::NdjsonHtml => "ndjson_html",
             Self::PrintPrompt => "print_prompt",
+            Self::Browser(_) => "browser",
         }
     }
 }
@@ -310,6 +388,7 @@ fn print_getting_started() {
     println!("  docent ask notes.md --lines 12:20 --question \"Why does this work?\"");
     println!("  docent translate notes.md --lines 12:20 --to French");
     println!("  docent summarize paper.md");
+    println!("  docent explain notes.md --lines 12:20 --viewer qutebrowser");
     println!("  docent init");
     println!();
     println!("Run `docent --help` for all commands and options.");
@@ -333,13 +412,22 @@ fn run_human(
         no_stream,
         context_mode,
         target_language,
+        viewer,
     } = common;
+    if viewer.viewer == ViewerKind::Qutebrowser && no_stream {
+        return Err(DocentError::Input(
+            "--viewer qutebrowser cannot be combined with --no-stream".to_string(),
+        ));
+    }
+    let label = human_label(file.as_deref(), &selection);
 
     let config = config::ensure_initialized(config_dir)?;
     let profile = ProfileStore::new(config::profiles_dir(config_dir)).load(profile_name)?;
     let settings = resolve_settings(&config, &profile, context_mode, target_language)?;
     let request = resolve_human_request(&profile, file.as_deref(), selection, question)?;
-    let output = if no_stream {
+    let output = if viewer.viewer == ViewerKind::Qutebrowser {
+        OutputMode::Browser(browser_options(config_dir, profile_name, label, &viewer)?)
+    } else if no_stream {
         OutputMode::PlainBuffered
     } else {
         OutputMode::PlainStreaming
@@ -401,6 +489,72 @@ fn resolve_settings(
     )
 }
 
+/// Build the viewer header from the file and terminal selection.
+fn human_label(file: Option<&Path>, selection: &SelectionArgs) -> String {
+    let name = file
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "(stdin)".to_string());
+    if let Some(lines) = selection.lines {
+        format!("{name} (lines {lines})")
+    } else if let Some(line) = selection.line {
+        format!("{name} (line {line})")
+    } else if selection.text.is_some() {
+        format!("{name} (selection)")
+    } else if let Some(phrase) = &selection.select {
+        format!("{name} (\"{phrase}\")")
+    } else {
+        name
+    }
+}
+
+/// Build the browser viewer options for one command.
+fn browser_options(
+    config_dir: &Path,
+    profile: &str,
+    header: String,
+    args: &ViewerArgs,
+) -> Result<ViewerOptions, DocentError> {
+    let qutebrowser = config::expand_path(Path::new(&args.qutebrowser))?;
+    Ok(ViewerOptions {
+        profile: profile.to_string(),
+        header,
+        qutebrowser: qutebrowser.display().to_string(),
+        target: args.qutebrowser_target.as_str().to_string(),
+        custom_css: load_custom_css(config_dir, args.answer_css.as_deref())?,
+    })
+}
+
+/// Read `<config>/answer.css` and an explicit `--answer-css` file, in order.
+fn load_custom_css(
+    config_dir: &Path,
+    explicit: Option<&Path>,
+) -> Result<Option<String>, DocentError> {
+    let mut parts = Vec::new();
+    let default = config::answer_css_file(config_dir);
+    if default.is_file() {
+        parts.push(
+            fs::read_to_string(&default).map_err(|source| DocentError::Read {
+                path: default,
+                source,
+            })?,
+        );
+    }
+    if let Some(path) = explicit {
+        let path = config::expand_path(path)?;
+        parts.push(
+            fs::read_to_string(&path).map_err(|source| DocentError::Read {
+                path: path.clone(),
+                source,
+            })?,
+        );
+    }
+    if parts.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(parts.join("\n")))
+    }
+}
+
 fn resolve_human_request(
     profile: &Profile,
     file: Option<&Path>,
@@ -441,7 +595,15 @@ fn run_request(
         stream,
         html,
         print_prompt,
+        header,
+        viewer,
     } = args;
+    if viewer.viewer == ViewerKind::Qutebrowser && (json || stream || print_prompt || html) {
+        return Err(DocentError::Input(
+            "--viewer qutebrowser cannot be combined with --stream, --json, --html, or --print-prompt"
+                .to_string(),
+        ));
+    }
 
     let config = config::ensure_initialized(config_dir)?;
     let profile = ProfileStore::new(config::profiles_dir(config_dir)).load(&profile_name)?;
@@ -451,7 +613,14 @@ fn run_request(
     }
     let settings = resolve_settings(&config, &profile, context_mode, target_language)?;
 
-    let output = if print_prompt {
+    let output = if viewer.viewer == ViewerKind::Qutebrowser {
+        OutputMode::Browser(browser_options(
+            config_dir,
+            &profile_name,
+            header.or(request.file.clone()).unwrap_or_default(),
+            &viewer,
+        )?)
+    } else if print_prompt {
         OutputMode::PrintPrompt
     } else if stream {
         if html {
@@ -508,7 +677,7 @@ fn execute(
     }
     let rendered = prompt::render(profile, &request, &context, settings)?;
 
-    if output == OutputMode::PrintPrompt {
+    if matches!(output, OutputMode::PrintPrompt) {
         let output = PromptOutput {
             profile: profile_name,
             model: &settings.model,
@@ -525,13 +694,16 @@ fn execute(
     let started = Instant::now();
     let mut streamed = String::new();
 
-    let outcome = match output {
+    let outcome = match &output {
         OutputMode::PrintPrompt => unreachable!("print prompt returns before the provider call"),
         OutputMode::PlainStreaming => stream_plain(config, settings, &rendered, &mut streamed),
         OutputMode::PlainBuffered => provider::complete(config, settings, &rendered),
         OutputMode::Json => provider::complete(config, settings, &rendered),
         OutputMode::Ndjson => stream_ndjson(config, settings, &rendered, &mut streamed, false),
         OutputMode::NdjsonHtml => stream_ndjson(config, settings, &rendered, &mut streamed, true),
+        OutputMode::Browser(options) => {
+            stream_browser(config, settings, &rendered, options, &mut streamed)
+        }
     };
 
     let duration_ms = started.elapsed().as_millis().min(i64::MAX as u128) as i64;
@@ -546,7 +718,7 @@ fn execute(
             command,
             profile_name,
             source,
-            output,
+            &output,
             created_at_ms,
             duration_ms,
             &outcome,
@@ -565,7 +737,27 @@ fn execute(
         _ => {}
     }
 
+    if matches!(&outcome, Err(DocentError::ViewerClosed)) {
+        return Ok(());
+    }
     outcome.map(|_| ())
+}
+
+/// Stream one answer into a qutebrowser page.
+fn stream_browser(
+    config: &config::Config,
+    settings: &EffectiveSettings,
+    rendered: &prompt::Prompt,
+    options: &ViewerOptions,
+    streamed: &mut String,
+) -> Result<Completion, DocentError> {
+    let mut viewer = Viewer::open(options)?;
+    let result = provider::complete_streaming(config, settings, rendered, &mut |delta| {
+        streamed.push_str(delta);
+        viewer.send_delta(delta)
+    });
+    viewer.finish(&result);
+    result
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -578,7 +770,7 @@ fn build_history_run(
     command: &str,
     profile_name: &str,
     source: &str,
-    output_mode: OutputMode,
+    output_mode: &OutputMode,
     created_at_ms: i64,
     duration_ms: i64,
     outcome: &Result<Completion, DocentError>,
@@ -586,6 +778,7 @@ fn build_history_run(
 ) -> history::NewRun {
     let (status, error) = match outcome {
         Ok(_) => ("success".to_string(), None),
+        Err(DocentError::ViewerClosed) => ("cancelled".to_string(), None),
         Err(error) => ("error".to_string(), Some(error.to_string())),
     };
     let (model, usage) = match outcome {
@@ -725,7 +918,7 @@ fn stream_ndjson(
                 write_stream_event(
                     &mut writer,
                     &provider::StreamEvent::Html {
-                        html: answer_html(&completion.text),
+                        html: markdown::render_answer(&completion.text),
                     },
                 )?;
             }
@@ -747,16 +940,6 @@ fn stream_ndjson(
             );
             Err(error)
         }
-    }
-}
-
-/// Render an answer, falling back to a placeholder when the model was silent.
-fn answer_html(text: &str) -> String {
-    let body = markdown::render(text);
-    if body.trim().is_empty() {
-        "<p>(no output)</p>".to_string()
-    } else {
-        body
     }
 }
 

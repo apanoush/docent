@@ -236,6 +236,7 @@ dependencies = [
  "clap",
  "directories",
  "env_logger",
+ "getrandom 0.4.3",
  "log",
  "pulldown-cmark",
  "rusqlite",

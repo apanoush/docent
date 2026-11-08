@@ -4,7 +4,7 @@ A context-aware reading companion for the terminal, Neovim, qutebrowser, Firefox
 
 Docent has five pieces:
 
-- `docent`, a Rust CLI with terminal commands for files, line ranges, pasted text, and questions. It also accepts JSON on stdin for machine integrations, builds the prompt, calls an OpenAI-compatible or Anthropic API, and returns or streams the answer.
+- `docent`, a Rust CLI with terminal commands for files, line ranges, pasted text, and questions. It also accepts JSON on stdin for machine integrations, builds the prompt, calls an OpenAI-compatible or Anthropic API, and returns, streams, or shows the answer in qutebrowser.
 - `plugins/nvim/`, a Neovim plugin that captures the selection and buffer, calls the CLI asynchronously, and streams the answer into a floating window.
 - `plugins/qutebrowser/`, a qutebrowser adapter that captures the page selection and rendered text, calls the CLI asynchronously, and streams the answer into a new tab.
 - `plugins/firefox/`, a Firefox extension plus a native messaging host that captures the page selection and rendered text and streams the answer into a new tab.
@@ -16,7 +16,7 @@ Most lookup tools treat a word or phrase in isolation. Docent sends the selectio
 
 ## Install
 
-Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, the Firefox adapter needs Firefox 140 or newer, and the zathura adapter needs zathura plus `pdftotext`. The zathura `--viewer nvim` option also needs Neovim 0.10 or newer, and `--viewer qutebrowser` needs qutebrowser 3.7 or newer. The adapter tests need Node 18 or newer.
+Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, the Firefox adapter needs Firefox 140 or newer, and the zathura adapter needs zathura plus `pdftotext`. The CLI browser viewer and the zathura `--viewer qutebrowser` option need qutebrowser 3.7 or newer, and the zathura `--viewer nvim` option needs Neovim 0.10 or newer. The adapter tests need Node 18 or newer.
 
 ```bash
 cargo install --path .
@@ -67,6 +67,15 @@ cat notes.md | docent explain - --line 12
 
 If a required input is missing and stdin is a terminal, Docent prompts for it. Piped stdin is always treated as the document. Answers stream by default; add `--no-stream` to wait for the complete answer.
 
+Stream the answer into a qutebrowser window or tab instead of the terminal:
+
+```bash
+docent explain notes.md --lines 12:20 --viewer qutebrowser
+docent summarize paper.md --viewer qutebrowser --qutebrowser-target tab
+```
+
+The page uses the same answer styles as the qutebrowser adapter. Pass `--answer-css PATH` for extra overrides, or edit `<config dir>/answer.css`. See [the browser viewer guide](docs/viewer.md).
+
 When a run has no selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. Use `--context-mode full` to send everything, raise `context.max_chars`, or narrow the subject with `--lines`.
 
 The JSON stdin interface used by Neovim, qutebrowser, Firefox, and zathura remains available:
@@ -75,7 +84,7 @@ The JSON stdin interface used by Neovim, qutebrowser, Firefox, and zathura remai
 printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence using attention.","byte_start":2,"byte_end":13,"file":"notes.md"}' | docent run --profile explain
 ```
 
-Inspect the exact prompt without calling the provider with `--print-prompt`, or stream newline-delimited events with `--stream`. Run `docent --help` for the terminal commands and `docent run --help` for the machine interface.
+Inspect the exact prompt without calling the provider with `--print-prompt`, or stream newline-delimited events with `--stream`. Add `--html` with `--stream` to include the final answer as rendered HTML before the `done` event; the browser adapters use this. Run `docent --help` for the terminal commands and `docent run --help` for the machine interface.
 
 Every provider run is recorded in a local SQLite database by default, including the prompt, answer, model, parameters, token usage, and source. The database lives in the platform data directory, for example `~/.local/share/docent/docent.db` on Linux. Set `history.database` to move it, `history.enabled = false` to disable it, or pass `--no-history` for one run. See [run history](docs/history.md).
 

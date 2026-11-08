@@ -17,5 +17,6 @@ pub mod prompt;
 pub mod provider;
 pub mod request;
 pub mod source;
+pub mod viewer;
 
 pub use error::DocentError;

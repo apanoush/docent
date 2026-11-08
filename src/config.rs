@@ -314,6 +314,11 @@ pub fn profiles_dir(config_dir: &Path) -> PathBuf {
     config_dir.join(PROFILES_DIR)
 }
 
+/// Path to the example answer stylesheet created by `docent init`.
+pub fn answer_css_file(config_dir: &Path) -> PathBuf {
+    config_dir.join(ANSWER_CSS_FILE)
+}
+
 /// Loads and validates `config.toml`.
 pub fn load_config(config_dir: &Path) -> Result<Config, DocentError> {
     let path = config_file(config_dir);
@@ -402,7 +407,7 @@ pub fn init(config_dir: &Path, force: bool) -> Result<InitReport, DocentError> {
         restrict_permissions(&config_path)?;
     }
     write_default(
-        &config_dir.join(ANSWER_CSS_FILE),
+        &answer_css_file(config_dir),
         defaults::ANSWER_CSS,
         force,
         &mut report,

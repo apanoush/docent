@@ -24,13 +24,13 @@ profiles/
 
 ## `answer.css`
 
-`docent init` writes a commented example `answer.css` for browser answer-tab styling. The CLI does not read it. Point a browser adapter at it with its custom CSS option, for example the qutebrowser adapter:
+`docent init` writes a commented example `answer.css` for browser answer styling. The CLI browser viewer reads it automatically for `--viewer qutebrowser`; the terminal viewer ignores it. Point a browser adapter at it with its custom CSS option, for example the qutebrowser adapter:
 
 ```python
 docent.setup(config, custom_css="~/.config/docent/answer.css")
 ```
 
-The Firefox adapter reads the same file automatically through its native messaging host and applies it after the bundled styles.
+The Firefox adapter reads the same file automatically through its native messaging host and applies it after the bundled styles. The CLI applies the file after the built-in styles and before `--answer-css`.
 
 The default answer styles ship with the adapter, so the file only needs the rules you want to change. `docent init --force` replaces it like the other shipped defaults. See [the qutebrowser adapter](qutebrowser.md#customizing-the-answer-style) for the available variables and examples.
 
@@ -299,6 +299,7 @@ docent do my-profile notes.md --lines 12:20
 - `--text TEXT` supplies a pasted selection. If a file or piped stdin is present, that is the document, and offsets are resolved when the text occurs there.
 - Only one of `--lines`, `--line`, `--select`, and `--text` may be used.
 - `--context-mode` and `--target-language` (alias `--to`) work on every terminal command.
+- `--viewer qutebrowser` shows the answer in a qutebrowser window or tab instead of stdout. `--qutebrowser`, `--qutebrowser-target`, and `--answer-css` tune the viewer. See [the browser viewer](viewer.md).
 
 Piped stdin is always the document, never prompt input. Prompts only appear when stdin is a terminal and a required input is missing. A profile that requires a question prompts for one; a profile that requires a selection prompts for a line range or pasted text.
 
@@ -306,7 +307,7 @@ When a run has no resolvable selection and the document is larger than `context.
 
 A bare `docent` prints a short getting-started message. `docent profiles` prints `name: description`; `docent profiles --json` remains the machine-readable form used by the Neovim, qutebrowser, and Firefox pickers.
 
-Terminal commands stream plain text by default. `--no-stream` waits for the complete answer and prints it once. `--json` and `--stream` are reserved for `docent run`, where `--stream` means newline-delimited JSON events.
+Terminal commands stream plain text by default. `--no-stream` waits for the complete answer and prints it once. `--viewer qutebrowser` streams the answer into qutebrowser instead and cannot be combined with `--no-stream`. `--json` and `--stream` are reserved for `docent run`, where `--stream` means newline-delimited JSON events.
 
 ## Machine interface
 
@@ -330,8 +331,10 @@ Output modes for `docent run`:
 - Default: the answer as plain text.
 - `--json`: one JSON object with `text`, `model`, and `usage`.
 - `--stream`: newline-delimited JSON events of type `delta`, `done`, and `error`.
+- `--html`: with `--stream`, add one `html` event with the rendered answer before `done`.
+- `--viewer qutebrowser`: stream the answer into a qutebrowser page instead of stdout. `--header TEXT` sets the page label.
 - `--print-prompt`: the assembled system and user messages as JSON, without calling the provider.
-- `--stream` and `--json` cannot be combined.
+- `--stream`, `--json`, and `--viewer qutebrowser` cannot be combined.
 
 ## CLI reference
 
@@ -339,12 +342,15 @@ Output modes for `docent run`:
 docent explain [FILE] [--lines START:END | --line N | --select PHRASE | --text TEXT]
                [--question TEXT] [--context-mode auto|full|none]
                [--target-language LANG | --to LANG] [--no-stream]
+               [--viewer terminal|qutebrowser] [--qutebrowser PATH]
+               [--qutebrowser-target TARGET] [--answer-css PATH]
 docent ask [FILE] ...
 docent translate [FILE] ...
 docent summarize [FILE] ...
 docent do PROFILE [FILE] ...
 docent run [--profile explain] [--question TEXT] [--target-language LANG]
-           [--context-mode auto|full|none] [--stream] [--json]
+           [--context-mode auto|full|none] [--stream] [--html] [--json]
+           [--viewer terminal|qutebrowser] [--header TEXT]
            [--print-prompt] [--config-dir PATH]
 docent profiles [--json]
 docent init [--force] [--config-dir PATH]

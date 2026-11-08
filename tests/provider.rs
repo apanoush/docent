@@ -115,13 +115,27 @@ If a passage is marked as the selection, summarize it. Otherwise summarize the d
 }
 
 fn run(config_dir: &Path, args: &[&str], stdin: &str, key: Option<&str>) -> Output {
+    run_with_env(config_dir, args, stdin, key, &[])
+}
+
+fn run_with_env(
+    config_dir: &Path,
+    args: &[&str],
+    stdin: &str,
+    key: Option<&str>,
+    envs: &[(&str, &str)],
+) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_docent"));
     command
         .args(["--config-dir", config_dir.to_str().unwrap()])
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .env("DISPLAY", ":0");
+    for (name, value) in envs {
+        command.env(name, value);
+    }
 
     if let Some(key) = key {
         command.env("DOCENT_TEST_KEY", key);
@@ -675,6 +689,103 @@ fn html_requires_a_stream() {
     let error = stderr(&output);
     assert!(error.contains("--html"), "stderr: {error}");
     assert!(error.contains("--stream"), "stderr: {error}");
+}
+
+#[cfg(unix)]
+#[test]
+fn browser_viewer_streams_into_qutebrowser() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let body = concat!(
+        "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let notes = temp.path().join("notes.md");
+    fs::write(&notes, "alpha beta gamma\n").unwrap();
+    let css = temp.path().join("custom.css");
+    fs::write(&css, ".markdown h2 { color: red; }").unwrap();
+    let output_file = temp.path().join("browser.json");
+
+    let browser = temp.path().join("fake-qutebrowser");
+    fs::write(
+        &browser,
+        r#"#!/usr/bin/env python3
+import json
+import os
+import sys
+import urllib.request
+
+url = sys.argv[-1]
+page = urllib.request.urlopen(url).read().decode("utf-8")
+events = []
+with urllib.request.urlopen(url.rstrip("/") + "/events") as response:
+    for raw in response:
+        line = raw.decode("utf-8").strip()
+        if not line.startswith("data: "):
+            continue
+        event = json.loads(line[6:])
+        events.append(event)
+        if event["type"] in {"done", "error"}:
+            break
+with open(os.environ["FAKE_QUTEBROWSER_OUTPUT"], "w", encoding="utf-8") as handle:
+    json.dump({"page": page, "events": events}, handle)
+"#,
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&browser).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&browser, permissions).unwrap();
+
+    let output = run_with_env(
+        &dir,
+        &[
+            "explain",
+            notes.to_str().unwrap(),
+            "--lines",
+            "1:1",
+            "--viewer",
+            "qutebrowser",
+            "--qutebrowser",
+            browser.to_str().unwrap(),
+            "--answer-css",
+            css.to_str().unwrap(),
+        ],
+        "",
+        Some("secret"),
+        &[("FAKE_QUTEBROWSER_OUTPUT", output_file.to_str().unwrap())],
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(output.stdout.is_empty());
+
+    let captured: Value = serde_json::from_str(&fs::read_to_string(&output_file).unwrap()).unwrap();
+    let page = captured["page"].as_str().unwrap();
+    assert!(page.contains("docent: explain"));
+    assert!(page.contains("notes.md (lines 1)"));
+    assert!(page.contains(".markdown h2 { color: red; }"));
+
+    let events = captured["events"].as_array().unwrap();
+    let kinds: Vec<_> = events.iter().map(|event| event["type"].as_str()).collect();
+    assert_eq!(
+        kinds,
+        vec![Some("delta"), Some("delta"), Some("html"), Some("done")]
+    );
+    assert_eq!(events[2]["html"], "<p>Hello world</p>\n");
+    assert!(events[3]["label"].as_str().unwrap().contains("test-model"));
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let (status, mode): (String, String) = connection
+        .query_row("SELECT status, output_mode FROM runs", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(status, "success");
+    assert_eq!(mode, "browser");
 }
 
 #[test]

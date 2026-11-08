@@ -6,6 +6,7 @@ Docent explains, translates, summarizes, or answers questions about a selected p
 
 - [README](../README.md): install, quickstart, and the editor, browser, and PDF viewer setup snippets.
 - [Configuration and profiles](config.md): config file, provider examples, profile schema, and placeholders.
+- [Browser viewer](viewer.md): stream a terminal answer into a qutebrowser window or tab, and style it.
 - [Run history](history.md): SQLite location, schema, source tagging, privacy, and example queries.
 - [Neovim plugin](nvim.md): commands, keymaps, float behavior, and Lua API.
 - [qutebrowser adapter](qutebrowser.md): commands, keymaps, answer tabs, and browser limitations.
@@ -27,8 +28,8 @@ Docent explains, translates, summarizes, or answers questions about a selected p
 2. Terminal commands build the request in the CLI. The Neovim, qutebrowser, and zathura adapters send the same data as JSON on the CLI's stdin. The Firefox host writes the same JSON to the CLI's stdin.
 3. The CLI loads `config.toml` and the requested profile, resolves effective settings, and builds the context window.
 4. The CLI renders the profile prompt and calls the configured provider.
-5. Text arrives either as a plain stream for the terminal or as newline-delimited JSON events for the adapters.
-6. The terminal prints the answer, the Neovim plugin appends text to a floating window, the qutebrowser adapter appends text to an answer tab, the Firefox adapter streams into an extension tab, or the zathura adapter streams into a terminal window, the Neovim float, or a qutebrowser page.
+5. Text arrives either as a plain stream for the terminal, as newline-delimited JSON events for the adapters, or as Server-Sent Events for the CLI browser viewer.
+6. The terminal prints the answer, the Neovim plugin appends text to a floating window, the qutebrowser adapter appends text to an answer tab, the Firefox adapter streams into an extension tab, the zathura adapter streams into a terminal window, the Neovim float, or a qutebrowser page, or the CLI streams into its own qutebrowser page. Browser front ends consume a final `html` event rendered once by the CLI.
 7. The CLI records the run in a local SQLite database when history is enabled. Failures to write history are warnings, not request failures.
 
 The CLI is usable on its own. The Neovim, qutebrowser, Firefox, and zathura adapters only shell out to `docent` and render its output. The Firefox adapter reaches the CLI through a small native messaging host because WebExtensions cannot start processes.

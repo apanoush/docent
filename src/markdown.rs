@@ -96,6 +96,16 @@ fn is_safe_url(url: &str) -> bool {
     !host.is_empty()
 }
 
+/// Render an answer, falling back to a placeholder when the model was silent.
+pub fn render_answer(text: &str) -> String {
+    let body = render(text);
+    if body.trim().is_empty() {
+        "<p>(no output)</p>".to_string()
+    } else {
+        body
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

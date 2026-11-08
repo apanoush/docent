@@ -1,5 +1,5 @@
 use std::fs;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use serde_json::Value;
 
@@ -246,4 +246,46 @@ fn invalid_profile_name_is_reported_by_run_contract() {
         .collect();
     assert!(!names.contains(&"bad name"));
     assert!(stderr(&output).contains("invalid profile name"));
+}
+
+#[test]
+fn viewer_rejects_no_stream() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+
+    let output = docent()
+        .args([
+            "--config-dir",
+            dir.to_str().unwrap(),
+            "explain",
+            "notes.md",
+            "--viewer",
+            "qutebrowser",
+            "--no-stream",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stderr(&output).contains("cannot be combined with --no-stream"));
+}
+
+#[test]
+fn run_viewer_rejects_streaming_flags() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+
+    let output = docent()
+        .args([
+            "--config-dir",
+            dir.to_str().unwrap(),
+            "run",
+            "--viewer",
+            "qutebrowser",
+            "--stream",
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stderr(&output).contains("--viewer qutebrowser cannot be combined"));
 }

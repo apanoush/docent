@@ -179,6 +179,12 @@ pub enum DocentError {
     #[error("provider returned an empty response")]
     EmptyResponse,
 
+    #[error("browser answer viewer failed: {0}")]
+    Viewer(String),
+
+    #[error("the answer page was closed")]
+    ViewerClosed,
+
     #[error("{0}")]
     Input(String),
 
