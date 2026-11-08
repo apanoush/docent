@@ -19,12 +19,45 @@ fi
 
 node -e '
 const fs = require("fs");
+const path = require("path");
+
+function jsFiles(directory) {
+  const files = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...jsFiles(full));
+    } else if (entry.name.endsWith(".js")) {
+      files.push(full);
+    }
+  }
+  return files;
+}
+
 const manifest = JSON.parse(fs.readFileSync("plugins/firefox/manifest.json", "utf8"));
 if (manifest.browser_specific_settings.gecko.id !== "docent@reading-assistant") {
   throw new Error("the add-on ID must match scripts/firefox-host-install.sh");
 }
-if (!manifest.permissions.includes("nativeMessaging")) {
-  throw new Error("nativeMessaging permission is missing");
+
+const code = jsFiles("plugins/firefox").map((file) => fs.readFileSync(file, "utf8")).join("\n");
+const required = [
+  ["browser.menus", "menus"],
+  ["browser.contextMenus", "contextMenus"],
+  ["browser.notifications", "notifications"],
+  ["browser.storage", "storage"],
+];
+for (const [needle, permission] of required) {
+  if (code.includes(needle) && !manifest.permissions.includes(permission)) {
+    throw new Error(`${needle} is used but the "${permission}" permission is missing`);
+  }
+}
+if (/(connectNative|sendNativeMessage)/.test(code) && !manifest.permissions.includes("nativeMessaging")) {
+  throw new Error("native messaging is used but the nativeMessaging permission is missing");
+}
+if (code.includes("tabs.executeScript")
+    && !manifest.permissions.includes("activeTab")
+    && !manifest.permissions.includes("tabs")) {
+  throw new Error("tabs.executeScript is used without activeTab or tabs");
 }
 '
 

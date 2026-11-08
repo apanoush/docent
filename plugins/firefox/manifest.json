@@ -22,7 +22,7 @@
   "permissions": [
     "activeTab",
     "nativeMessaging",
-    "contextMenus",
+    "menus",
     "storage",
     "notifications"
   ],

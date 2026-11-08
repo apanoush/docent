@@ -242,6 +242,9 @@ let menusReady = Promise.resolve();
 
 /** Rebuild the selection context menu from the current profile catalog. */
 function refreshMenus(profiles) {
+  if (!browser.menus) {
+    return Promise.resolve();
+  }
   menusReady = menusReady
     .catch(() => {
       // Recover from a previous menu failure and rebuild from scratch.
@@ -274,6 +277,9 @@ function refreshMenus(profiles) {
 }
 
 function notify(message) {
+  if (!browser.notifications) {
+    return;
+  }
   browser.notifications
     .create({
       type: "basic",
@@ -295,18 +301,20 @@ async function runFromMenu(profileName, tab) {
   }
 }
 
-browser.menus.onClicked.addListener((info, tab) => {
-  const id = String(info.menuItemId);
-  if (id === MENU_REFRESH) {
-    loadProfiles(true)
-      .then(() => notify("Profiles reloaded"))
-      .catch((error) => notify(error.message));
-    return;
-  }
-  if (id.startsWith("docent:")) {
-    runFromMenu(id.slice("docent:".length), tab);
-  }
-});
+if (browser.menus) {
+  browser.menus.onClicked.addListener((info, tab) => {
+    const id = String(info.menuItemId);
+    if (id === MENU_REFRESH) {
+      loadProfiles(true)
+        .then(() => notify("Profiles reloaded"))
+        .catch((error) => notify(error.message));
+      return;
+    }
+    if (id.startsWith("docent:")) {
+      runFromMenu(id.slice("docent:".length), tab);
+    }
+  });
+}
 
 refreshMenus([]).catch(() => {});
 loadProfiles().catch(() => {});
