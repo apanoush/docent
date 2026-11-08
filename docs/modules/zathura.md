@@ -12,6 +12,7 @@ The adapter lives in `plugins/zathura/`, separate from the Rust crate. It has no
 | `docent_zathura/request.py` | Builds the JSON request and optional UTF-8 byte offsets. |
 | `docent_zathura/render.py` | Parses NDJSON, prints deltas, handles errors, and keeps the terminal open. |
 | `docent_zathura/viewer.lua` | Neovim viewer. Reads the request file, loads the plugin, and calls `docent.run`. |
+| `docent_zathura/qutebrowser_view.py` | qutebrowser viewer. Loopback HTTP server, SSE stream, and final Markdown rendering. |
 | `docent_zathura/launch.py` | Detects a terminal emulator and builds its argv. |
 | `docent_zathura/cli.py` | Argument parsing, capture orchestration, viewer selection, request-file creation, and error reporting. |
 
@@ -22,7 +23,9 @@ The adapter uses two processes:
 1. The capture process is started by zathura's `exec`. It reads the clipboard, extracts the page window, writes a private request file, and launches a terminal. It exits immediately.
 2. The viewer process runs in the terminal. With the default terminal viewer it starts `docent run --profile NAME --stream --source zathura`, writes the request JSON to stdin, and prints `delta` text as it arrives. With `--viewer nvim`, Neovim reads and deletes the request file, loads `plugins/nvim`, and calls `docent.run` with the explicit request data.
 
-The request file is created with `mkdtemp` under `XDG_RUNTIME_DIR` (or the system temporary directory), written with mode 0600, and removed by the viewer. This keeps the selection and document text out of argv and out of the process list.
+The qutebrowser viewer skips the terminal and request file. The capture process starts a loopback HTTP server, launches qutebrowser with a tokenized URL, and runs `docent run --profile NAME --stream --source zathura` when the page opens the SSE connection. The request stays in memory and is written to the CLI's stdin.
+
+For the terminal and Neovim viewers, the request file is created with `mkdtemp` under `XDG_RUNTIME_DIR` (or the system temporary directory), written with mode 0600, and removed by the viewer. This keeps the selection and document text out of argv and out of the process list.
 
 The capture process uses the JSON stdin contract rather than `docent explain --text`. That gives the request a proper `file` label and keeps the selection out of the command line. It also means the adapter uses the same streaming contract as the Neovim and qutebrowser integrations.
 
@@ -46,6 +49,8 @@ The capture process uses the JSON stdin contract rather than `docent explain --t
 
 A separate thread drains stderr so a chatty CLI cannot block on a full pipe. The render process prints a header with the profile and file label, then the answer. After success it prints `Press Enter to close.` and reads one line when stdin is a TTY. Closing the terminal sends SIGHUP to the process, which terminates the child.
 
+`qutebrowser_view.py` uses `ThreadingHTTPServer` on `127.0.0.1:0` and a random token path. The page is a small HTML shell with an `EventSource`. The server starts the `docent` process only after the page connects, sends one JSON object per SSE `data:` line, and renders the accumulated Markdown to HTML with the qutebrowser adapter's `docent.markdown.render` when the stream finishes. The page replaces the raw `<pre>` with the rendered HTML. A closed page sets a cancellation flag, terminates `docent`, and shuts down the server. The server never binds to a public interface.
+
 ## Terminal launch
 
 `launch.py` supports `foot`, `kitty`, `alacritty`, and `xterm`, and falls back to `TERMINAL -e COMMAND` for other terminals. `DOCENT_TERMINAL` takes precedence over `TERMINAL`, and `--terminal` takes precedence over both. The supported terminals get an app id or class of `docent` or `Docent` so a compositor or window manager can float the answer window.
@@ -66,10 +71,14 @@ Neovim adds the plugin path to the runtimepath, runs the viewer script, and the 
 
 `tests/zathura/e2e_nvim.sh` is a headless end-to-end check for the Neovim viewer. It runs the viewer script in `nvim --headless` with a fake `docent`, waits for the float, checks the streamed text, and verifies that the request file is removed. `tests/zathura/run.sh` runs it when Neovim is available.
 
+`tests/zathura/test_qutebrowser_view.py` checks the qutebrowser viewer without a browser. It starts the server with a fake `docent` and a fake qutebrowser HTTP client, then verifies the final rendered Markdown, the error event, the missing-qutebrowser path, and the connection timeout.
+
 ## Design notes
 
 - The adapter is external because zathura's plugin API only loads document backends. A true in-app overlay would need a zathura core patch.
 - The answer is a terminal window because it streams without a GUI toolkit and matches the CLI's terminal output. A `zenity` dialog was rejected for the first version because it cannot stream.
 - The Neovim viewer reuses the existing plugin instead of duplicating the float, stream parser, and Markdown buffer setup. The plugin already sets `filetype = "markdown"` and handles cancellation when the float closes.
+- The qutebrowser viewer uses a URL and a loopback server rather than a qutebrowser command because qutebrowser's `--target` applies to URLs. Commands use `new_instance_open_target` instead. A normal URL is the reliable way to honor `--target=window` and the other target values.
+- The qutebrowser viewer reuses `docent.markdown.render` from the qutebrowser adapter, so there is one Markdown implementation. It streams raw text during the request and renders the final HTML at the end, matching the qutebrowser answer tab.
 - The context is a page window, not the whole PDF, to keep the request small and relevant. The CLI's `auto` mode sends the whole window when it fits.
 - The selection is read from the clipboard because `exec` has no `$SELECTION` placeholder. A future zathura change could pass the selection directly, but the clipboard path works with current releases.

@@ -14,6 +14,8 @@ from pathlib import Path
 from .clipboard import ClipboardError, read_best_selection
 from .launch import TerminalError, detect_terminal, launch_terminal
 from .pdf import PDFError, extract_text, page_window
+from .qutebrowser_view import QutebrowserViewError
+from .qutebrowser_view import serve as serve_qutebrowser
 from .render import RenderError, run_render
 from .request import RequestError, build_request
 
@@ -91,7 +93,7 @@ def _add_capture_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--terminal", help="terminal emulator to use")
     parser.add_argument(
         "--viewer",
-        choices=("terminal", "nvim"),
+        choices=("terminal", "nvim", "qutebrowser"),
         default="terminal",
         help="where to show the answer",
     )
@@ -99,6 +101,25 @@ def _add_capture_args(parser: argparse.ArgumentParser) -> None:
         "--nvim",
         default="nvim",
         help="Neovim executable for --viewer nvim",
+    )
+    parser.add_argument(
+        "--qutebrowser",
+        default="qutebrowser",
+        help="qutebrowser executable for --viewer qutebrowser",
+    )
+    parser.add_argument(
+        "--qutebrowser-target",
+        choices=(
+            "auto",
+            "tab",
+            "tab-bg",
+            "tab-silent",
+            "tab-bg-silent",
+            "window",
+            "private-window",
+        ),
+        default="window",
+        help="qutebrowser --target value for --viewer qutebrowser",
     )
     parser.add_argument(
         "--docent",
@@ -190,6 +211,19 @@ def _capture(args: argparse.Namespace) -> int:
         "header": label,
         "docent": docent_cmd,
     }
+
+    if args.viewer == "qutebrowser":
+        qutebrowser = _resolve_executable(args.qutebrowser)
+        if qutebrowser is None:
+            raise ValueError(
+                "qutebrowser not found; install qutebrowser or pass --qutebrowser"
+            )
+        return serve_qutebrowser(
+            payload,
+            docent_cmd=docent_cmd,
+            target=args.qutebrowser_target,
+            qutebrowser_cmd=qutebrowser,
+        )
 
     temp_dir = Path(
         tempfile.mkdtemp(
@@ -308,6 +342,7 @@ def main(argv: list[str] | None = None) -> int:
     except (
         ClipboardError,
         PDFError,
+        QutebrowserViewError,
         RequestError,
         TerminalError,
         OSError,

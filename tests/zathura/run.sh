@@ -10,7 +10,7 @@ python3 -m pytest -q \
 
 ruff check plugins/zathura tests/zathura
 ruff format --check plugins/zathura tests/zathura
-ty check plugins/zathura/docent_zathura
+ty check --extra-search-path plugins/qutebrowser plugins/zathura/docent_zathura
 python3 plugins/zathura/docent-zathura --help >/dev/null
 
 if command -v nvim >/dev/null 2>&1; then

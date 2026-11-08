@@ -77,6 +77,23 @@ def test_parser_accepts_nvim_viewer() -> None:
     assert args.nvim == "/usr/bin/nvim"
 
 
+def test_parser_accepts_qutebrowser_viewer() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "explain",
+            "paper.pdf",
+            "1",
+            "--viewer",
+            "qutebrowser",
+            "--qutebrowser-target",
+            "tab",
+        ]
+    )
+
+    assert args.viewer == "qutebrowser"
+    assert args.qutebrowser_target == "tab"
+
+
 def test_parser_rejects_two_clipboard_targets() -> None:
     with pytest.raises(SystemExit):
         cli.build_parser().parse_args(
@@ -171,6 +188,70 @@ def test_capture_launches_nvim_viewer(
         assert payload["request"]["selection"] == "alpha"
     finally:
         shutil.rmtree(request_file.parent, ignore_errors=True)
+
+
+def test_capture_launches_qutebrowser_viewer(
+    pdf: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_serve(
+        payload: dict[str, Any],
+        *,
+        docent_cmd: str,
+        target: str,
+        qutebrowser_cmd: str,
+    ) -> int:
+        captured.update(
+            payload=payload,
+            docent_cmd=docent_cmd,
+            target=target,
+            qutebrowser_cmd=qutebrowser_cmd,
+        )
+        return 0
+
+    monkeypatch.setattr(cli, "serve_qutebrowser", fake_serve)
+    monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
+    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(cli, "find_docent", lambda value: "/home/me/.local/bin/docent")
+    monkeypatch.setattr(
+        cli, "_resolve_executable", lambda value: "/usr/bin/qutebrowser"
+    )
+
+    code = cli.main(
+        [
+            "explain",
+            str(pdf),
+            "1",
+            "--viewer",
+            "qutebrowser",
+            "--qutebrowser-target",
+            "tab",
+        ]
+    )
+
+    assert code == 0
+    assert captured["target"] == "tab"
+    assert captured["qutebrowser_cmd"] == "/usr/bin/qutebrowser"
+    assert captured["docent_cmd"] == "/home/me/.local/bin/docent"
+    assert captured["payload"]["request"]["selection"] == "alpha"
+
+
+def test_capture_requires_qutebrowser(
+    pdf: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    messages: list[str] = []
+
+    monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
+    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(cli, "find_docent", lambda value: "/bin/docent")
+    monkeypatch.setattr(cli, "_resolve_executable", lambda value: None)
+    monkeypatch.setattr(cli, "_show_error", messages.append)
+
+    code = cli.main(["explain", str(pdf), "1", "--viewer", "qutebrowser"])
+
+    assert code == 1
+    assert "qutebrowser not found" in messages[0]
 
 
 def test_capture_requires_nvim(pdf: Path, monkeypatch: pytest.MonkeyPatch) -> None:

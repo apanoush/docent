@@ -1,6 +1,6 @@
 # Zathura adapter
 
-The zathura adapter reads the selected text from the system clipboard, extracts the current page and its neighbors with `pdftotext`, calls the `docent` CLI, and streams the answer into a terminal window or a Neovim float. It is an external adapter, not a zathura plugin: zathura's plugin API only loads document backends, so the integration uses a `zathurarc` `exec` binding.
+The zathura adapter reads the selected text from the system clipboard, extracts the current page and its neighbors with `pdftotext`, calls the `docent` CLI, and streams the answer into a terminal window, a Neovim float, or a qutebrowser window or tab. It is an external adapter, not a zathura plugin: zathura's plugin API only loads document backends, so the integration uses a `zathurarc` `exec` binding.
 
 ## Requirements
 
@@ -11,6 +11,7 @@ The zathura adapter reads the selected text from the system clipboard, extracts 
 - A clipboard tool: `wl-paste` on Wayland, or `xclip` or `xsel` on X11.
 - A terminal emulator: `foot`, `kitty`, `alacritty`, or `xterm`, or a command in `DOCENT_TERMINAL` or `--terminal`.
 - Neovim 0.10 or newer for `--viewer nvim`.
+- qutebrowser 3.7 or newer for `--viewer qutebrowser`.
 
 ## Install
 
@@ -30,6 +31,12 @@ To stream into Neovim instead of the terminal, add `--viewer nvim` inside the qu
 map <C-e> exec "/home/you/path/to/reading-assistant/plugins/zathura/docent-zathura explain $FILE $PAGE --viewer nvim"
 ```
 
+To open the answer in qutebrowser, use `--viewer qutebrowser`:
+
+```zathurarc
+map <C-e> exec "/home/you/path/to/reading-assistant/plugins/zathura/docent-zathura explain $FILE $PAGE --viewer qutebrowser"
+```
+
 Use absolute paths. Zathura launched from a desktop entry may not inherit your shell `PATH` or the API-key environment variable. The adapter searches `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, and `/usr/bin` for `docent`; export the key in the session that starts zathura, as the [qutebrowser guide](qutebrowser.md) describes.
 
 Point the binding at this checkout directly, or symlink the directory so updates apply:
@@ -39,7 +46,7 @@ ln -s /home/you/path/to/reading-assistant/plugins/zathura \
   ~/.config/zathura/plugins/docent
 ```
 
-Select text with the mouse, then press the key. Zathura has no keyboard text selection, so this is a mouse-first workflow. The answer opens in a terminal window, or in the Neovim float with `--viewer nvim`, and streams as it arrives.
+Select text with the mouse, then press the key. Zathura has no keyboard text selection, so this is a mouse-first workflow. The answer opens in a terminal window, the Neovim float with `--viewer nvim`, or a qutebrowser page with `--viewer qutebrowser`, and streams as it arrives.
 
 The adapter reads both PRIMARY and CLIPBOARD and uses the text that appears in the extracted page, so it works with either `selection-clipboard` value. Pass `--primary` or `--clipboard` to force a target.
 
@@ -59,8 +66,10 @@ Options:
 | `--clipboard` | auto | Force the CLIPBOARD selection. |
 | `--primary` | auto | Force the PRIMARY selection. |
 | `--terminal NAME` | detected | Terminal emulator for the answer viewer. |
-| `--viewer {terminal,nvim}` | `terminal` | Show the answer in a terminal or a Neovim float. |
+| `--viewer {terminal,nvim,qutebrowser}` | `terminal` | Where to show the answer. |
 | `--nvim PATH` | `nvim` | Neovim executable for `--viewer nvim`. |
+| `--qutebrowser PATH` | `qutebrowser` | qutebrowser executable for `--viewer qutebrowser`. |
+| `--qutebrowser-target TARGET` | `window` | qutebrowser `--target` value: `auto`, `tab`, `tab-bg`, `tab-silent`, `tab-bg-silent`, `window`, or `private-window`. |
 | `--docent PATH` | searched | CLI executable or command name. |
 | `--context-pages N` | `1` | Pages of context before and after the current page. |
 | `--context-mode MODE` | profile or config | `auto`, `full`, or `none`. |
@@ -84,7 +93,9 @@ With the default `--viewer terminal`, the terminal runs `docent-zathura render R
 
 With `--viewer nvim`, the terminal runs Neovim with the request file. A small Lua viewer adds `plugins/nvim` to the runtimepath, loads the existing Neovim plugin, and calls `docent.run` with the explicit request data. The plugin streams the answer into its float with `filetype = "markdown"`. Press `q` to close the float; closing it while the request is still running cancels the request. The viewer preserves your existing plugin settings such as window size and keymaps, and only overrides the `docent` executable and the `source` value, which is recorded as `zathura` in run history.
 
-The terminal is a separate window, not a zathura overlay. On a tiling compositor, add a float rule for the `docent` app id (foot and kitty) or the `Docent` class (xterm). The adapter sets those names for the supported terminals. On an error, the terminal stays open so the message is readable.
+With `--viewer qutebrowser`, the helper starts a small HTTP server bound to `127.0.0.1` with a random token in the URL. It launches `qutebrowser --target=TARGET URL`. The page receives raw text deltas over Server-Sent Events and replaces them with rendered Markdown when the stream finishes. Closing the page cancels the request. The default target is `window`; use `--qutebrowser-target tab` for a new tab in the existing qutebrowser window. The server is loopback-only and the URL is not reachable from other machines.
+
+The terminal viewer and Neovim viewer use a separate terminal window, not a zathura overlay. On a tiling compositor, add a float rule for the `docent` app id (foot and kitty) or the `Docent` class (xterm). The adapter sets those names for the supported terminals. On an error, the terminal stays open so the message is readable.
 
 ## Troubleshooting
 
@@ -95,6 +106,8 @@ The terminal is a separate window, not a zathura overlay. On a tiling compositor
 - `no terminal emulator found`: set `DOCENT_TERMINAL` or pass `--terminal`.
 - `nvim not found`: install Neovim or pass `--nvim` with an absolute path.
 - `could not load the docent Neovim plugin`: check that `plugins/nvim/` exists in this checkout and that Neovim is 0.10 or newer.
+- `qutebrowser not found`: install qutebrowser or pass `--qutebrowser` with an absolute path.
+- `qutebrowser did not open the answer page`: qutebrowser did not connect to the local server within the timeout. Check the `--qutebrowser-target` value and the qutebrowser process.
 - `could not start docent`: use an absolute `--docent` path or fix `PATH` for the process that starts zathura.
 - `missing API key`: export the variable named by `api_key_env` in the session that starts zathura.
 - The key does nothing: `exec` is disabled in `zathura-sandbox`, and a binding may not apply in every zathura mode. Check `zathura --version` and the `map` mode.
@@ -104,7 +117,8 @@ The terminal is a separate window, not a zathura overlay. On a tiling compositor
 - Zathura has no keyboard text selection; the workflow is mouse-first.
 - The adapter is PDF only. DjVu, PostScript, and comic-book files need different extractors.
 - The selection must stay in the clipboard until the key is pressed. If `selection-clipboard` is `false`, zathura does not copy the selection and the adapter cannot work.
-- The answer is a separate terminal window. An in-app overlay would require patching zathura's C/GTK core, because the plugin API only covers document backends.
+- The terminal and Neovim viewers use a separate terminal window, and the qutebrowser viewer uses a separate browser page. An in-app zathura overlay would require patching zathura's C/GTK core, because the plugin API only covers document backends.
 - `--viewer nvim` requires Neovim 0.10 or newer and the in-repository plugin. The answer appears in the plugin's float, not in a full editor buffer.
+- `--viewer qutebrowser` requires qutebrowser 3.7 or newer. It streams raw text and renders Markdown when the stream finishes, matching the qutebrowser adapter's answer tab. The page is served from a loopback-only HTTP server for the duration of the request.
 - `zathura-sandbox` disables `exec`.
 - The adapter is not a zathura plugin and does not use zathura's plugin ABI.
