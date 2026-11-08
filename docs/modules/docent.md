@@ -88,7 +88,7 @@ pub fn write(config: &Config, config_dir: &Path, run: &NewRun) -> Result<(), Doc
 
 ## Config and profile loading
 
-`config::resolve_config_dir` is a pure function that takes the CLI value and the environment value. Tests cover the precedence without mutating process globals. `config::ensure_initialized` creates the default files only when `config.toml` is missing; it does not recreate deleted profiles.
+`config::resolve_config_dir` is a pure function that takes the CLI value and the environment value. Tests cover the precedence without mutating process globals. `config::config_dir_from_env` then expands `~` and environment variables in the resolved path. `config::ensure_initialized` creates the default files only when `config.toml` is missing; it does not recreate deleted profiles.
 
 `profile::ProfileStore::discover` reads every `.toml` file, validates it, sorts valid profiles by name, and collects warnings for files that were skipped. An empty directory returns `NoProfiles`; a directory with only invalid files returns `NoValidProfiles` with the validation messages. The Neovim and qutebrowser pickers only see valid profiles.
 

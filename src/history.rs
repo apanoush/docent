@@ -100,7 +100,7 @@ pub fn now_ms() -> i64 {
 /// directory. Otherwise the platform data directory is used.
 pub fn database_path(config_dir: &Path, history: &HistoryConfig) -> Result<PathBuf, DocentError> {
     if let Some(path) = &history.database {
-        let path = expand_path(path)?;
+        let path = crate::config::expand_path(path)?;
         return Ok(if path.is_absolute() {
             path
         } else {
@@ -273,23 +273,6 @@ fn restrict_permissions(path: &Path) {
 
 #[cfg(not(unix))]
 fn restrict_permissions(_path: &Path) {}
-
-/// Expands `~` and environment variables in a configured path.
-///
-/// Paths that are not valid UTF-8 are returned unchanged, since shell
-/// expansion only applies to text.
-fn expand_path(path: &Path) -> Result<PathBuf, DocentError> {
-    let Some(text) = path.to_str() else {
-        return Ok(path.to_path_buf());
-    };
-
-    shellexpand::full(text)
-        .map(|expanded| PathBuf::from(expanded.as_ref()))
-        .map_err(|source| DocentError::ExpandPath {
-            path: path.to_path_buf(),
-            source,
-        })
-}
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS runs (

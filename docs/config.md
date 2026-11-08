@@ -6,6 +6,8 @@ Docent keeps its configuration in a single directory. The directory is chosen in
 2. The `DOCENT_CONFIG_DIR` environment variable.
 3. The platform config directory, for example `~/.config/docent` on Linux.
 
+A path from the flag or the variable may contain `~` or environment variables such as `$HOME`; it is expanded shell-style. An undefined variable is an error.
+
 The directory contains:
 
 ```text

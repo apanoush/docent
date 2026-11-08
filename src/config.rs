@@ -278,8 +278,29 @@ pub fn resolve_config_dir(
 }
 
 /// Resolves the config directory from the current process environment.
+///
+/// The resolved path is shell-expanded, so `DOCENT_CONFIG_DIR` and `--config-dir`
+/// may contain `~` or environment variables.
 pub fn config_dir_from_env(explicit: Option<PathBuf>) -> Result<PathBuf, DocentError> {
-    resolve_config_dir(explicit, std::env::var_os(CONFIG_DIR_ENV))
+    let dir = resolve_config_dir(explicit, std::env::var_os(CONFIG_DIR_ENV))?;
+    expand_path(&dir)
+}
+
+/// Expands `~` and environment variables in a configured path.
+///
+/// Paths that are not valid UTF-8 are returned unchanged, since shell
+/// expansion only applies to text.
+pub fn expand_path(path: &Path) -> Result<PathBuf, DocentError> {
+    let Some(text) = path.to_str() else {
+        return Ok(path.to_path_buf());
+    };
+
+    shellexpand::full(text)
+        .map(|expanded| PathBuf::from(expanded.as_ref()))
+        .map_err(|source| DocentError::ExpandPath {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 /// Path to `config.toml`.
@@ -582,6 +603,30 @@ temperature = 0.1
     fn resolve_config_dir_uses_environment() {
         let path = resolve_config_dir(None, Some(OsString::from("/tmp/from-env"))).unwrap();
         assert_eq!(path, PathBuf::from("/tmp/from-env"));
+    }
+
+    #[test]
+    fn config_dir_expands_a_leading_tilde() {
+        let Some(dirs) = directories::BaseDirs::new() else {
+            return;
+        };
+        let path = config_dir_from_env(Some(PathBuf::from("~/docent"))).unwrap();
+        assert_eq!(path, dirs.home_dir().join("docent"));
+    }
+
+    #[test]
+    fn config_dir_expands_environment_variables() {
+        // SAFETY: the variable name is unique to this test and nothing else reads it.
+        unsafe { std::env::set_var("DOCENT_TEST_CONFIG_DIR", "/tmp/docent-config") };
+        let path = config_dir_from_env(Some(PathBuf::from("$DOCENT_TEST_CONFIG_DIR"))).unwrap();
+        assert_eq!(path, PathBuf::from("/tmp/docent-config"));
+    }
+
+    #[test]
+    fn config_dir_rejects_an_undefined_variable() {
+        let error = config_dir_from_env(Some(PathBuf::from("$DOCENT_TEST_MISSING_CONFIG_DIR")))
+            .unwrap_err();
+        assert!(matches!(error, DocentError::ExpandPath { .. }));
     }
 
     #[test]
