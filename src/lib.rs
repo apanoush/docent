@@ -10,6 +10,7 @@ pub mod context;
 pub mod defaults;
 pub mod error;
 pub mod history;
+pub mod markdown;
 pub mod native_host;
 pub mod profile;
 pub mod prompt;
