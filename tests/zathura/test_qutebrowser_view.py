@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from docent_zathura.qutebrowser_view import (
     QutebrowserViewError,
-    build_shell,
+    build_page,
     render_markdown,
     serve,
 )
@@ -77,12 +77,19 @@ def _payload(selection: str = "alpha") -> dict[str, object]:
     }
 
 
-def test_build_shell_escapes_header_and_starts_event_source() -> None:
-    shell = build_shell("<profile>", "<header>")
+def test_build_page_uses_the_shared_shell_and_starts_event_source() -> None:
+    page = build_page("<profile>", "<header>")
 
-    assert "Docent: &lt;profile&gt;" in shell
-    assert "&lt;profile&gt; - &lt;header&gt;" in shell
-    assert "EventSource('events')" in shell
+    assert "docent: &lt;profile&gt; - &lt;header&gt;" in page
+    assert "--docent-bg" in page
+    assert "EventSource('events')" in page
+    assert "d close" not in page
+
+
+def test_build_page_appends_custom_css() -> None:
+    page = build_page("explain", "paper.pdf", ":root { --docent-bg: #123456; }")
+
+    assert "--docent-bg: #123456;" in page
 
 
 def test_render_markdown_uses_the_shared_renderer() -> None:

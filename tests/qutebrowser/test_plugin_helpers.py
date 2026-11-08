@@ -326,6 +326,19 @@ def test_build_shell_includes_the_default_stylesheet() -> None:
     assert ui.stylesheet() in shell
 
 
+def test_build_shell_accepts_label_hint_and_script() -> None:
+    shell = ui.build_shell(
+        "explain",
+        label="docent: explain - paper.pdf",
+        hint=None,
+        script="console.log('sse')",
+    )
+
+    assert "docent: explain - paper.pdf" in shell
+    assert "d close" not in shell
+    assert "<script>\nconsole.log('sse')\n</script>" in shell
+
+
 def test_build_shell_composes_stylesheet_palette_and_custom_css() -> None:
     custom = ".markdown { color: red; }"
 

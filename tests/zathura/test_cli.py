@@ -201,12 +201,14 @@ def test_capture_launches_qutebrowser_viewer(
         docent_cmd: str,
         target: str,
         qutebrowser_cmd: str,
+        custom_css: str | None = None,
     ) -> int:
         captured.update(
             payload=payload,
             docent_cmd=docent_cmd,
             target=target,
             qutebrowser_cmd=qutebrowser_cmd,
+            custom_css=custom_css,
         )
         return 0
 
@@ -234,7 +236,50 @@ def test_capture_launches_qutebrowser_viewer(
     assert captured["target"] == "tab"
     assert captured["qutebrowser_cmd"] == "/usr/bin/qutebrowser"
     assert captured["docent_cmd"] == "/home/me/.local/bin/docent"
+    assert captured["custom_css"] is None
     assert captured["payload"]["request"]["selection"] == "alpha"
+
+
+def test_capture_reads_qutebrowser_css(
+    pdf: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    css = tmp_path / "answer.css"
+    css.write_text(":root { --docent-bg: #123456; }\n", encoding="utf-8")
+    captured: dict[str, Any] = {}
+
+    def fake_serve(
+        payload: dict[str, Any],
+        *,
+        docent_cmd: str,
+        target: str,
+        qutebrowser_cmd: str,
+        custom_css: str | None = None,
+    ) -> int:
+        captured["custom_css"] = custom_css
+        return 0
+
+    monkeypatch.setattr(cli, "serve_qutebrowser", fake_serve)
+    monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
+    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(cli, "find_docent", lambda value: "/bin/docent")
+    monkeypatch.setattr(
+        cli, "_resolve_executable", lambda value: "/usr/bin/qutebrowser"
+    )
+
+    code = cli.main(
+        [
+            "explain",
+            str(pdf),
+            "1",
+            "--viewer",
+            "qutebrowser",
+            "--qutebrowser-css",
+            str(css),
+        ]
+    )
+
+    assert code == 0
+    assert captured["custom_css"] == ":root { --docent-bg: #123456; }\n"
 
 
 def test_capture_requires_qutebrowser(

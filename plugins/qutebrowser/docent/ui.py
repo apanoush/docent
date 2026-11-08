@@ -28,6 +28,10 @@ def build_shell(
     profile: str,
     colors: dict[str, str] | None = None,
     custom_css: str | None = None,
+    *,
+    label: str | None = None,
+    hint: str | None = "d close",
+    script: str | None = None,
 ) -> str:
     """Return the small HTML page used to receive streamed text."""
     style = stylesheet()
@@ -38,21 +42,27 @@ def build_shell(
         style = f"{style}\n{custom_css}"
 
     escaped_profile = html.escape(profile, quote=True)
+    escaped_label = (
+        html.escape(label, quote=True) if label else f"docent: {escaped_profile}"
+    )
+    hint_html = (
+        f'\n  <span id="hint">{html.escape(hint, quote=True)}</span>' if hint else ""
+    )
+    script_html = f"\n<script>\n{script}\n</script>" if script else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>docent: {escaped_profile}</title>
+<title>{escaped_label}</title>
 <style>
 {style}
 </style>
 </head>
 <body>
 <header>
-  <span id="status">docent: {escaped_profile}</span>
-  <span id="hint">d close</span>
+  <span id="status">{escaped_label}</span>{hint_html}
 </header>
-<main><pre id="answer" data-placeholder="1">Thinking...</pre></main>
+<main><pre id="answer" data-placeholder="1">Thinking...</pre></main>{script_html}
 </body>
 </html>
 """

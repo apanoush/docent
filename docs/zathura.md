@@ -70,6 +70,7 @@ Options:
 | `--nvim PATH` | `nvim` | Neovim executable for `--viewer nvim`. |
 | `--qutebrowser PATH` | `qutebrowser` | qutebrowser executable for `--viewer qutebrowser`. |
 | `--qutebrowser-target TARGET` | `window` | qutebrowser `--target` value: `auto`, `tab`, `tab-bg`, `tab-silent`, `tab-bg-silent`, `window`, or `private-window`. |
+| `--qutebrowser-css PATH` | none | CSS file appended after the qutebrowser answer styles. |
 | `--docent PATH` | searched | CLI executable or command name. |
 | `--context-pages N` | `1` | Pages of context before and after the current page. |
 | `--context-mode MODE` | profile or config | `auto`, `full`, or `none`. |
@@ -94,6 +95,12 @@ With the default `--viewer terminal`, the terminal runs `docent-zathura render R
 With `--viewer nvim`, the terminal runs Neovim with the request file. A small Lua viewer adds `plugins/nvim` to the runtimepath, loads the existing Neovim plugin, and calls `docent.run` with the explicit request data. The plugin streams the answer into its float with `filetype = "markdown"`. Press `q` to close the float; closing it while the request is still running cancels the request. The viewer preserves your existing plugin settings such as window size and keymaps, and only overrides the `docent` executable and the `source` value, which is recorded as `zathura` in run history.
 
 With `--viewer qutebrowser`, the helper starts a small HTTP server bound to `127.0.0.1` with a random token in the URL. It launches `qutebrowser --target=TARGET URL`. The page receives raw text deltas over Server-Sent Events and replaces them with rendered Markdown when the stream finishes. Closing the page cancels the request. The default target is `window`; use `--qutebrowser-target tab` for a new tab in the existing qutebrowser window. The server is loopback-only and the URL is not reachable from other machines.
+
+The page uses the same answer shell and `answer.css` as the qutebrowser adapter, so the visual style matches. It does not read qutebrowser's status-bar palette because it runs outside qutebrowser. Use `--qutebrowser-css PATH` to append your own CSS after the answer styles, for example:
+
+```zathurarc
+map <C-e> exec "/home/you/path/to/reading-assistant/plugins/zathura/docent-zathura explain $FILE $PAGE --viewer qutebrowser --qutebrowser-css /home/you/.config/docent/answer.css"
+```
 
 The terminal viewer and Neovim viewer use a separate terminal window, not a zathura overlay. On a tiling compositor, add a float rule for the `docent` app id (foot and kitty) or the `Docent` class (xterm). The adapter sets those names for the supported terminals. On an error, the terminal stays open so the message is readable.
 

@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 __all__ = [
     "QutebrowserViewError",
-    "build_shell",
+    "build_page",
     "render_markdown",
     "serve",
 ]
@@ -27,11 +27,19 @@ class QutebrowserViewError(Exception):
     """The qutebrowser viewer could not be started."""
 
 
+def _qutebrowser_dir() -> Path:
+    return Path(__file__).resolve().parents[2] / "qutebrowser"
+
+
+def _ensure_qutebrowser_path() -> None:
+    path = _qutebrowser_dir()
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+
 def render_markdown(text: str) -> str:
     """Render Markdown with the qutebrowser adapter's renderer."""
-    qutebrowser_dir = Path(__file__).resolve().parents[2] / "qutebrowser"
-    if str(qutebrowser_dir) not in sys.path:
-        sys.path.insert(0, str(qutebrowser_dir))
+    _ensure_qutebrowser_path()
     try:
         from docent.markdown import render
     except ImportError as exc:
@@ -39,126 +47,66 @@ def render_markdown(text: str) -> str:
     return render(text)
 
 
-_SHELL = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>__TITLE__</title>
-<style>
-:root {
-  color-scheme: light dark;
-  --bg: #f7f7f5;
-  --fg: #1c1c1a;
-  --muted: #5f5f5a;
-  --border: #d9d9d4;
-  --code: #ecece8;
-  --error: #b3261e;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16161a;
-    --fg: #e8e8e3;
-    --muted: #a0a09a;
-    --border: #33333a;
-    --code: #24242b;
-    --error: #ff6b60;
-  }
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0 auto;
-  max-width: 52rem;
-  padding: 1.5rem 1.25rem 4rem;
-  background: var(--bg);
-  color: var(--fg);
-  font: 16px/1.55 system-ui, -apple-system, sans-serif;
-}
-header {
-  position: sticky;
-  top: 0;
-  padding: 0.5rem 0;
-  margin-bottom: 1rem;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-pre {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font: 0.92rem/1.5 ui-monospace, SFMono-Regular, monospace;
-}
-code {
-  padding: 0.1rem 0.25rem;
-  border-radius: 0.25rem;
-  background: var(--code);
-  font: 0.92em ui-monospace, SFMono-Regular, monospace;
-}
-pre code { padding: 0; background: none; }
-.markdown h1, .markdown h2, .markdown h3 { line-height: 1.25; }
-.markdown blockquote {
-  margin-left: 0;
-  padding-left: 1rem;
-  border-left: 3px solid var(--border);
-  color: var(--muted);
-}
-.markdown table { border-collapse: collapse; }
-.markdown th, .markdown td {
-  padding: 0.35rem 0.6rem;
-  border: 1px solid var(--border);
-}
-.error { color: var(--error); white-space: pre-wrap; }
-</style>
-</head>
-<body>
-<header><span id="status">__HEADER__</span></header>
-<main>
-<pre id="answer">Thinking...</pre>
-<div id="rendered" class="markdown" hidden></div>
-</main>
-<script>
-const answer = document.getElementById('answer');
-const rendered = document.getElementById('rendered');
+_SSE_SCRIPT = """
+let answerElement = document.getElementById('answer');
 const status = document.getElementById('status');
 const source = new EventSource('events');
+
+function atBottom() {
+  return (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 8);
+}
+
 source.onmessage = (message) => {
   const event = JSON.parse(message.data);
   if (event.type === 'delta') {
-    if (answer.textContent === 'Thinking...') answer.textContent = '';
-    answer.textContent += event.text;
-    window.scrollTo(0, document.documentElement.scrollHeight);
+    if (answerElement.dataset.placeholder === '1') {
+      answerElement.textContent = '';
+      answerElement.dataset.placeholder = '0';
+    }
+    const stick = atBottom();
+    answerElement.appendChild(document.createTextNode(event.text));
+    if (stick) window.scrollTo(0, document.documentElement.scrollHeight);
   } else if (event.type === 'html') {
-    answer.hidden = true;
-    rendered.innerHTML = event.html;
-    rendered.hidden = false;
+    const stick = atBottom();
+    const block = document.createElement('div');
+    block.id = 'answer';
+    block.className = 'markdown';
+    block.innerHTML = event.html;
+    answerElement.replaceWith(block);
+    answerElement = block;
+    if (stick) window.scrollTo(0, document.documentElement.scrollHeight);
   } else if (event.type === 'done') {
     status.textContent = event.label || 'done';
     source.close();
   } else if (event.type === 'error') {
     status.textContent = 'docent: error';
-    answer.hidden = true;
-    rendered.hidden = false;
-    const error = document.createElement('div');
+    const error = document.createElement('span');
     error.className = 'error';
-    error.textContent = event.message;
-    rendered.appendChild(error);
+    error.textContent = '\\n\\n' + event.message;
+    answerElement.appendChild(error);
     source.close();
   }
 };
 source.onerror = () => { status.textContent = 'connection lost'; };
-</script>
-</body>
-</html>
 """
 
 
-def build_shell(profile: str, header: str) -> str:
+def build_page(profile: str, header: str, custom_css: str | None = None) -> str:
     """Return the standalone answer page."""
-    title = f"Docent: {profile}"
-    label = f"{profile} - {header}" if header else profile
-    return _SHELL.replace("__TITLE__", html.escape(title)).replace(
-        "__HEADER__", html.escape(label)
+    _ensure_qutebrowser_path()
+    try:
+        from docent.ui import build_shell
+    except ImportError as exc:
+        raise QutebrowserViewError("qutebrowser answer shell not found") from exc
+    label = f"docent: {profile}"
+    if header:
+        label = f"{label} - {header}"
+    return build_shell(
+        profile,
+        custom_css=custom_css,
+        label=label,
+        hint=None,
+        script=_SSE_SCRIPT,
     )
 
 
@@ -172,11 +120,13 @@ class _Viewer:
         docent_cmd: str,
         target: str,
         qutebrowser_cmd: str,
+        custom_css: str | None = None,
     ) -> None:
         self.payload = payload
         self.docent_cmd = docent_cmd
         self.target = target
         self.qutebrowser_cmd = qutebrowser_cmd
+        self.custom_css = custom_css
         self.profile = str(payload.get("profile") or "explain")
         self.header = str(payload.get("header") or "")
         self.token = secrets.token_urlsafe(16)
@@ -214,7 +164,7 @@ class _Viewer:
             handler.send_error(404)
 
     def send_page(self, handler: BaseHTTPRequestHandler) -> None:
-        body = build_shell(self.profile, self.header).encode("utf-8")
+        body = build_page(self.profile, self.header, self.custom_css).encode("utf-8")
         handler.send_response(200)
         handler.send_header("Content-Type", "text/html; charset=utf-8")
         handler.send_header("Content-Length", str(len(body)))
@@ -426,6 +376,7 @@ def serve(
     docent_cmd: str,
     target: str = "window",
     qutebrowser_cmd: str = "qutebrowser",
+    custom_css: str | None = None,
     timeout: float = 30.0,
 ) -> int:
     """Open the answer in qutebrowser and stream until it finishes."""
@@ -434,6 +385,7 @@ def serve(
         docent_cmd=docent_cmd,
         target=target,
         qutebrowser_cmd=qutebrowser_cmd,
+        custom_css=custom_css,
     )
     server = ThreadingHTTPServer(("127.0.0.1", 0), viewer.handler_class())
     server.daemon_threads = True

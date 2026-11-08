@@ -122,6 +122,11 @@ def _add_capture_args(parser: argparse.ArgumentParser) -> None:
         help="qutebrowser --target value for --viewer qutebrowser",
     )
     parser.add_argument(
+        "--qutebrowser-css",
+        type=Path,
+        help="CSS file appended after the qutebrowser answer styles",
+    )
+    parser.add_argument(
         "--docent",
         default="docent",
         help="path or command name; common locations are searched when not on PATH",
@@ -218,11 +223,19 @@ def _capture(args: argparse.Namespace) -> int:
             raise ValueError(
                 "qutebrowser not found; install qutebrowser or pass --qutebrowser"
             )
+        custom_css = None
+        if args.qutebrowser_css is not None:
+            css_path = args.qutebrowser_css.expanduser().resolve()
+            try:
+                custom_css = css_path.read_text(encoding="utf-8")
+            except OSError as exc:
+                raise ValueError(f"could not read qutebrowser CSS: {exc}") from exc
         return serve_qutebrowser(
             payload,
             docent_cmd=docent_cmd,
             target=args.qutebrowser_target,
             qutebrowser_cmd=qutebrowser,
+            custom_css=custom_css,
         )
 
     temp_dir = Path(

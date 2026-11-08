@@ -12,7 +12,7 @@ The adapter lives in `plugins/zathura/`, separate from the Rust crate. It has no
 | `docent_zathura/request.py` | Builds the JSON request and optional UTF-8 byte offsets. |
 | `docent_zathura/render.py` | Parses NDJSON, prints deltas, handles errors, and keeps the terminal open. |
 | `docent_zathura/viewer.lua` | Neovim viewer. Reads the request file, loads the plugin, and calls `docent.run`. |
-| `docent_zathura/qutebrowser_view.py` | qutebrowser viewer. Loopback HTTP server, SSE stream, and final Markdown rendering. |
+| `docent_zathura/qutebrowser_view.py` | qutebrowser viewer. Loopback HTTP server, SSE stream, shared answer shell, and final Markdown rendering. |
 | `docent_zathura/launch.py` | Detects a terminal emulator and builds its argv. |
 | `docent_zathura/cli.py` | Argument parsing, capture orchestration, viewer selection, request-file creation, and error reporting. |
 
@@ -49,7 +49,7 @@ The capture process uses the JSON stdin contract rather than `docent explain --t
 
 A separate thread drains stderr so a chatty CLI cannot block on a full pipe. The render process prints a header with the profile and file label, then the answer. After success it prints `Press Enter to close.` and reads one line when stdin is a TTY. Closing the terminal sends SIGHUP to the process, which terminates the child.
 
-`qutebrowser_view.py` uses `ThreadingHTTPServer` on `127.0.0.1:0` and a random token path. The page is a small HTML shell with an `EventSource`. The server starts the `docent` process only after the page connects, sends one JSON object per SSE `data:` line, and renders the accumulated Markdown to HTML with the qutebrowser adapter's `docent.markdown.render` when the stream finishes. The page replaces the raw `<pre>` with the rendered HTML. A closed page sets a cancellation flag, terminates `docent`, and shuts down the server. The server never binds to a public interface.
+`qutebrowser_view.py` uses `ThreadingHTTPServer` on `127.0.0.1:0` and a random token path. The page shell comes from the qutebrowser adapter's `docent.ui.build_shell` with a custom label, no `d close` hint, and an SSE script appended before `</body>`. The CSS is the same `answer.css`; `--qutebrowser-css` appends a user file after it. The server starts the `docent` process only after the page connects, sends one JSON object per SSE `data:` line, and renders the accumulated Markdown to HTML with `docent.markdown.render` when the stream finishes. The page replaces the raw `<pre>` with the rendered HTML. A closed page sets a cancellation flag, terminates `docent`, and shuts down the server. The server never binds to a public interface.
 
 ## Terminal launch
 
@@ -79,6 +79,6 @@ Neovim adds the plugin path to the runtimepath, runs the viewer script, and the 
 - The answer is a terminal window because it streams without a GUI toolkit and matches the CLI's terminal output. A `zenity` dialog was rejected for the first version because it cannot stream.
 - The Neovim viewer reuses the existing plugin instead of duplicating the float, stream parser, and Markdown buffer setup. The plugin already sets `filetype = "markdown"` and handles cancellation when the float closes.
 - The qutebrowser viewer uses a URL and a loopback server rather than a qutebrowser command because qutebrowser's `--target` applies to URLs. Commands use `new_instance_open_target` instead. A normal URL is the reliable way to honor `--target=window` and the other target values.
-- The qutebrowser viewer reuses `docent.markdown.render` from the qutebrowser adapter, so there is one Markdown implementation. It streams raw text during the request and renders the final HTML at the end, matching the qutebrowser answer tab.
+- The qutebrowser viewer reuses `docent.ui.build_shell`, `answer.css`, and `docent.markdown.render` from the qutebrowser adapter, so the shell, styles, and Markdown implementation are shared. It streams raw text during the request and renders the final HTML at the end, matching the qutebrowser answer tab. The only visual difference is that the standalone page has no qutebrowser status-bar palette; `--qutebrowser-css` covers user overrides.
 - The context is a page window, not the whole PDF, to keep the request small and relevant. The CLI's `auto` mode sends the whole window when it fits.
 - The selection is read from the clipboard because `exec` has no `$SELECTION` placeholder. A future zathura change could pass the selection directly, but the clipboard path works with current releases.
