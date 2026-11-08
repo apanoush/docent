@@ -26,6 +26,7 @@ target_language = "English"
 [history]
 enabled = true                 # record provider runs in a local SQLite database
 # database = "~/docent.db"     # default: platform data directory, e.g. ~/.local/share/docent/docent.db
+#                              # supports ~ and $VARS, resolved against this config directory
 
 # ---------------------------------------------------------------------------
 # Provider examples

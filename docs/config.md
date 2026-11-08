@@ -155,7 +155,7 @@ A local server that does not check keys still needs a key source. Set `api_key =
 | `enabled` | boolean | `true` | Record every provider run in a local SQLite database. |
 | `database` | string | unset | Database path. The default is the platform data directory, for example `~/.local/share/docent/docent.db` on Linux. |
 
-An explicit `database` path wins over the platform data directory. `~` is expanded, and a relative path is resolved against the config directory. The database is created lazily on the first model run; `docent init` does not create it.
+An explicit `database` path wins over the platform data directory. `~` and environment variables such as `$HOME` or `${XDG_DATA_HOME}` are expanded shell-style, and a relative path is resolved against the config directory. A path that references an undefined variable is reported as a warning and history is skipped for that run. The database is created lazily on the first model run; `docent init` does not create it.
 
 The database contains the full rendered prompt, including document context, the question, and the answer. Treat it as sensitive. On Unix, Docent creates the file with mode `0600` and the default data directory with mode `0700`. It is not encrypted.
 

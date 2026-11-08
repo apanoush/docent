@@ -34,6 +34,15 @@ pub enum DocentError {
         supported: i64,
     },
 
+    #[error("failed to expand path {path}: {source}")]
+    ExpandPath {
+        /// Path containing the unexpandable construct.
+        path: PathBuf,
+        /// Variable lookup failure from `shellexpand`.
+        #[source]
+        source: shellexpand::LookupError<std::env::VarError>,
+    },
+
     #[error("config path {0} exists but is not a directory")]
     ConfigDirNotDirectory(PathBuf),
 

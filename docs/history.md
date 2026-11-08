@@ -32,7 +32,7 @@ Override it with `history.database`:
 database = "~/sync/docent.db"
 ```
 
-`~` is expanded, and a relative path is resolved against the config directory. The database is created on the first model run. `docent init` only writes configuration and profiles.
+`~` and environment variables such as `$HOME` or `${XDG_DATA_HOME}` are expanded shell-style, and a relative path is resolved against the config directory. A path that references an undefined variable is reported as a warning and the run is not recorded. The database is created on the first model run. `docent init` only writes configuration and profiles.
 
 ## Source
 

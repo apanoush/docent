@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use directories::{BaseDirs, ProjectDirs};
+use directories::ProjectDirs;
 use rusqlite::{Connection, params};
 
 use crate::config::{Config, HistoryConfig};
@@ -95,12 +95,12 @@ pub fn now_ms() -> i64 {
 
 /// Resolves the history database path.
 ///
-/// An explicit `history.database` wins. `~` is expanded, and relative paths
-/// are resolved against the config directory. Otherwise the platform data
-/// directory is used.
+/// An explicit `history.database` wins. Its `~` and environment variables are
+/// expanded shell-style, and relative paths are resolved against the config
+/// directory. Otherwise the platform data directory is used.
 pub fn database_path(config_dir: &Path, history: &HistoryConfig) -> Result<PathBuf, DocentError> {
     if let Some(path) = &history.database {
-        let path = expand_tilde(path);
+        let path = expand_path(path)?;
         return Ok(if path.is_absolute() {
             path
         } else {
@@ -274,25 +274,21 @@ fn restrict_permissions(path: &Path) {
 #[cfg(not(unix))]
 fn restrict_permissions(_path: &Path) {}
 
-fn expand_tilde(path: &Path) -> PathBuf {
+/// Expands `~` and environment variables in a configured path.
+///
+/// Paths that are not valid UTF-8 are returned unchanged, since shell
+/// expansion only applies to text.
+fn expand_path(path: &Path) -> Result<PathBuf, DocentError> {
     let Some(text) = path.to_str() else {
-        return path.to_path_buf();
+        return Ok(path.to_path_buf());
     };
 
-    if text == "~" {
-        return BaseDirs::new()
-            .map(|dirs| dirs.home_dir().to_path_buf())
-            .unwrap_or_else(|| path.to_path_buf());
-    }
-
-    let rest = text.strip_prefix("~/").or_else(|| text.strip_prefix("~\\"));
-    let Some(rest) = rest else {
-        return path.to_path_buf();
-    };
-
-    BaseDirs::new()
-        .map(|dirs| dirs.home_dir().join(rest))
-        .unwrap_or_else(|| path.to_path_buf())
+    shellexpand::full(text)
+        .map(|expanded| PathBuf::from(expanded.as_ref()))
+        .map_err(|source| DocentError::ExpandPath {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 const SCHEMA: &str = r#"
@@ -382,6 +378,7 @@ INSERT INTO runs (
 mod tests {
     use super::*;
     use crate::config::Config;
+    use directories::BaseDirs;
 
     fn sample_run() -> NewRun {
         NewRun {
@@ -457,6 +454,30 @@ mod tests {
         };
         let path = database_path(Path::new("/tmp/config"), &history).unwrap();
         assert_eq!(path, dirs.home_dir().join("history.db"));
+    }
+
+    #[test]
+    fn environment_variables_are_expanded() {
+        // SAFETY: the variable name is unique to this test and nothing else reads it.
+        unsafe { std::env::set_var("DOCENT_TEST_HISTORY_DIR", "/tmp/docent-history") };
+        let history = HistoryConfig {
+            enabled: true,
+            database: Some(PathBuf::from("$DOCENT_TEST_HISTORY_DIR/history.db")),
+        };
+
+        let path = database_path(Path::new("/tmp/config"), &history).unwrap();
+        assert_eq!(path, PathBuf::from("/tmp/docent-history/history.db"));
+    }
+
+    #[test]
+    fn undefined_environment_variables_are_rejected() {
+        let history = HistoryConfig {
+            enabled: true,
+            database: Some(PathBuf::from("$DOCENT_TEST_MISSING_HISTORY_DIR/history.db")),
+        };
+
+        let error = database_path(Path::new("/tmp/config"), &history).unwrap_err();
+        assert!(matches!(error, DocentError::ExpandPath { .. }));
     }
 
     #[test]
