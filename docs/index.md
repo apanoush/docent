@@ -1,6 +1,6 @@
 # Docent documentation
 
-Docent explains, translates, or answers questions about a selected passage while using the surrounding document as context. It ships as a Rust CLI with terminal commands and in-repository Neovim, qutebrowser, and zathura adapters.
+Docent explains, translates, summarizes, or answers questions about a selected passage while using the surrounding document as context. It ships as a Rust CLI with terminal commands and in-repository Neovim, qutebrowser, and zathura adapters.
 
 ## Start here
 

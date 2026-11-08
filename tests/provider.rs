@@ -98,6 +98,20 @@ S: {{selection}}
 """
 "#,
     );
+    write_profile(
+        dir,
+        "summarize",
+        r#"description = "Summarize"
+requires = ["context"]
+
+user_prompt = """
+<document>
+{{context}}
+</document>
+If a passage is marked as the selection, summarize it. Otherwise summarize the document.
+"""
+"#,
+    );
 }
 
 fn run(config_dir: &Path, args: &[&str], stdin: &str, key: Option<&str>) -> Output {
@@ -295,7 +309,7 @@ fn print_prompt_does_not_call_the_provider() {
     assert!(user.contains("beta"));
     assert!(user.contains("alpha"));
     assert!(user.contains("SELECTION START"));
-    assert!(user.contains("the same language as the selected passage"));
+    assert!(user.contains("the same language as the source text"));
 }
 
 #[test]
@@ -326,6 +340,102 @@ user_prompt = "{{selection}}\n{{context}}"
         None,
     );
     assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["context_truncated"], true);
+    assert!(value["user"].as_str().unwrap().contains("TRUNCATED"));
+}
+
+#[test]
+fn summarize_document_without_a_selection() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"A summary"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let notes = temp.path().join("notes.md");
+    fs::write(&notes, "alpha beta gamma\n").unwrap();
+    let output = run(
+        &dir,
+        &["summarize", notes.to_str().unwrap(), "--no-stream"],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "A summary\n");
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    let body = requests[0].json();
+    let user = body["messages"][1]["content"].as_str().unwrap();
+    assert!(user.contains("alpha beta gamma"));
+    assert!(!user.contains("SELECTION START"));
+}
+
+#[test]
+fn summarize_selected_lines_marks_the_selection() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"A summary"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let notes = temp.path().join("notes.md");
+    fs::write(&notes, "alpha\nbeta\ngamma\n").unwrap();
+    let output = run(
+        &dir,
+        &[
+            "summarize",
+            notes.to_str().unwrap(),
+            "--lines",
+            "2",
+            "--no-stream",
+        ],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let requests = server.requests();
+    let body = requests[0].json();
+    let user = body["messages"][1]["content"].as_str().unwrap();
+    assert!(user.contains("SELECTION START"));
+    assert!(user.contains("beta"));
+    assert!(user.contains("gamma"));
+}
+
+#[test]
+fn truncated_document_without_a_selection_warns() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    write_config(&dir, "openai", "http://127.0.0.1:1", "auto", 20);
+    write_profile(
+        &dir,
+        "summarize",
+        r#"requires = ["context"]
+user_prompt = "{{context}}"
+"#,
+    );
+
+    let document = "first line\nsecond line\nthird line\nfourth line";
+    let input = format!(
+        r#"{{"document":{}}}"#,
+        serde_json::to_string(document).unwrap()
+    );
+    let output = run(
+        &dir,
+        &["run", "--profile", "summarize", "--print-prompt"],
+        &input,
+        None,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stderr(&output).contains("truncated"));
+    assert!(stderr(&output).contains("context.max_chars"));
 
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["context_truncated"], true);

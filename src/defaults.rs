@@ -11,4 +11,8 @@ pub const PROFILES: &[(&str, &str)] = &[
         "translate",
         include_str!("../defaults/profiles/translate.toml"),
     ),
+    (
+        "summarize",
+        include_str!("../defaults/profiles/summarize.toml"),
+    ),
 ];

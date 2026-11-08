@@ -152,7 +152,7 @@ pub fn render(
         .filter(|name| !name.trim().is_empty())
         .unwrap_or("(unknown file)");
     let response_language = if settings.response_language.eq_ignore_ascii_case("auto") {
-        "the same language as the selected passage".to_string()
+        "the same language as the source text".to_string()
     } else {
         settings.response_language.clone()
     };
@@ -325,11 +325,7 @@ mod tests {
         assert_eq!(prompt.system, DEFAULT_SYSTEM_PROMPT);
         assert!(prompt.user.contains("alpha"));
         assert!(prompt.user.contains("beta"));
-        assert!(
-            prompt
-                .user
-                .contains("the same language as the selected passage")
-        );
+        assert!(prompt.user.contains("the same language as the source text"));
     }
 
     #[test]

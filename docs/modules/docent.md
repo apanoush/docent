@@ -104,7 +104,7 @@ Profile validation covers TOML fields, numeric ranges, placeholder syntax, requi
 
 `source::resolve_request` reads a file or stdin, applies the profile's `requires` list, and prompts through the `Prompter` trait when stdin is a terminal. `TerminalPrompter` writes labels to stderr and reads one line from stdin. `NoPrompter` is used for piped input, so a document on stdin is never consumed as prompt answers.
 
-`cli::execute` selects one of five output modes: plain streaming for terminal commands, plain buffered for `--no-stream`, JSON for `docent run --json`, NDJSON for `docent run --stream`, and prompt JSON for `--print-prompt`. Plain streaming writes each provider fragment directly and flushes it, then adds a final newline if needed.
+`cli::execute` selects one of five output modes: plain streaming for terminal commands, plain buffered for `--no-stream`, JSON for `docent run --json`, NDJSON for `docent run --stream`, and prompt JSON for `--print-prompt`. Plain streaming writes each provider fragment directly and flushes it, then adds a final newline if needed. When the context was truncated and the request has no resolvable selection, `cli::execute` logs a warning before rendering, so a whole-document run never silently covers only part of the document.
 
 ## Provider clients
 

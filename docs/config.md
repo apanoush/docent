@@ -16,6 +16,7 @@ profiles/
   explain.toml
   ask.toml
   translate.toml
+  summarize.toml
 ```
 
 `docent init` creates the directory and the default files. It skips files that already exist and only overwrites the shipped defaults with `--force`. Profile files you add yourself are never removed.
@@ -194,7 +195,7 @@ Unknown fields are rejected, so typos fail loudly instead of being ignored.
 | `{{context}}` | Document context with selection markers, or a fallback note when no document was provided. |
 | `{{question}}` | The follow-up question. |
 | `{{file}}` | The file name, or `(unknown file)`. |
-| `{{response_language}}` | The configured response language, or the phrase `the same language as the selected passage` when set to `auto`. |
+| `{{response_language}}` | The configured response language, or the phrase `the same language as the source text` when set to `auto`. |
 | `{{target_language}}` | The configured translation target. |
 
 Placeholders use `{{name}}`; whitespace inside the braces is allowed. Unknown placeholders are rejected at load time. Substituted values are not scanned again, so a document that contains `{{question}}` cannot inject another placeholder.
@@ -248,6 +249,19 @@ Explain the formula $\sum_i x_i$ in {{selection}}.
 
 The generated profiles use `"""` because their text contains no backslashes.
 
+### Default profiles
+
+`docent init` writes four profiles:
+
+| Profile | Requires | Command | Purpose |
+|---|---|---|---|
+| `explain` | `selection` | `docent explain` | Explain the selected passage in context. |
+| `ask` | `selection`, `question` | `docent ask` | Answer a question about the selection. |
+| `translate` | `selection` | `docent translate` | Translate the selection and note nuances. |
+| `summarize` | `context` | `docent summarize` | Summarize the document, or the selection when one is marked. |
+
+`summarize` is the only built-in profile that does not require a selection. Run it on a file to summarize the whole document, or pass `--lines` to summarize a section. When a selection is present, its markers appear inside the document context, and the prompt asks for a summary of that passage instead of the whole document.
+
 ## Terminal usage
 
 ```bash
@@ -257,6 +271,8 @@ docent explain notes.md --select "transformer"
 docent explain --text "a pasted passage" --file notes.md
 docent ask notes.md --lines 12:20 --question "Why does this work?"
 docent translate notes.md --lines 12:20 --to French
+docent summarize paper.md
+docent summarize paper.md --lines 12:40
 docent do my-profile notes.md --lines 12:20
 ```
 
@@ -272,6 +288,8 @@ docent do my-profile notes.md --lines 12:20
 - `--context-mode` and `--target-language` (alias `--to`) work on every terminal command.
 
 Piped stdin is always the document, never prompt input. Prompts only appear when stdin is a terminal and a required input is missing. A profile that requires a question prompts for one; a profile that requires a selection prompts for a line range or pasted text.
+
+When a run has no resolvable selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. `--context-mode full` sends the whole document, raising `context.max_chars` widens the window, and `--lines` narrows the subject.
 
 A bare `docent` prints a short getting-started message. `docent profiles` prints `name: description`; `docent profiles --json` remains the machine-readable form used by the Neovim and qutebrowser pickers.
 
@@ -310,6 +328,7 @@ docent explain [FILE] [--lines START:END | --line N | --select PHRASE | --text T
                [--target-language LANG | --to LANG] [--no-stream]
 docent ask [FILE] ...
 docent translate [FILE] ...
+docent summarize [FILE] ...
 docent do PROFILE [FILE] ...
 docent run [--profile explain] [--question TEXT] [--target-language LANG]
            [--context-mode auto|full|none] [--stream] [--json]

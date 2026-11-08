@@ -51,7 +51,7 @@ The Neovim plugin sends UTF-8 byte offsets because that is what the buffer API e
 
 ## Terminal input adapter
 
-The terminal commands (`explain`, `ask`, `translate`, `do`) build the same `Request` as the Neovim plugin. The `source` module handles the difference in input shapes:
+The terminal commands (`explain`, `ask`, `translate`, `summarize`, `do`) build the same `Request` as the Neovim plugin. The `source` module handles the difference in input shapes:
 
 - A file is read as the document. `-` means stdin.
 - With no file and piped stdin, the piped text becomes the document.

@@ -64,7 +64,10 @@ Examples:
 :docent ask --question "Why does this argument work?"
 :docent translate --target-language French
 :docent explain --context-mode full
+:docent summarize
 ```
+
+The summarize profile needs no selection: with nothing selected, `:docent summarize` summarizes the whole page.
 
 Quote a question that contains spaces. qutebrowser's command parser splits unquoted words into separate arguments, so the command above needs the double quotes.
 

@@ -71,7 +71,7 @@ require("docent").setup({
 | `:Docent [profile]` | Run a profile against the visual selection, the given range, or the current line. |
 | `:DocentProfiles` | Open a profile picker with descriptions from `docent profiles --json`. |
 
-`:Docent` accepts a range, so `:'<,'>Docent explain` uses the selected lines. Without a range it uses the current line.
+`:Docent` accepts a range, so `:'<,'>Docent explain` uses the selected lines. Without a range it uses the current line. Because the summarize profile needs no selection, use `:%Docent summarize` to summarize the whole buffer, or select a region and run `:'<,'>Docent summarize` for just that region.
 
 ## What gets captured
 

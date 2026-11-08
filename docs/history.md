@@ -53,7 +53,7 @@ Schema version 1 has one table:
 | `id` | integer | Row identifier. |
 | `created_at` | integer | Unix epoch milliseconds when the provider call started. |
 | `duration_ms` | integer | Provider call duration in milliseconds. |
-| `command` | text | `explain`, `ask`, `translate`, `do`, or `run`. |
+| `command` | text | `explain`, `ask`, `translate`, `summarize`, `do`, or `run`. |
 | `profile` | text | Profile name. |
 | `source` | text | `cli`, `nvim`, `qutebrowser`, `zathura`, or a custom name. |
 | `output_mode` | text | `plain_stream`, `plain`, `json`, or `ndjson`. |

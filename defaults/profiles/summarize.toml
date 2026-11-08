@@ -1,0 +1,16 @@
+description = "Summarize the document or the selected passage"
+requires = ["context"]
+
+user_prompt = """
+The document below is provided as context. The reader wants a summary.
+
+<document>
+{{context}}
+</document>
+
+If a passage inside the document is marked as the selection, summarize that passage. Otherwise summarize the whole document.
+
+Lead with the central claim or purpose in one or two sentences. Then cover the main points in the order the document presents them, keeping the author's emphasis and any conclusion, recommendation, or caveat. Skip examples and restatements. Do not add information that is not in the document, and do not evaluate it.
+
+If the context shows that parts of the document were omitted, say at the start which part the summary covers. Respond in {{response_language}}. Use Markdown.
+"""

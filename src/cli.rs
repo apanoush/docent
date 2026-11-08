@@ -21,6 +21,7 @@ const AFTER_HELP: &str = "Examples:
   docent explain notes.md --lines 12:20
   docent ask notes.md --lines 12:20 --question \"Why does this work?\"
   docent translate notes.md --lines 12:20 --to French
+  docent summarize paper.md
   docent init
 
 Machine interface:
@@ -84,6 +85,8 @@ pub enum Command {
     Ask(HumanArgs),
     /// Translate a passage.
     Translate(HumanArgs),
+    /// Summarize the document, or the selected passage.
+    Summarize(HumanArgs),
     /// Run a custom profile.
     Do(DoArgs),
     /// Run a JSON request from stdin (machine interface).
@@ -275,6 +278,16 @@ pub fn run() -> Result<(), DocentError> {
                 record_history,
             )?;
         }
+        Command::Summarize(args) => {
+            run_human(
+                &config_dir,
+                "summarize",
+                "summarize",
+                args,
+                &source,
+                record_history,
+            )?;
+        }
         Command::Do(args) => run_do(&config_dir, args, &source, record_history)?,
         Command::Run(args) => run_request(&config_dir, args, &source, record_history)?,
         Command::ConfigPath => println!("{}", config_dir.display()),
@@ -290,6 +303,7 @@ fn print_getting_started() {
     println!("  docent explain notes.md --lines 12:20");
     println!("  docent ask notes.md --lines 12:20 --question \"Why does this work?\"");
     println!("  docent translate notes.md --lines 12:20 --to French");
+    println!("  docent summarize paper.md");
     println!("  docent init");
     println!();
     println!("Run `docent --help` for all commands and options.");
@@ -474,6 +488,13 @@ fn execute(
             max_chars: config.context.max_chars,
         },
     );
+    if context.truncated && request.selection_range().is_none() {
+        log::warn!(
+            "document context truncated to {} characters (context.max_chars = {}), so the answer covers only part of the document; use --context-mode full, raise context.max_chars, or narrow the input with --lines",
+            context.chars,
+            config.context.max_chars
+        );
+    }
     let rendered = prompt::render(profile, &request, &context, settings)?;
 
     if output == OutputMode::PrintPrompt {

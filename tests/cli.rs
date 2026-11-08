@@ -22,7 +22,7 @@ fn init_creates_defaults_and_profiles_lists_them() {
         .unwrap();
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert!(dir.join("config.toml").exists());
-    for name in ["explain", "ask", "translate"] {
+    for name in ["explain", "ask", "translate", "summarize"] {
         assert!(dir.join(format!("profiles/{name}.toml")).exists());
     }
 
@@ -38,7 +38,7 @@ fn init_creates_defaults_and_profiles_lists_them() {
         .iter()
         .map(|profile| profile["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, vec!["ask", "explain", "translate"]);
+    assert_eq!(names, vec!["ask", "explain", "summarize", "translate"]);
 
     let ask = profiles
         .iter()
@@ -89,6 +89,7 @@ fn profiles_prints_descriptions_for_humans() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("explain: Explain the selected passage in context"));
     assert!(stdout.contains("ask: Ask a question about the selected passage"));
+    assert!(stdout.contains("summarize: Summarize the document or the selected passage"));
 }
 
 #[test]
@@ -99,6 +100,7 @@ fn bare_docent_prints_getting_started_examples() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("docent explain notes.md --lines 12:20"));
     assert!(stdout.contains("docent ask notes.md"));
+    assert!(stdout.contains("docent summarize paper.md"));
     assert!(stdout.contains("docent --help"));
 }
 
@@ -172,6 +174,7 @@ fn profiles_reports_invalid_catalog() {
     .unwrap();
     fs::remove_file(dir.join("profiles/ask.toml")).unwrap();
     fs::remove_file(dir.join("profiles/translate.toml")).unwrap();
+    fs::remove_file(dir.join("profiles/summarize.toml")).unwrap();
 
     let output = docent()
         .args(["--config-dir", dir.to_str().unwrap(), "profiles"])

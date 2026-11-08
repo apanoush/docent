@@ -1,6 +1,6 @@
 # Docent
 
-A context-aware reading companion for the terminal, Neovim, qutebrowser, and zathura. Select a passage, ask Docent to explain it, translate it, or answer a question about it, and Docent sends the surrounding document as context to an AI provider.
+A context-aware reading companion for the terminal, Neovim, qutebrowser, and zathura. Select a passage, ask Docent to explain it, translate it, summarize it, or answer a question about it, and Docent sends the surrounding document as context to an AI provider.
 
 Docent has four pieces:
 
@@ -23,7 +23,7 @@ export OPENCODE_API_KEY=...
 docent init
 ```
 
-`docent init` writes `~/.config/docent/config.toml` and three profiles: explain, ask, and translate. The generated config points at OpenCode Go. Edit it to use OpenAI, Anthropic, another OpenAI-compatible endpoint, or a local server. The key can also be stored directly in `config.toml` with `api_key` instead of an environment variable; a set environment variable wins, and `api_key_env` remains the safer choice for shared machines and dotfiles. See [configuration](docs/config.md).
+`docent init` writes `~/.config/docent/config.toml` and four profiles: explain, ask, translate, and summarize. The generated config points at OpenCode Go. Edit it to use OpenAI, Anthropic, another OpenAI-compatible endpoint, or a local server. The key can also be stored directly in `config.toml` with `api_key` instead of an environment variable; a set environment variable wins, and `api_key_env` remains the safer choice for shared machines and dotfiles. See [configuration](docs/config.md).
 
 ## Quickstart
 
@@ -45,6 +45,13 @@ Translate one line:
 docent translate notes.md --line 12 --to French
 ```
 
+Summarize a whole document, or just a section:
+
+```bash
+docent summarize paper.md
+docent summarize paper.md --lines 12:40
+```
+
 Use a pasted passage with a file as context:
 
 ```bash
@@ -58,6 +65,8 @@ cat notes.md | docent explain - --line 12
 ```
 
 If a required input is missing and stdin is a terminal, Docent prompts for it. Piped stdin is always treated as the document. Answers stream by default; add `--no-stream` to wait for the complete answer.
+
+When a run has no selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. Use `--context-mode full` to send everything, raise `context.max_chars`, or narrow the subject with `--lines`.
 
 The JSON stdin interface used by Neovim and qutebrowser remains available:
 
