@@ -486,6 +486,7 @@ mod tests {
 
         let error = store.load("missing").unwrap_err();
         assert!(matches!(error, DocentError::ProfileNotFound { .. }));
+        assert!(error.to_string().contains("run 'docent init'"));
     }
 
     #[test]

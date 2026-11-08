@@ -119,7 +119,7 @@ pub enum DocentError {
     #[error("invalid profile name '{0}'; use letters, digits, '_' or '-'")]
     InvalidProfileName(String),
 
-    #[error("profile '{name}' not found in {dir}")]
+    #[error("profile '{name}' not found in {dir}; run 'docent init'")]
     ProfileNotFound {
         /// Requested profile name.
         name: String,
