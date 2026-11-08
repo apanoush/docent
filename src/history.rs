@@ -11,7 +11,7 @@ use crate::config::{Config, HistoryConfig};
 use crate::error::DocentError;
 
 /// Schema version understood by this build.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 /// Database filename used in the platform data directory.
 pub const DATABASE_FILE: &str = "docent.db";
@@ -131,6 +131,19 @@ pub fn write(config: &Config, config_dir: &Path, run: &NewRun) -> Result<(), Doc
     Ok(())
 }
 
+/// Opens the history database, applying the cache table migration when needed.
+///
+/// Callers that read from another table also use this, so schema changes stay in
+/// one place.
+pub(crate) fn open_database(
+    config: &Config,
+    config_dir: &Path,
+) -> Result<(Connection, PathBuf), DocentError> {
+    let path = database_path(config_dir, &config.history)?;
+    let connection = open(&path)?;
+    Ok((connection, path))
+}
+
 fn open(path: &Path) -> Result<Connection, DocentError> {
     create_parent(path)?;
     let connection = Connection::open(path).map_err(|source| DocentError::History {
@@ -162,29 +175,47 @@ fn ensure_schema(connection: &Connection, path: &Path) -> Result<(), DocentError
             source,
         })?;
 
-    if version == 0 {
-        connection
-            .execute_batch(SCHEMA)
-            .map_err(|source| DocentError::History {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        connection
-            .pragma_update(None, "user_version", SCHEMA_VERSION)
-            .map_err(|source| DocentError::History {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        Ok(())
-    } else if version == SCHEMA_VERSION {
-        Ok(())
-    } else {
-        Err(DocentError::HistorySchema {
+    match version {
+        0 => {
+            connection
+                .execute_batch(SCHEMA_V1)
+                .map_err(|source| DocentError::History {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+            connection
+                .execute_batch(SCHEMA_V2)
+                .map_err(|source| DocentError::History {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+            set_schema_version(connection, path)
+        }
+        1 => {
+            connection
+                .execute_batch(SCHEMA_V2)
+                .map_err(|source| DocentError::History {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+            set_schema_version(connection, path)
+        }
+        SCHEMA_VERSION => Ok(()),
+        version => Err(DocentError::HistorySchema {
             path: path.to_path_buf(),
             version,
             supported: SCHEMA_VERSION,
-        })
+        }),
     }
+}
+
+fn set_schema_version(connection: &Connection, path: &Path) -> Result<(), DocentError> {
+    connection
+        .pragma_update(None, "user_version", SCHEMA_VERSION)
+        .map_err(|source| DocentError::History {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 fn insert(connection: &Connection, path: &Path, run: &NewRun) -> Result<(), DocentError> {
@@ -274,7 +305,7 @@ fn restrict_permissions(path: &Path) {
 #[cfg(not(unix))]
 fn restrict_permissions(_path: &Path) {}
 
-const SCHEMA: &str = r#"
+const SCHEMA_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at INTEGER NOT NULL,
@@ -314,6 +345,20 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_runs_profile ON runs(profile);
 CREATE INDEX IF NOT EXISTS idx_runs_source ON runs(source);
+"#;
+
+const SCHEMA_V2: &str = r#"
+CREATE TABLE IF NOT EXISTS cache (
+    key BLOB PRIMARY KEY,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER NOT NULL,
+    hits INTEGER NOT NULL DEFAULT 0,
+    model TEXT,
+    output TEXT NOT NULL,
+    docent_version TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cache_last_used_at ON cache(last_used_at);
 "#;
 
 const INSERT_RUN: &str = r#"
@@ -602,5 +647,55 @@ mod tests {
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
+    }
+
+    fn table_exists(connection: &Connection, name: &str) -> bool {
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                [name],
+                |row| row.get(0),
+            )
+            .unwrap();
+        count == 1
+    }
+
+    #[test]
+    fn fresh_database_has_the_cache_table() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+        let config = config_with_database(&database);
+
+        write(&config, temp.path(), &sample_run()).unwrap();
+
+        let connection = open(&database).unwrap();
+        assert!(table_exists(&connection, "runs"));
+        assert!(table_exists(&connection, "cache"));
+    }
+
+    #[test]
+    fn migrates_a_version_1_database_and_keeps_runs() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+
+        let connection = Connection::open(&database).unwrap();
+        connection.execute_batch(SCHEMA_V1).unwrap();
+        connection.pragma_update(None, "user_version", 1).unwrap();
+        insert(&connection, &database, &sample_run()).unwrap();
+        drop(connection);
+
+        let config = config_with_database(&database);
+        write(&config, temp.path(), &sample_run()).unwrap();
+
+        let connection = open(&database).unwrap();
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 2);
+        assert!(table_exists(&connection, "cache"));
+        let runs: i64 = connection
+            .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(runs, 2);
     }
 }

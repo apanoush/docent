@@ -4,6 +4,7 @@
 //! `bin/docent-native-host.rs`. This crate exposes the pieces needed for
 //! testing and for the JSON contracts used by the adapters.
 
+pub mod cache;
 pub mod cli;
 pub mod config;
 pub mod context;

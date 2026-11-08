@@ -7,6 +7,7 @@ description = "A context-aware reading companion for the terminal, Neovim, and t
 license = "GPL-3.0-only"
 
 [dependencies]
+blake3 = "1.8.7"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 directories = "6.0.0"
 env_logger = "0.11.11"

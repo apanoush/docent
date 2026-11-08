@@ -33,6 +33,9 @@ pub struct Config {
     /// Run history settings.
     #[serde(default)]
     pub history: HistoryConfig,
+    /// Answer cache settings.
+    #[serde(default)]
+    pub cache: CacheConfig,
 }
 
 /// Wire format used to talk to the provider.
@@ -198,6 +201,31 @@ impl Default for HistoryConfig {
     }
 }
 
+/// Answer cache settings.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CacheConfig {
+    /// Whether stored answers are reused for identical requests.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Maximum number of cached answers before least recently used entries are evicted.
+    #[serde(default = "default_max_entries")]
+    pub max_entries: usize,
+}
+
+fn default_max_entries() -> usize {
+    1000
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_entries: default_max_entries(),
+        }
+    }
+}
+
 impl Config {
     /// Checks values that TOML parsing cannot enforce.
     pub fn validate(&self, path: &Path) -> Result<(), DocentError> {
@@ -244,6 +272,9 @@ impl Config {
             .is_some_and(|path| path.as_os_str().to_string_lossy().trim().is_empty())
         {
             errors.push("history.database must not be empty".to_string());
+        }
+        if self.cache.max_entries == 0 {
+            errors.push("cache.max_entries must be greater than zero".to_string());
         }
 
         if errors.is_empty() {
@@ -519,6 +550,35 @@ database = "~/docent.db"
     fn history_config_rejects_unknown_fields() {
         let error = toml::from_str::<Config>("[history]\npath = \"docent.db\"\n").unwrap_err();
         assert!(error.to_string().contains("path"));
+    }
+
+    #[test]
+    fn cache_config_defaults_to_enabled() {
+        let config = Config::default();
+        config.validate(Path::new("config.toml")).unwrap();
+        assert!(config.cache.enabled);
+        assert_eq!(config.cache.max_entries, 1000);
+    }
+
+    #[test]
+    fn cache_config_can_be_disabled() {
+        let config: Config = toml::from_str("[cache]\nenabled = false\n").unwrap();
+        config.validate(Path::new("config.toml")).unwrap();
+        assert!(!config.cache.enabled);
+        assert_eq!(config.cache.max_entries, 1000);
+    }
+
+    #[test]
+    fn cache_config_rejects_zero_entries() {
+        let config: Config = toml::from_str("[cache]\nmax_entries = 0\n").unwrap();
+        let error = config.validate(Path::new("config.toml")).unwrap_err();
+        assert!(error.to_string().contains("cache.max_entries"));
+    }
+
+    #[test]
+    fn cache_config_rejects_unknown_fields() {
+        let error = toml::from_str::<Config>("[cache]\nsize = 10\n").unwrap_err();
+        assert!(error.to_string().contains("size"));
     }
 
     #[test]
