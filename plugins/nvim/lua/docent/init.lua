@@ -7,6 +7,7 @@ local defaults = {
   default_profile = "explain",
   context_mode = nil,
   target_language = nil,
+  source = "nvim",
   keymaps = {},
   window = {
     width = 0.8,
@@ -45,7 +46,7 @@ local function command(extra)
   end
   vim.list_extend(cmd, extra)
   table.insert(cmd, "--source")
-  table.insert(cmd, "nvim")
+  table.insert(cmd, M.config.source or "nvim")
   return cmd
 end
 

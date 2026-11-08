@@ -96,6 +96,18 @@ def test_launch_terminal_starts_a_new_session() -> None:
     assert captured["kwargs"]["start_new_session"] is True
 
 
+def test_launch_terminal_passes_the_environment() -> None:
+    captured: dict[str, Any] = {}
+
+    def runner(argv: Sequence[str], **kwargs: Any) -> object:
+        captured["kwargs"] = kwargs
+        return object()
+
+    launch_terminal("foot", ["docent"], runner, env={"DOCENT_TEST": "1"})
+
+    assert captured["kwargs"]["env"] == {"DOCENT_TEST": "1"}
+
+
 def test_launch_terminal_reports_start_failure() -> None:
     def runner(argv: Sequence[str], **kwargs: Any) -> object:
         raise FileNotFoundError("missing terminal")

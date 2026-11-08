@@ -20,6 +20,8 @@ from .request import RequestError, build_request
 __all__ = ["build_parser", "find_docent", "main"]
 
 ENTRY = Path(__file__).resolve().parent.parent / "docent-zathura"
+PLUGIN_DIR = Path(__file__).resolve().parents[2] / "nvim"
+VIEWER_SCRIPT = Path(__file__).resolve().parent / "viewer.lua"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Bind it in zathurarc, for example: "
-            "map <C-e> exec /path/to/docent-zathura explain $FILE $PAGE"
+            'map <C-e> exec "/path/to/docent-zathura explain $FILE $PAGE"'
         ),
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -88,6 +90,17 @@ def _add_capture_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--terminal", help="terminal emulator to use")
     parser.add_argument(
+        "--viewer",
+        choices=("terminal", "nvim"),
+        default="terminal",
+        help="where to show the answer",
+    )
+    parser.add_argument(
+        "--nvim",
+        default="nvim",
+        help="Neovim executable for --viewer nvim",
+    )
+    parser.add_argument(
         "--docent",
         default="docent",
         help="path or command name; common locations are searched when not on PATH",
@@ -109,6 +122,13 @@ def _resolve_docent(value: str) -> str:
     if os.sep in value or value.startswith("."):
         return str(Path(value).expanduser().resolve())
     return value
+
+
+def _resolve_executable(value: str) -> str | None:
+    if os.sep in value or value.startswith("."):
+        path = Path(value).expanduser().resolve()
+        return str(path) if path.is_file() else None
+    return shutil.which(value)
 
 
 def _docent_candidates() -> tuple[Path, ...]:
@@ -159,6 +179,7 @@ def _capture(args: argparse.Namespace) -> int:
     label = f"{path.name} (page {args.page})"
     question = getattr(args, "question", None)
     request = build_request(selection, document, label, question)
+    docent_cmd = find_docent(args.docent)
 
     payload = {
         "profile": getattr(args, "profile", args.command),
@@ -167,6 +188,7 @@ def _capture(args: argparse.Namespace) -> int:
         "context_mode": args.context_mode,
         "prompt_for_question": args.command == "ask" and not request.get("question"),
         "header": label,
+        "docent": docent_cmd,
     }
 
     temp_dir = Path(
@@ -186,16 +208,44 @@ def _capture(args: argparse.Namespace) -> int:
             "no terminal emulator found; set DOCENT_TERMINAL or pass --terminal"
         )
 
-    render_command = [
-        sys.executable,
-        str(ENTRY),
-        "render",
-        "--docent",
-        find_docent(args.docent),
-        str(request_file),
-    ]
+    env = None
+    if args.viewer == "nvim":
+        nvim = _resolve_executable(args.nvim)
+        if nvim is None:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise ValueError("nvim not found; install Neovim or pass --nvim")
+        if not PLUGIN_DIR.is_dir():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise ValueError(f"Neovim plugin not found: {PLUGIN_DIR}")
+        if not VIEWER_SCRIPT.is_file():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise ValueError(f"viewer script not found: {VIEWER_SCRIPT}")
+
+        viewer_command = [
+            nvim,
+            "--cmd",
+            "lua vim.opt.runtimepath:append(vim.env.DOCENT_ZATHURA_NVIM)",
+            "-c",
+            "lua dofile(vim.env.DOCENT_ZATHURA_VIEWER)",
+        ]
+        env = {
+            **os.environ,
+            "DOCENT_ZATHURA_REQUEST": str(request_file),
+            "DOCENT_ZATHURA_VIEWER": str(VIEWER_SCRIPT),
+            "DOCENT_ZATHURA_NVIM": str(PLUGIN_DIR),
+        }
+    else:
+        viewer_command = [
+            sys.executable,
+            str(ENTRY),
+            "render",
+            "--docent",
+            docent_cmd,
+            str(request_file),
+        ]
+
     try:
-        launch_terminal(terminal, render_command)
+        launch_terminal(terminal, viewer_command, env=env)
     except TerminalError:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise

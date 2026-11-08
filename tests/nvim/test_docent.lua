@@ -322,6 +322,40 @@ test("run streams into a float and builds the CLI command", function()
   end
 end)
 
+test("run records the configured source", function()
+  docent.setup({ cmd = "docent", source = "zathura" })
+  docent.refresh()
+
+  local ok, err = pcall(function()
+    stub_streaming_run(
+      '{"profiles":[{"name":"explain","description":"Explain","requires":["selection"]}]}',
+      function(captured)
+        docent.run("explain", {
+          selection = "beta",
+          document = "alpha beta gamma",
+          file = "notes.md",
+        })
+
+        assert_true(vim.wait(500, function()
+          return docent._last_ui and docent._last_ui:is_done()
+        end))
+
+        local source_index = 1
+        while captured.cmd[source_index] ~= "--source" do
+          source_index = source_index + 1
+        end
+        assert_eq(captured.cmd[source_index + 1], "zathura")
+
+        docent._last_ui:close(false)
+      end
+    )
+  end)
+
+  if not ok then
+    error(err)
+  end
+end)
+
 test(":Docent uses a single-line count as a range", function()
   docent.setup({ cmd = "docent" })
   docent.refresh()

@@ -47,6 +47,7 @@ Keymaps are opt-in. The plugin never sets a mapping unless you list it in `keyma
 | `default_profile` | string | `"explain"` | Profile used by `:Docent` without an argument. |
 | `context_mode` | string | `nil` | If set, passed as `--context-mode` for every request. Values are `auto`, `full`, and `none`. |
 | `target_language` | string | `nil` | If set, passed as `--target-language` for every request. |
+| `source` | string | `"nvim"` | Value passed as `--source`, recorded in run history. |
 | `keymaps.explain` | string | `nil` | Visual-mode mapping for the explain profile. |
 | `keymaps.ask` | string | `nil` | Visual-mode mapping for the ask profile. |
 | `keymaps.translate` | string | `nil` | Visual-mode mapping for the translate profile. |

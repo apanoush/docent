@@ -26,9 +26,14 @@ def pdf(tmp_path: Path) -> Path:
 def capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     captured: dict[str, Any] = {}
 
-    def fake_launch(terminal: str, command: list[str]) -> None:
+    def fake_launch(
+        terminal: str,
+        command: list[str],
+        env: dict[str, str] | None = None,
+    ) -> None:
         captured["terminal"] = terminal
         captured["command"] = command
+        captured["env"] = env
 
     monkeypatch.setattr(cli, "launch_terminal", fake_launch)
     monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
@@ -61,6 +66,15 @@ def test_parser_accepts_primary_override() -> None:
 
     assert args.primary is True
     assert args.clipboard is False
+
+
+def test_parser_accepts_nvim_viewer() -> None:
+    args = cli.build_parser().parse_args(
+        ["explain", "paper.pdf", "1", "--viewer", "nvim", "--nvim", "/usr/bin/nvim"]
+    )
+
+    assert args.viewer == "nvim"
+    assert args.nvim == "/usr/bin/nvim"
 
 
 def test_parser_rejects_two_clipboard_targets() -> None:
@@ -117,6 +131,61 @@ def test_capture_runs_a_custom_profile(pdf: Path, capture: dict[str, Any]) -> No
     assert code == 0
     payload = _payload(capture)
     assert payload["profile"] == "custom"
+
+
+def test_capture_launches_nvim_viewer(
+    pdf: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_launch(
+        terminal: str,
+        command: list[str],
+        env: dict[str, str] | None = None,
+    ) -> None:
+        captured["terminal"] = terminal
+        captured["command"] = command
+        captured["env"] = env
+
+    monkeypatch.setattr(cli, "launch_terminal", fake_launch)
+    monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
+    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(cli, "detect_terminal", lambda: "foot")
+    monkeypatch.setattr(cli, "find_docent", lambda value: "/home/me/.local/bin/docent")
+    monkeypatch.setattr(cli, "_resolve_executable", lambda value: "/usr/bin/nvim")
+
+    code = cli.main(
+        ["explain", str(pdf), "1", "--terminal", "foot", "--viewer", "nvim"]
+    )
+
+    assert code == 0
+    assert captured["terminal"] == "foot"
+    assert captured["command"][0] == "/usr/bin/nvim"
+    assert "--cmd" in captured["command"]
+    assert captured["env"]["DOCENT_ZATHURA_NVIM"].endswith("plugins/nvim")
+    assert captured["env"]["DOCENT_ZATHURA_VIEWER"].endswith("viewer.lua")
+    request_file = Path(captured["env"]["DOCENT_ZATHURA_REQUEST"])
+    try:
+        payload = json.loads(request_file.read_text(encoding="utf-8"))
+        assert payload["docent"] == "/home/me/.local/bin/docent"
+        assert payload["request"]["selection"] == "alpha"
+    finally:
+        shutil.rmtree(request_file.parent, ignore_errors=True)
+
+
+def test_capture_requires_nvim(pdf: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    messages: list[str] = []
+
+    monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
+    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(cli, "detect_terminal", lambda: "foot")
+    monkeypatch.setattr(cli, "_resolve_executable", lambda value: None)
+    monkeypatch.setattr(cli, "_show_error", messages.append)
+
+    code = cli.main(["explain", str(pdf), "1", "--viewer", "nvim"])
+
+    assert code == 1
+    assert "nvim not found" in messages[0]
 
 
 def test_capture_reports_clipboard_errors(

@@ -15,7 +15,7 @@ Most lookup tools treat a word or phrase in isolation. Docent sends the selectio
 
 ## Install
 
-Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, and the zathura adapter needs zathura plus `pdftotext`.
+Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, and the zathura adapter needs zathura plus `pdftotext`. The zathura `--viewer nvim` option also needs Neovim 0.10 or newer.
 
 ```bash
 cargo install --path .
@@ -129,10 +129,10 @@ Select text with the mouse or in caret mode and press `,de`, or run `:docent exp
 Add a binding to `~/.config/zathura/zathurarc`:
 
 ```zathurarc
-map <C-e> exec /home/you/path/to/reading-assistant/plugins/zathura/docent-zathura explain $FILE $PAGE
+map <C-e> exec "/home/you/path/to/reading-assistant/plugins/zathura/docent-zathura explain $FILE $PAGE"
 ```
 
-Select text with the mouse and press `<C-e>`. The answer streams into a terminal window. `ask` and `translate` work the same way; `ask` prompts for the question in the terminal. See [the zathura guide](docs/zathura.md).
+Select text with the mouse and press `<C-e>`. The answer streams into a terminal window. Add `--viewer nvim` inside the quotes to stream into the Neovim plugin's Markdown float instead. `ask` and `translate` work the same way; `ask` prompts for the question in the viewer. See [the zathura guide](docs/zathura.md).
 
 ## Status
 

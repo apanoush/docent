@@ -65,6 +65,7 @@ def launch_terminal(
     terminal: str,
     command: Sequence[str],
     runner: Any = subprocess.Popen,
+    env: Mapping[str, str] | None = None,
 ) -> Any:
     """Start the terminal without waiting for it."""
     argv = build_terminal_argv(terminal, command)
@@ -74,6 +75,7 @@ def launch_terminal(
             start_new_session=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=env,
         )
     except OSError as exc:
         raise TerminalError(f"could not start {terminal}: {exc}") from exc

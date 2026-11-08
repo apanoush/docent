@@ -78,14 +78,14 @@ The first UI is a tab rather than a floating window. qutebrowser's application-w
 Zathura has no third-party UI plugin API. Its plugin system loads document backends by MIME type, and the only scripting hooks are `zathurarc` commands, `exec`, and D-Bus. The adapter therefore uses a `zathurarc` binding:
 
 ```zathurarc
-map <C-e> exec /path/to/docent-zathura explain $FILE $PAGE
+map <C-e> exec "/path/to/docent-zathura explain $FILE $PAGE"
 ```
 
 `exec` expands `$FILE` and `$PAGE` and starts the helper directly, without a shell. The helper cannot receive the selection directly because `exec` has no `$SELECTION` placeholder. Zathura copies a mouse selection to the clipboard, so the helper reads it with `wl-paste`, `xclip`, or `xsel`. It checks PRIMARY and CLIPBOARD and prefers the text that occurs in the extracted page, which keeps the default binding working with either `selection-clipboard` setting. The workflow is mouse-first because zathura has no keyboard text selection.
 
 The helper extracts the current page plus one page on each side with `pdftotext`, builds the same JSON request as the other adapters, and writes it to a private temporary file. It resolves `docent` through `PATH` and then through common install locations such as `~/.local/bin` and `~/.cargo/bin`, because desktop-launched zathura often has a minimal `PATH`. It then starts a terminal window running `docent-zathura render REQUEST_FILE`. The render process reads and deletes the request file, runs `docent run --profile NAME --stream --source zathura`, prints the `delta` events, and waits for Enter before closing. This two-process split keeps the selection out of argv and gives the answer a window that stays open after the stream ends.
 
-The answer is a terminal window rather than a zathura overlay. An overlay would require patching zathura's GTK/C core. The terminal window streams naturally, supports the CLI's existing output, and can be floated with a compositor rule. The first version is PDF only; DjVu, PostScript, and comic-book files need different text extractors.
+The answer is a terminal window rather than a zathura overlay. An overlay would require patching zathura's GTK/C core. The terminal window streams naturally, supports the CLI's existing output, and can be floated with a compositor rule. With `--viewer nvim`, the same request file is handed to the existing Neovim plugin, which streams into its Markdown float. That reuses the plugin's stream parser, cancellation, and buffer setup instead of duplicating them in the zathura adapter. The first version is PDF only; DjVu, PostScript, and comic-book files need different text extractors.
 
 ## Output modes
 

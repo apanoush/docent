@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from collections.abc import Mapping
@@ -118,18 +119,27 @@ def read_selection(
     raise ClipboardError("; ".join(errors))
 
 
+_HYPHEN_BREAK = re.compile(r"-\s+")
+
+
+def _normalize_for_match(text: str) -> str:
+    """Join hyphenated line breaks and collapse whitespace."""
+    return " ".join(_HYPHEN_BREAK.sub("", text).split())
+
+
 def matches_document(selection: str, document: str) -> bool:
     """Return whether ``selection`` occurs in ``document``.
 
-    The exact check is tried first. A whitespace-normalized check then covers
-    line breaks and spacing differences between the viewer and pdftotext.
+    The exact check is tried first. A normalized check then covers line breaks,
+    spacing differences, and hyphenated line breaks between the viewer and
+    pdftotext.
     """
     if not selection.strip() or not document.strip():
         return False
     if selection in document:
         return True
-    normalized_selection = " ".join(selection.split())
-    normalized_document = " ".join(document.split())
+    normalized_selection = _normalize_for_match(selection)
+    normalized_document = _normalize_for_match(document)
     return bool(normalized_selection) and normalized_selection in normalized_document
 
 

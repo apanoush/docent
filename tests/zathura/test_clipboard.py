@@ -121,6 +121,11 @@ def test_matches_document_exactly_and_after_normalizing_whitespace() -> None:
     assert not matches_document("", "Page one alpha beta gamma.")
 
 
+def test_matches_document_joins_hyphenated_line_breaks() -> None:
+    assert matches_document("enhanc-\ning academic", "enhancing academic")
+    assert matches_document("state-of-the-art", "state-of-the-art")
+
+
 def _two_clipboard_runner(
     primary: str | None,
     clipboard: str | None,
