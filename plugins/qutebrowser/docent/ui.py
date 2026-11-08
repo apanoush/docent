@@ -6,31 +6,36 @@ import html
 import json
 import re
 import time
+from functools import cache
+from pathlib import Path
 from typing import Any
 
 from . import markdown
 
-__all__ = ["AnswerPage", "build_shell"]
+__all__ = ["AnswerPage", "build_shell", "stylesheet"]
 
 _SAFE_COLOR = re.compile(r"^[#a-zA-Z0-9(),.% -]+$")
-
-_DEFAULT_COLORS = {
-    "bg": "#1e1e1e",
-    "fg": "#e6e6e6",
-    "error": "#ff6b6b",
-}
+_STYLESHEET = Path(__file__).with_name("answer.css")
 
 
-def build_shell(profile: str, colors: dict[str, str] | None = None) -> str:
+@cache
+def stylesheet() -> str:
+    """Return the default answer-tab stylesheet."""
+    return _STYLESHEET.read_text(encoding="utf-8")
+
+
+def build_shell(
+    profile: str,
+    colors: dict[str, str] | None = None,
+    custom_css: str | None = None,
+) -> str:
     """Return the small HTML page used to receive streamed text."""
-    palette = dict(_DEFAULT_COLORS)
-    if colors:
-        for name, fallback in _DEFAULT_COLORS.items():
-            value = colors.get(name)
-            if isinstance(value, str) and _SAFE_COLOR.fullmatch(value.strip()):
-                palette[name] = value.strip()
-            else:
-                palette[name] = fallback
+    style = stylesheet()
+    overrides = _color_overrides(colors)
+    if overrides:
+        style = f"{style}\n:root {{ {overrides} }}"
+    if custom_css:
+        style = f"{style}\n{custom_css}"
 
     escaped_profile = html.escape(profile, quote=True)
     return f"""<!doctype html>
@@ -39,99 +44,7 @@ def build_shell(profile: str, colors: dict[str, str] | None = None) -> str:
 <meta charset="utf-8">
 <title>docent: {escaped_profile}</title>
 <style>
-  :root {{
-    color-scheme: light dark;
-    --docent-bg: {palette["bg"]};
-    --docent-fg: {palette["fg"]};
-    --docent-error: {palette["error"]};
-  }}
-  html, body {{
-    margin: 0;
-    padding: 0;
-    background: var(--docent-bg);
-    color: var(--docent-fg);
-  }}
-  body {{
-    font-family: ui-sans-serif, system-ui, sans-serif;
-    line-height: 1.5;
-  }}
-  header {{
-    position: sticky;
-    top: 0;
-    display: flex;
-    gap: 1rem;
-    align-items: baseline;
-    padding: 0.6rem 1.5rem;
-    background: var(--docent-bg);
-    border-bottom: 1px solid color-mix(in srgb, var(--docent-fg) 20%, transparent);
-  }}
-  #status {{ font-weight: 600; }}
-  #hint {{ margin-left: auto; opacity: 0.55; font-size: 0.9em; }}
-  main {{ max-width: 82ch; margin: 0 auto; padding: 1.5rem; }}
-  pre#answer {{
-    margin: 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.95rem;
-  }}
-  .markdown > :first-child {{ margin-top: 0; }}
-  .markdown h1, .markdown h2, .markdown h3,
-  .markdown h4, .markdown h5, .markdown h6 {{
-    margin: 1.4em 0 0.5em;
-    line-height: 1.25;
-  }}
-  .markdown h1 {{ font-size: 1.7rem; }}
-  .markdown h2 {{ font-size: 1.4rem; }}
-  .markdown h3 {{ font-size: 1.2rem; }}
-  .markdown h4, .markdown h5, .markdown h6 {{ font-size: 1.05rem; }}
-  .markdown p {{ margin: 0 0 1em; }}
-  .markdown ul, .markdown ol {{ margin: 0 0 1em; padding-left: 1.6rem; }}
-  .markdown li {{ margin: 0.25em 0; }}
-  .markdown blockquote {{
-    margin: 0 0 1em;
-    padding: 0.1em 0 0.1em 1rem;
-    border-left: 3px solid color-mix(in srgb, var(--docent-fg) 30%, transparent);
-    opacity: 0.85;
-  }}
-  .markdown hr {{
-    margin: 1.5em 0;
-    border: 0;
-    border-top: 1px solid color-mix(in srgb, var(--docent-fg) 20%, transparent);
-  }}
-  .markdown code {{
-    padding: 0.1em 0.3em;
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--docent-fg) 12%, transparent);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.9em;
-  }}
-  .markdown pre {{
-    margin: 0 0 1em;
-    padding: 0.8rem 1rem;
-    overflow-x: auto;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--docent-fg) 8%, transparent);
-  }}
-  .markdown pre code {{ padding: 0; background: none; font-size: 0.9rem; }}
-  .markdown a {{
-    color: inherit;
-    text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, var(--docent-fg) 45%, transparent);
-    text-underline-offset: 2px;
-  }}
-  .table-wrap {{ margin: 0 0 1em; overflow-x: auto; }}
-  .markdown table {{ border-collapse: collapse; }}
-  .markdown th, .markdown td {{
-    padding: 0.3rem 0.6rem;
-    border: 1px solid color-mix(in srgb, var(--docent-fg) 20%, transparent);
-    vertical-align: top;
-  }}
-  .markdown th {{
-    background: color-mix(in srgb, var(--docent-fg) 8%, transparent);
-    font-weight: 600;
-  }}
-  .error {{ color: var(--docent-error); }}
+{style}
 </style>
 </head>
 <body>
@@ -143,6 +56,18 @@ def build_shell(profile: str, colors: dict[str, str] | None = None) -> str:
 </body>
 </html>
 """
+
+
+def _color_overrides(colors: dict[str, str] | None) -> str:
+    """Return valid CSS custom-property declarations for the palette."""
+    if not colors:
+        return ""
+    declarations: list[str] = []
+    for name in ("bg", "fg", "error"):
+        value = colors.get(name)
+        if isinstance(value, str) and _SAFE_COLOR.fullmatch(value.strip()):
+            declarations.append(f"--docent-{name}: {value.strip()};")
+    return " ".join(declarations)
 
 
 class AnswerPage:

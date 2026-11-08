@@ -90,6 +90,40 @@ The answer opens in a new foreground tab by default. The tab:
 
 Markdown rendering is intentionally limited. Links open in a new tab and only `http`, `https`, and `mailto` URLs become links. Raw HTML and images in the answer stay literal text, so model output cannot inject scripts or fetch remote resources. Nested lists are flattened, and task lists and footnotes are not rendered. The Neovim float still shows raw Markdown.
 
+## Customizing the answer style
+
+The answer tab loads `plugins/qutebrowser/docent/answer.css`. The file is plain CSS, has no qutebrowser-specific selectors, and depends only on these custom properties:
+
+| Property | Purpose |
+|---|---|
+| `--docent-bg` | Page and header background |
+| `--docent-fg` | Body text and derived borders |
+| `--docent-error` | Error text |
+| `--docent-font-body` | Prose, headings, lists, tables |
+| `--docent-font-code` | Inline code and fenced code blocks |
+
+Pass a CSS file to `custom_css` to override them or any other rule:
+
+```python
+docent.setup(
+    config,
+    custom_css="~/.config/qutebrowser/docent.css",
+)
+```
+
+```css
+:root {
+  --docent-font-body: "Source Serif 4", Georgia, serif;
+  --docent-font-code: "Iosevka", monospace;
+}
+
+.markdown h2 {
+  border-bottom: 1px solid color-mix(in srgb, var(--docent-fg) 20%, transparent);
+}
+```
+
+The custom file is appended after the default stylesheet and after qutebrowser's palette, so its rules win. It is read during `setup`, so `:config-source` reloads CSS changes without restarting qutebrowser; Python changes still need a full restart. `docent.stylesheet()` returns the default CSS, which is useful for tests or another browser adapter.
+
 Press `d` to close the answer tab. Closing it before the request finishes terminates the `docent` process. Navigating the answer tab away from its generated page also cancels the request.
 
 Set `open_in_background=True` in `docent.setup` if you prefer the answer to open in a background tab.
@@ -111,6 +145,7 @@ A profile that declares `requires = ["question"]` opens a text prompt before the
 | `target_language` | string | `None` | Default `--target-language` for every request. |
 | `keymaps` | dict | `{}` | Maps `explain`, `ask`, `translate`, or `pick` to a key chain. Bindings are installed in normal and caret modes. |
 | `open_in_background` | bool | `False` | Open answer tabs in the background. |
+| `custom_css` | string | `None` | Path to a CSS file appended after the default answer styles. Read during `setup`, so `:config-source` reloads it. |
 
 ## Troubleshooting
 

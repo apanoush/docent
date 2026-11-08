@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
-from docent import plugin, ui
+from docent import plugin, stylesheet, ui
 from docent.profiles import ProfileError, ProfileInfo
 from docent.request import Capture
 
@@ -92,6 +93,7 @@ def _settings() -> plugin.Settings:
         target_language=None,
         open_in_background=False,
         keymaps={},
+        custom_css=None,
     )
 
 
@@ -308,6 +310,54 @@ def test_build_shell_rejects_unsafe_colors() -> None:
     shell = ui.build_shell("explain", {"bg": "red; } body { display: none"})
 
     assert "display: none" not in shell
+
+
+def test_stylesheet_is_exported() -> None:
+    css = stylesheet()
+
+    assert "--docent-font-body" in css
+    assert "--docent-font-code" in css
+    assert ".markdown" in css
+
+
+def test_build_shell_includes_the_default_stylesheet() -> None:
+    shell = ui.build_shell("explain")
+
+    assert ui.stylesheet() in shell
+
+
+def test_build_shell_composes_stylesheet_palette_and_custom_css() -> None:
+    custom = ".markdown { color: red; }"
+
+    shell = ui.build_shell("explain", {"bg": "#000000"}, custom)
+
+    default_at = shell.index(ui.stylesheet())
+    palette_at = shell.index("--docent-bg: #000000;")
+    custom_at = shell.index(custom)
+    assert default_at < palette_at < custom_at
+
+
+def test_setup_reads_custom_css(tmp_path: Path) -> None:
+    path = tmp_path / "answer.css"
+    path.write_text(".markdown { color: red; }", encoding="utf-8")
+
+    plugin.setup(FakeConfig(), custom_css=str(path))
+
+    assert plugin._settings is not None
+    assert plugin._settings.custom_css == ".markdown { color: red; }"
+
+
+def test_setup_rejects_a_missing_custom_css(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="custom_css"):
+        plugin.setup(FakeConfig(), custom_css=str(tmp_path / "missing.css"))
+
+
+def test_theme_colors_skip_unavailable_values() -> None:
+    class FailingConfig:
+        def get(self, name: str) -> Any:
+            raise ValueError(name)
+
+    assert plugin._theme_colors(FailingConfig()) == {}
 
 
 def test_session_handles_delta_done_and_error_events() -> None:

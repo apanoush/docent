@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 __version__ = "0.1.0"
-__all__ = ["profile_list", "refresh", "setup"]
+__all__ = ["profile_list", "refresh", "setup", "stylesheet"]
 
 
 def setup(config: Any = None, **options: Any) -> Any:
@@ -40,3 +40,10 @@ def profile_list(force: bool = False) -> Any:
     from . import plugin
 
     return plugin.profiles(force)
+
+
+def stylesheet() -> str:
+    """Return the default answer-tab stylesheet."""
+    from . import ui
+
+    return ui.stylesheet()

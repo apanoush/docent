@@ -6,13 +6,14 @@ The adapter source lives in `plugins/qutebrowser/`, separate from the Rust crate
 
 | File | Responsibility |
 |---|---|
-| `docent/__init__.py` | Public `setup`, `refresh`, and `profile_list` entry points. Lazily imports the qutebrowser integration. |
+| `docent/__init__.py` | Public `setup`, `refresh`, `profile_list`, and `stylesheet` entry points. Lazily imports the qutebrowser integration. |
 | `docent/request.py` | Pure request builder shared by the adapter and tests. |
 | `docent/stream.py` | Pure incremental NDJSON parser. |
 | `docent/profiles.py` | Pure profile metadata loader around `docent profiles --json`. |
 | `docent/plugin.py` | Commands, setup, JavaScript capture, `QProcess` lifecycle, and sessions. |
 | `docent/markdown.py` | Pure Markdown subset renderer used by the answer tab. |
-| `docent/ui.py` | Answer-tab HTML shell and streaming DOM updates. |
+| `docent/answer.css` | Default answer-tab stylesheet; plain CSS with `--docent-*` variables, reusable by another browser front end. |
+| `docent/ui.py` | Answer-tab HTML shell, stylesheet loading, and streaming DOM updates. |
 
 `request.py`, `stream.py`, `profiles.py`, and `markdown.py` do not import qutebrowser. The unit tests exercise them without a browser.
 
@@ -53,7 +54,9 @@ Closing the answer tab emits `shutting_down`, which calls `Session.cancel`. Canc
 
 ## Answer tab
 
-`ui.build_shell` returns a small HTML document with a sticky header, a status label, a `d close` hint, and a `<pre id="answer">` body. The shell uses qutebrowser's status bar colors where available and falls back to dark defaults. Profile names are HTML-escaped before insertion.
+`ui.build_shell` returns a small HTML document with a sticky header, a status label, a `d close` hint, and a `<pre id="answer">` body. The `<style>` block is composed from `answer.css` first, then `:root` overrides from qutebrowser's status bar colors, then the optional user CSS from `setup(custom_css=...)`. Profile names are HTML-escaped before insertion.
+
+`answer.css` owns the default palette and font stacks through `--docent-bg`, `--docent-fg`, `--docent-error`, `--docent-font-body`, and `--docent-font-code`. It has no qutebrowser-specific selectors, so another browser adapter can reuse it and set the same variables. `docent.stylesheet()` exports the default CSS for Python callers.
 
 `ui.AnswerPage` injects JavaScript with `run_js_async`:
 
@@ -81,6 +84,7 @@ Sessions are stored by answer-tab ID. `docent-close` closes the current answer t
 - NDJSON chunk boundaries, including UTF-8 characters split across reads.
 - Profile metadata parsing and error paths.
 - URL cleaning, request capture, answer-tab shell escaping, and streaming updates.
+- Stylesheet loading and composition order, custom CSS setup, and the package export.
 - Markdown block and inline rendering, tables, and escaping of raw HTML and unsafe links.
 - Profile requirements, question prompting, picker dispatch, and process-failure reporting.
 

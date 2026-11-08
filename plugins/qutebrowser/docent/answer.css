@@ -1,0 +1,177 @@
+/*
+ * Answer-tab styles for browser front ends.
+ *
+ * The page can use the defaults below as-is. A front end that supplies its own
+ * palette should place its :root overrides after this file, and user overrides
+ * after that, so the cascade order is defaults -> theme -> user.
+ */
+
+:root {
+  color-scheme: light dark;
+  --docent-bg: #1e1e1e;
+  --docent-fg: #e6e6e6;
+  --docent-error: #ff6b6b;
+  --docent-font-body: ui-sans-serif, system-ui, sans-serif;
+  --docent-font-code: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--docent-bg);
+  color: var(--docent-fg);
+}
+
+body {
+  font-family: var(--docent-font-body);
+  line-height: 1.5;
+}
+
+header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.6rem 1.5rem;
+  background: var(--docent-bg);
+  border-bottom: 1px solid color-mix(in srgb, var(--docent-fg) 20%, transparent);
+}
+
+#status {
+  font-weight: 600;
+}
+
+#hint {
+  margin-left: auto;
+  opacity: 0.55;
+  font-size: 0.9em;
+}
+
+main {
+  max-width: 82ch;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+pre#answer {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--docent-font-code);
+  font-size: 0.95rem;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: 1.4em 0 0.5em;
+  line-height: 1.25;
+}
+
+.markdown h1 {
+  font-size: 1.7rem;
+}
+
+.markdown h2 {
+  font-size: 1.4rem;
+}
+
+.markdown h3 {
+  font-size: 1.2rem;
+}
+
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-size: 1.05rem;
+}
+
+.markdown p {
+  margin: 0 0 1em;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0 0 1em;
+  padding-left: 1.6rem;
+}
+
+.markdown li {
+  margin: 0.25em 0;
+}
+
+.markdown blockquote {
+  margin: 0 0 1em;
+  padding: 0.1em 0 0.1em 1rem;
+  border-left: 3px solid color-mix(in srgb, var(--docent-fg) 30%, transparent);
+  opacity: 0.85;
+}
+
+.markdown hr {
+  margin: 1.5em 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--docent-fg) 20%, transparent);
+}
+
+.markdown code {
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--docent-fg) 12%, transparent);
+  font-family: var(--docent-font-code);
+  font-size: 0.9em;
+}
+
+.markdown pre {
+  margin: 0 0 1em;
+  padding: 0.8rem 1rem;
+  overflow-x: auto;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--docent-fg) 8%, transparent);
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+  font-size: 0.9rem;
+}
+
+.markdown a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--docent-fg) 45%, transparent);
+  text-underline-offset: 2px;
+}
+
+.table-wrap {
+  margin: 0 0 1em;
+  overflow-x: auto;
+}
+
+.markdown table {
+  border-collapse: collapse;
+}
+
+.markdown th,
+.markdown td {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--docent-fg) 20%, transparent);
+  vertical-align: top;
+}
+
+.markdown th {
+  background: color-mix(in srgb, var(--docent-fg) 8%, transparent);
+  font-weight: 600;
+}
+
+.error {
+  color: var(--docent-error);
+}

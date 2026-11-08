@@ -12,6 +12,7 @@ import logging
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
 
@@ -60,6 +61,7 @@ class Settings:
     target_language: str | None
     open_in_background: bool
     keymaps: dict[str, str]
+    custom_css: str | None
 
 
 def run_arguments(
@@ -270,6 +272,7 @@ def setup(
     target_language: str | None = None,
     keymaps: Mapping[str, str] | None = None,
     open_in_background: bool = False,
+    custom_css: str | None = None,
 ) -> None:
     """Configure the adapter and install opt-in keymaps.
 
@@ -290,6 +293,14 @@ def setup(
     if not command or not command[0]:
         raise ValueError("cmd must name the docent executable")
 
+    css_text = None
+    if custom_css:
+        css_path = Path(custom_css).expanduser()
+        try:
+            css_text = css_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValueError(f"custom_css: could not read {css_path}: {exc}") from exc
+
     settings = Settings(
         config=config,
         cmd=command,
@@ -299,6 +310,7 @@ def setup(
         target_language=target_language,
         open_in_background=open_in_background,
         keymaps=dict(keymaps or {}),
+        custom_css=css_text,
     )
     _settings = settings
     _profiles = None
@@ -548,7 +560,11 @@ def _open_answer(
     answer_tab.load_finished.connect(loaded)
     try:
         answer_tab.set_html(
-            ui.build_shell(profile.name, _theme_colors(settings.config))
+            ui.build_shell(
+                profile.name,
+                _theme_colors(settings.config),
+                settings.custom_css,
+            )
         )
     except Exception as exc:  # noqa: BLE001
         page.set_error(f"could not open the answer tab: {exc}")
@@ -592,18 +608,21 @@ def _clean_url(url: str) -> str:
 
 
 def _theme_colors(config: Any) -> dict[str, str]:
-    def get(name: str, fallback: str) -> str:
+    """Return the configured answer-tab colors that are available."""
+    colors: dict[str, str] = {}
+    for name, key in (
+        ("bg", "colors.statusbar.normal.bg"),
+        ("fg", "colors.statusbar.normal.fg"),
+        ("error", "colors.messages.error.fg"),
+    ):
         try:
-            value = config.get(name)
-        except Exception:  # noqa: BLE001
-            return fallback
-        return value if isinstance(value, str) else fallback
-
-    return {
-        "bg": get("colors.statusbar.normal.bg", "#1e1e1e"),
-        "fg": get("colors.statusbar.normal.fg", "#e6e6e6"),
-        "error": get("colors.messages.error.fg", "#ff6b6b"),
-    }
+            value = config.get(key)
+        except Exception as exc:  # noqa: BLE001
+            _logger.debug("could not read %s: %s", key, exc)
+            continue
+        if isinstance(value, str):
+            colors[name] = value
+    return colors
 
 
 def _register(
