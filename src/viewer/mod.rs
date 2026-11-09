@@ -258,8 +258,26 @@ impl Drop for Viewer {
     }
 }
 
+/// Rejects a browser viewer when an X11 or Wayland session has no display.
+#[cfg(all(unix, not(target_os = "macos")))]
 fn require_graphical_session(browser: &str) -> Result<(), DocentError> {
-    if std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
+    check_graphical_session(
+        browser,
+        std::env::var_os("DISPLAY").is_some(),
+        std::env::var_os("WAYLAND_DISPLAY").is_some(),
+    )
+}
+
+/// macOS and Windows have no X11 or Wayland variables, so the viewer is allowed.
+#[cfg(any(windows, target_os = "macos"))]
+fn require_graphical_session(_browser: &str) -> Result<(), DocentError> {
+    Ok(())
+}
+
+/// Checks the display variables of an X11 or Wayland session.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn check_graphical_session(browser: &str, display: bool, wayland: bool) -> Result<(), DocentError> {
+    if !display && !wayland {
         return Err(DocentError::Viewer(format!(
             "no graphical session; {browser} answer pages need DISPLAY or WAYLAND_DISPLAY"
         )));
@@ -358,5 +376,21 @@ mod tests {
             .target_flag(),
             "--firefox-target"
         );
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn requires_a_display_or_wayland_session() {
+        let error = check_graphical_session("qutebrowser", false, false).unwrap_err();
+        assert!(error.to_string().contains("no graphical session"));
+        assert!(check_graphical_session("qutebrowser", true, false).is_ok());
+        assert!(check_graphical_session("qutebrowser", false, true).is_ok());
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn allows_browser_viewers_without_x11_variables() {
+        assert!(require_graphical_session("qutebrowser").is_ok());
+        assert!(require_graphical_session("Firefox").is_ok());
     }
 }

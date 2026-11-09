@@ -8,7 +8,7 @@ This is the same answer page and stylesheet used by the qutebrowser and Firefox 
 
 - qutebrowser 3.7 or newer for `--viewer qutebrowser`, available on `PATH` or passed with `--qutebrowser`.
 - Firefox with the standard `--new-tab`, `--new-window`, and `--private-window` URL flags for `--viewer firefox`, available on `PATH` or passed with `--firefox`.
-- A graphical session with `DISPLAY` or `WAYLAND_DISPLAY` set.
+- On X11 and Wayland systems, a graphical session with `DISPLAY` or `WAYLAND_DISPLAY` set. macOS and Windows need no environment variable.
 - The CLI does not need Python or any adapter files at runtime.
 
 ## Usage
@@ -70,7 +70,7 @@ The server binds only to `127.0.0.1` on a random port. The page URL contains a r
 
 ## Troubleshooting
 
-- `no graphical session`: start Docent from a session with `DISPLAY` or `WAYLAND_DISPLAY`, or use the terminal viewer.
+- `no graphical session`: start Docent from an X11 or Wayland session with `DISPLAY` or `WAYLAND_DISPLAY`, or use the terminal viewer. macOS and Windows do not report this error.
 - `could not start qutebrowser`: pass an absolute `--qutebrowser` path or fix `PATH`.
 - `could not start Firefox`: pass an absolute `--firefox` path or fix `PATH`. Snap and Flatpak installs may need a wrapper script.
 - `qutebrowser did not open the answer page`: check the `--qutebrowser-target` value and that qutebrowser starts. The CLI waits 30 seconds for the page to connect.
