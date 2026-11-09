@@ -148,6 +148,8 @@ cargo install --path .
 scripts/firefox-host-install.sh
 ```
 
+The script covers Linux and macOS. Windows needs a registry key and a manifest written by hand; see [the Firefox guide](docs/firefox.md#windows).
+
 Open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `plugins/firefox/manifest.json`. Select text with the mouse and click the Docent toolbar button or press `Alt+Shift+D`. The popup lists the profiles and runs the one you choose. The answer streams into a new tab. Press `d` to close the tab; closing it while the request is still running cancels the request. Permanent installs need a signed add-on from addons.mozilla.org. See [the Firefox guide](docs/firefox.md).
 
 The extension is for capturing a page selection. To show a terminal answer in Firefox without the extension, use `--viewer firefox` as described in [the browser viewer guide](docs/viewer.md).

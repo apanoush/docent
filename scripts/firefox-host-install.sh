@@ -5,7 +5,7 @@
 set -euo pipefail
 
 host=""
-manifest_dir="${DOCENT_FIREFOX_MANIFEST_DIR:-$HOME/.mozilla/native-messaging-hosts}"
+manifest_dir="${DOCENT_FIREFOX_MANIFEST_DIR:-}"
 force=""
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -16,8 +16,12 @@ usage: $(basename "$0") [--force] [--host PATH] [--manifest-dir DIR]
   --host PATH          docent-native-host executable (default: PATH lookup,
                        then ~/.cargo/bin/docent-native-host)
   --manifest-dir DIR   where to write org.docent.host.json
-                       (default: ~/.mozilla/native-messaging-hosts)
+                       (default on Linux: ~/.mozilla/native-messaging-hosts,
+                       on macOS: ~/Library/Application Support/Mozilla/NativeMessagingHosts)
   --force              overwrite an existing manifest
+
+This script installs the Linux and macOS manifest. Windows needs a registry key;
+follow docs/firefox.md.
 EOF
 }
 
@@ -30,6 +34,21 @@ while [[ $# -gt 0 ]]; do
         *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
 done
+
+platform="$(uname -s)"
+case "$platform" in
+    MINGW*|MSYS*|CYGWIN*)
+        echo "this script cannot register the manifest on Windows; follow docs/firefox.md" >&2
+        exit 1
+        ;;
+esac
+
+if [[ -z "$manifest_dir" ]]; then
+    case "$platform" in
+        Darwin) manifest_dir="$HOME/Library/Application Support/Mozilla/NativeMessagingHosts" ;;
+        *) manifest_dir="$HOME/.mozilla/native-messaging-hosts" ;;
+    esac
+fi
 
 if [[ -z "$host" ]]; then
     if command -v docent-native-host >/dev/null 2>&1; then

@@ -6,7 +6,7 @@ The Firefox adapter captures the selected text and the surrounding page, calls t
 
 - Firefox 140 or newer. Firefox 140 introduced the data collection permissions key that the manifest declares.
 - The `docent` and `docent-native-host` binaries. `cargo install --path .` installs both.
-- The native messaging host manifest installed with `scripts/firefox-host-install.sh`.
+- The native messaging host manifest installed with `scripts/firefox-host-install.sh` on Linux or macOS, or by hand on Windows.
 - Node 18 or newer for the adapter tests and for packaging with `web-ext`.
 
 ## Install
@@ -18,7 +18,43 @@ cargo install --path .
 scripts/firefox-host-install.sh
 ```
 
-The script writes `~/.mozilla/native-messaging-hosts/org.docent.host.json` with the absolute path to `docent-native-host` and the add-on ID `docent@reading-assistant`. Pass `--host PATH` if the binary is elsewhere, or `--force` to replace an existing manifest.
+The script writes the manifest where Firefox looks for the platform:
+
+| Platform | Manifest location |
+|---|---|
+| Linux | `~/.mozilla/native-messaging-hosts/org.docent.host.json` |
+| macOS | `~/Library/Application Support/Mozilla/NativeMessagingHosts/org.docent.host.json` |
+| Windows | `%APPDATA%\Mozilla\NativeMessagingHosts\org.docent.host.json`, registered under `HKCU\SOFTWARE\Mozilla\NativeMessagingHosts\org.docent.host` |
+
+The manifest holds the absolute path to `docent-native-host` and the add-on ID `docent@reading-assistant`. Pass `--host PATH` if the binary is elsewhere, or `--force` to replace an existing manifest. `--manifest-dir DIR` and `DOCENT_FIREFOX_MANIFEST_DIR` override the platform default, which Snap and Flatpak builds need. The script covers Linux and macOS and exits with a pointer to the Windows steps below.
+
+### Windows
+
+Firefox finds the host through a registry key, so install the manifest by hand. From PowerShell:
+
+```powershell
+$host = (Get-Command docent-native-host).Source
+$manifest = "$env:APPDATA\Mozilla\NativeMessagingHosts\org.docent.host.json"
+New-Item -ItemType Directory -Force -Path (Split-Path $manifest) | Out-Null
+$json = @{
+  name = "org.docent.host"
+  description = "Native messaging host for the Docent Firefox adapter"
+  path = $host
+  type = "stdio"
+  allowed_extensions = @("docent@reading-assistant")
+} | ConvertTo-Json
+[IO.File]::WriteAllText($manifest, $json)
+$key = "HKCU:\SOFTWARE\Mozilla\NativeMessagingHosts\org.docent.host"
+New-Item -Path $key -Force | Out-Null
+Set-Item -Path $key -Value $manifest
+```
+
+To remove the host, delete the key and the manifest:
+
+```powershell
+Remove-Item -Recurse "HKCU:\SOFTWARE\Mozilla\NativeMessagingHosts\org.docent.host"
+Remove-Item "$env:APPDATA\Mozilla\NativeMessagingHosts\org.docent.host.json"
+```
 
 Load the extension for development:
 
@@ -108,7 +144,7 @@ The extension declares the `websiteContent` and `browsingActivity` data collecti
 
 ## Troubleshooting
 
-- `No such native application org.docent.host`: run `scripts/firefox-host-install.sh`, check that the manifest exists, and check the path inside it. Snap and Flatpak builds look in a different directory.
+- `No such native application org.docent.host`: run `scripts/firefox-host-install.sh` on Linux or macOS, or check the Windows registry key, the manifest path, and the path inside the manifest. Snap and Flatpak builds look in a different directory.
 - `could not start docent`: the CLI is not on Firefox's `PATH`. Set an absolute command in the options.
 - `missing API key`: neither `api_key` nor the environment variable named by `api_key_env` is set in the process that started Firefox.
 - `could not read this page`: the page is restricted, such as reader view, the PDF viewer, `about:` pages, or the add-ons site.

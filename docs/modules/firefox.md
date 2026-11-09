@@ -18,12 +18,14 @@ The adapter has two halves. `plugins/firefox/` is a WebExtension with no build s
 | `plugins/firefox/popup/` | Profile picker and question input. |
 | `plugins/firefox/answer/` | Answer tab, question form, bundled and user styles. |
 | `plugins/firefox/options/` | Settings page. |
-| `scripts/firefox-host-install.sh` | Writes the native messaging host manifest. |
-| `scripts/firefox-host-uninstall.sh` | Removes it. |
+| `scripts/firefox-host-install.sh` | Writes the native messaging host manifest on Linux and macOS. |
+| `scripts/firefox-host-uninstall.sh` | Removes the manifest on Linux and macOS. |
 | `src/native_host.rs` | Framing, request parsing, spawn, forwarding, `exec`, `css`. |
 | `src/bin/docent-native-host.rs` | Thin entry point for the host binary. |
 
 `lib/stream.js`, `lib/request.js`, `lib/profiles.js`, and `lib/args.js` do not touch the `browser` API. The Node tests exercise them without Firefox.
+
+Windows has no installer script because Firefox needs a registry key. `docs/firefox.md` lists the manual manifest and `HKCU` steps, and `tests/firefox/run.sh` covers the Linux and macOS paths of the two shell scripts.
 
 ## Loading and permissions
 

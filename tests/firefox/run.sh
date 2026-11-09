@@ -66,3 +66,76 @@ if command -v web-ext >/dev/null 2>&1; then
 else
     echo "web-ext is not installed; skipping manifest lint"
 fi
+
+# The host scripts must use the manifest directory Firefox reads on each platform.
+script_test="$(mktemp -d)"
+trap 'rm -rf "$script_test"' EXIT
+
+mkdir -p "$script_test/bin" "$script_test/home" "$script_test/host"
+cat > "$script_test/bin/uname" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${FAKE_UNAME:-Linux}"
+EOF
+cat > "$script_test/host/docent-native-host" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$script_test/bin/uname" "$script_test/host/docent-native-host"
+
+linux_manifest="$script_test/home/.mozilla/native-messaging-hosts/org.docent.host.json"
+macos_manifest="$script_test/home/Library/Application Support/Mozilla/NativeMessagingHosts/org.docent.host.json"
+custom_manifest="$script_test/custom/org.docent.host.json"
+
+host_install() {
+    local platform="$1"
+    shift
+    HOME="$script_test/home" PATH="$script_test/bin:$PATH" FAKE_UNAME="$platform" \
+        scripts/firefox-host-install.sh --host "$script_test/host/docent-native-host" "$@" >/dev/null
+}
+
+host_uninstall() {
+    local platform="$1"
+    shift
+    HOME="$script_test/home" PATH="$script_test/bin:$PATH" FAKE_UNAME="$platform" \
+        scripts/firefox-host-uninstall.sh "$@" >/dev/null
+}
+
+host_install Linux
+[[ -f "$linux_manifest" ]] || {
+    echo "install script did not write the Linux manifest" >&2
+    exit 1
+}
+
+host_install Darwin
+[[ -f "$macos_manifest" ]] || {
+    echo "install script did not write the macOS manifest" >&2
+    exit 1
+}
+
+host_install Linux --manifest-dir "$script_test/custom"
+[[ -f "$custom_manifest" ]] || {
+    echo "install script ignored --manifest-dir" >&2
+    exit 1
+}
+host_uninstall Linux --manifest-dir "$script_test/custom"
+[[ ! -e "$custom_manifest" ]] || {
+    echo "uninstall script ignored --manifest-dir" >&2
+    exit 1
+}
+
+if host_install MINGW64_NT-10.0 2>/dev/null; then
+    echo "install script must refuse to run on Windows" >&2
+    exit 1
+fi
+
+host_uninstall Linux
+[[ ! -e "$linux_manifest" ]] || {
+    echo "uninstall script did not remove the Linux manifest" >&2
+    exit 1
+}
+
+host_uninstall Darwin
+[[ ! -e "$macos_manifest" ]] || {
+    echo "uninstall script did not remove the macOS manifest" >&2
+    exit 1
+}
