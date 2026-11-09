@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
-use common::{MockResponse, MockServer};
+use common::{MockResponse, MockServer, sample_pdf};
 use serde_json::Value;
 
 fn write_config(
@@ -1153,6 +1153,12 @@ fn write_notes(directory: &Path, contents: &str) -> std::path::PathBuf {
     path
 }
 
+fn write_pdf(directory: &Path, pages: &[&str]) -> std::path::PathBuf {
+    let path = directory.join("paper.pdf");
+    fs::write(&path, sample_pdf(pages)).unwrap();
+    path
+}
+
 #[test]
 fn explain_file_lines_streams_plain_text() {
     let server = MockServer::start(MockResponse::sse(
@@ -1444,6 +1450,88 @@ fn missing_phrase_is_an_input_error() {
     );
     assert_eq!(output.status.code(), Some(4));
     assert!(stderr(&output).contains("phrase not found"));
+}
+
+#[test]
+fn summarize_reads_selected_pdf_pages() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"pdf answer"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    let paper = write_pdf(temp.path(), &["alpha page", "beta page", "gamma page"]);
+
+    let output = run(
+        &dir,
+        &[
+            "summarize",
+            paper.to_str().unwrap(),
+            "--pages",
+            "2:3",
+            "--no-stream",
+        ],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let body = server.requests()[0].json();
+    let user = body["messages"][1]["content"].as_str().unwrap();
+    assert!(user.contains("beta page"), "{user}");
+    assert!(user.contains("gamma page"), "{user}");
+    assert!(!user.contains("alpha page"), "{user}");
+}
+
+#[test]
+fn ask_finds_wrapped_text_in_a_file() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"wrapped answer"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    let notes = write_notes(temp.path(), "alpha beta\ngamma delta\n");
+
+    let output = run(
+        &dir,
+        &[
+            "ask",
+            notes.to_str().unwrap(),
+            "--text",
+            "beta gamma",
+            "--question",
+            "What?",
+            "--no-stream",
+        ],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let body = server.requests()[0].json();
+    let user = body["messages"][1]["content"].as_str().unwrap();
+    assert!(user.contains("SELECTION START"), "{user}");
+    assert!(user.contains("beta\ngamma"), "{user}");
+}
+
+#[test]
+fn pages_on_a_text_file_is_an_input_error() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", "http://127.0.0.1:1");
+    let notes = write_notes(temp.path(), "alpha beta gamma\n");
+
+    let output = run(
+        &dir,
+        &["summarize", notes.to_str().unwrap(), "--pages", "1"],
+        "",
+        None,
+    );
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stderr(&output).contains("--pages requires a PDF"));
 }
 
 #[test]

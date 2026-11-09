@@ -30,8 +30,8 @@ impl Request {
     /// Returns the byte range of the selection inside `document`.
     ///
     /// Valid offsets are trusted only when they match the selection exactly.
-    /// Otherwise the first exact occurrence is used. An empty selection has no
-    /// range.
+    /// Otherwise the first matching occurrence is used, tolerating whitespace
+    /// and line-break hyphenation. An empty selection has no range.
     pub fn selection_range(&self) -> Option<(usize, usize)> {
         if self.selection.is_empty() {
             return None;
@@ -49,9 +49,7 @@ impl Request {
             }
         }
 
-        document
-            .find(&self.selection)
-            .map(|start| (start, start + self.selection.len()))
+        crate::input::find_text(document, &self.selection)
     }
 }
 
@@ -93,6 +91,18 @@ mod tests {
             ..Request::default()
         };
         assert_eq!(request.selection_range(), Some((6, 10)));
+    }
+
+    #[test]
+    fn falls_back_to_tolerant_search_for_wrapped_text() {
+        let request = Request {
+            selection: "beta gamma".to_string(),
+            document: Some("alpha beta\ngamma".to_string()),
+            byte_start: Some(0),
+            byte_end: Some(4),
+            ..Request::default()
+        };
+        assert_eq!(request.selection_range(), Some((6, 16)));
     }
 
     #[test]

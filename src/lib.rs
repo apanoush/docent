@@ -13,6 +13,7 @@ pub mod error;
 pub mod input;
 pub mod markdown;
 pub mod native_host;
+pub mod pdf;
 pub mod profile;
 pub mod prompt;
 pub mod provider;

@@ -12,7 +12,7 @@ use crate::cache;
 use crate::config::{self, ContextMode, InitReport};
 use crate::context;
 use crate::error::DocentError;
-use crate::input::{self, LineRange, NoPrompter, SelectionArg, TerminalPrompter};
+use crate::input::{self, LineRange, NoPrompter, PageRange, SelectionArg, TerminalPrompter};
 use crate::markdown;
 use crate::profile::{Profile, ProfileInfo, ProfileStore};
 use crate::prompt::{self, EffectiveSettings};
@@ -28,6 +28,7 @@ const AFTER_HELP: &str = "Examples:
   docent ask notes.md --lines 12:20 --question \"Why does this work?\"
   docent translate notes.md --lines 12:20 --to French
   docent summarize paper.md
+  docent summarize paper.pdf --pages 1:4
   docent explain notes.md --lines 12:20 --viewer qutebrowser
   docent explain notes.md --lines 12:20 --viewer firefox
   docent init
@@ -122,6 +123,10 @@ pub struct HumanArgs {
     #[command(flatten)]
     pub selection: SelectionArgs,
 
+    /// Page options for PDF documents.
+    #[command(flatten)]
+    pub pages: PageArgs,
+
     /// Execution options.
     #[command(flatten)]
     pub common: CommonArgs,
@@ -141,6 +146,10 @@ pub struct DoArgs {
     /// Selection options.
     #[command(flatten)]
     pub selection: SelectionArgs,
+
+    /// Page options for PDF documents.
+    #[command(flatten)]
+    pub pages: PageArgs,
 
     /// Execution options.
     #[command(flatten)]
@@ -279,6 +288,25 @@ impl SelectionArgs {
         } else {
             self.phrase.map(SelectionArg::Phrase)
         }
+    }
+}
+
+/// Page range options for PDF documents.
+#[derive(Debug, Args)]
+#[group(id = "page_scope", multiple = false)]
+pub struct PageArgs {
+    /// Page range, 1-based and inclusive, for example 5:7 (PDF only).
+    #[arg(long, value_parser = parse_page_range, value_name = "START:END")]
+    pub pages: Option<PageRange>,
+
+    /// Single page number (PDF only).
+    #[arg(long, value_parser = parse_page_number_value, value_name = "N")]
+    pub page: Option<usize>,
+}
+
+impl PageArgs {
+    fn range(&self) -> Option<PageRange> {
+        self.pages.or_else(|| self.page.map(PageRange::single))
     }
 }
 
@@ -454,6 +482,7 @@ fn run_human(
     let HumanArgs {
         file,
         selection,
+        pages,
         common,
     } = args;
     let CommonArgs {
@@ -463,7 +492,7 @@ fn run_human(
         target_language,
         viewer,
     } = common;
-    let label = human_label(file.as_deref(), &selection);
+    let label = human_label(file.as_deref(), &selection, pages.range());
 
     let config = config::ensure_initialized(config_dir)?;
     let target = viewer.target(&config);
@@ -475,7 +504,13 @@ fn run_human(
 
     let profile = ProfileStore::new(config::profiles_dir(config_dir)).load(profile_name)?;
     let settings = resolve_settings(&config, &profile, context_mode, target_language)?;
-    let request = resolve_human_request(&profile, file.as_deref(), selection, question)?;
+    let request = resolve_human_request(
+        &profile,
+        file.as_deref(),
+        selection,
+        pages.range(),
+        question,
+    )?;
     let output = if target.is_browser() {
         OutputMode::Browser(browser_options(
             &config,
@@ -517,6 +552,7 @@ fn run_do(
         profile,
         file,
         selection,
+        pages,
         common,
     } = args;
     run_human(
@@ -526,6 +562,7 @@ fn run_do(
         HumanArgs {
             file,
             selection,
+            pages,
             common,
         },
         source,
@@ -550,21 +587,34 @@ fn resolve_settings(
     )
 }
 
-/// Build the viewer header from the file and terminal selection.
-fn human_label(file: Option<&Path>, selection: &SelectionArgs) -> String {
+/// Build the viewer header from the file, page range, and terminal selection.
+fn human_label(file: Option<&Path>, selection: &SelectionArgs, pages: Option<PageRange>) -> String {
     let name = file
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| "(stdin)".to_string());
+    let mut parts = Vec::new();
+    if let Some(pages) = pages {
+        let label = if pages.start == pages.end {
+            "page"
+        } else {
+            "pages"
+        };
+        parts.push(format!("{label} {pages}"));
+    }
     if let Some(lines) = selection.lines {
-        format!("{name} (lines {lines})")
+        parts.push(format!("lines {lines}"));
     } else if let Some(line) = selection.line {
-        format!("{name} (line {line})")
+        parts.push(format!("line {line}"));
     } else if selection.text.is_some() {
-        format!("{name} (selection)")
+        parts.push("selection".to_string());
     } else if let Some(phrase) = &selection.phrase {
-        format!("{name} (\"{phrase}\")")
-    } else {
+        parts.push(format!("\"{phrase}\""));
+    }
+
+    if parts.is_empty() {
         name
+    } else {
+        format!("{name} ({})", parts.join(", "))
     }
 }
 
@@ -638,11 +688,13 @@ fn resolve_human_request(
     profile: &Profile,
     file: Option<&Path>,
     selection: SelectionArgs,
+    pages: Option<PageRange>,
     question: Option<String>,
 ) -> Result<Request, DocentError> {
     let stdin_is_terminal = std::io::stdin().is_terminal();
     let options = input::RequestOptions {
         file,
+        pages,
         selection: selection.into_arg(),
         question,
         requires: &profile.requires,
@@ -755,7 +807,7 @@ fn execute(
     );
     if context.truncated && request.selection_range().is_none() {
         log::warn!(
-            "document context truncated to {} characters (context.max_chars = {}), so the answer covers only part of the document; use --context-mode full, raise context.max_chars, or narrow the input with --lines",
+            "document context truncated to {} characters (context.max_chars = {}), so the answer covers only part of the document; use --context-mode full, raise context.max_chars, or narrow the input with --lines or --pages",
             context.chars,
             config.context.max_chars
         );
@@ -1231,6 +1283,17 @@ fn parse_line_range(value: &str) -> Result<LineRange, String> {
     value.parse()
 }
 
+fn parse_page_range(value: &str) -> Result<PageRange, String> {
+    value.parse()
+}
+
+fn parse_page_number_value(value: &str) -> Result<usize, String> {
+    if value.contains(':') {
+        return Err(format!("'{value}' is not a page number"));
+    }
+    value.parse::<PageRange>().map(|range| range.start)
+}
+
 fn parse_line_number_value(value: &str) -> Result<usize, String> {
     let number = value
         .trim()
@@ -1344,6 +1407,77 @@ mod tests {
         assert_eq!(
             parse_line_number_value("abc").unwrap_err(),
             "'abc' is not a line number"
+        );
+    }
+
+    #[test]
+    fn parses_page_arguments() {
+        let cli =
+            Cli::try_parse_from(["docent", "summarize", "paper.pdf", "--pages", "2:4"]).unwrap();
+        let Some(Command::Summarize(args)) = cli.command else {
+            panic!("expected summarize");
+        };
+        assert_eq!(args.pages.range(), Some(PageRange { start: 2, end: 4 }));
+        assert_eq!(args.selection.into_arg(), None);
+
+        let cli = Cli::try_parse_from(["docent", "summarize", "paper.pdf", "--page", "3"]).unwrap();
+        let Some(Command::Summarize(args)) = cli.command else {
+            panic!("expected summarize");
+        };
+        assert_eq!(args.pages.range(), Some(PageRange::single(3)));
+    }
+
+    #[test]
+    fn page_arguments_compose_with_selection_text() {
+        let cli = Cli::try_parse_from([
+            "docent",
+            "ask",
+            "paper.pdf",
+            "--pages",
+            "2:4",
+            "--text",
+            "passage",
+        ])
+        .unwrap();
+        let Some(Command::Ask(args)) = cli.command else {
+            panic!("expected ask");
+        };
+        assert_eq!(args.pages.range(), Some(PageRange { start: 2, end: 4 }));
+        assert_eq!(
+            args.selection.into_arg(),
+            Some(SelectionArg::Text("passage".to_string()))
+        );
+    }
+
+    #[test]
+    fn page_arguments_reject_two_page_flags() {
+        assert!(
+            Cli::try_parse_from([
+                "docent",
+                "summarize",
+                "paper.pdf",
+                "--page",
+                "2",
+                "--pages",
+                "2:4"
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn page_number_rejects_zero_ranges_and_colons() {
+        assert_eq!(
+            parse_page_number_value("0").unwrap_err(),
+            "page numbers start at 1"
+        );
+        assert_eq!(
+            parse_page_number_value("2:4").unwrap_err(),
+            "'2:4' is not a page number"
+        );
+        assert_eq!(
+            parse_page_number_value("abc").unwrap_err(),
+            "'abc' is not a page number"
         );
     }
 }

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::error::DocentError;
+use crate::pdf;
 use crate::profile::Requirement;
 use crate::request::Request;
 
@@ -34,22 +35,7 @@ impl FromStr for LineRange {
     type Err = String;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let value = value.trim();
-        let (start_text, end_text) = match value.split_once(':') {
-            Some((start, end)) => (start, Some(end)),
-            None => (value, None),
-        };
-
-        let start = parse_line_number(start_text)?;
-        let end = match end_text {
-            Some(end) => parse_line_number(end)?,
-            None => start,
-        };
-
-        if start > end {
-            return Err("line range start must not exceed end".to_string());
-        }
-
+        let (start, end) = parse_number_range(value, "line")?;
         Ok(Self { start, end })
     }
 }
@@ -64,15 +50,73 @@ impl std::fmt::Display for LineRange {
     }
 }
 
-fn parse_line_number(value: &str) -> Result<usize, String> {
-    let line = value
+/// A 1-based, inclusive page range for PDF documents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageRange {
+    /// First page.
+    pub start: usize,
+    /// Last page.
+    pub end: usize,
+}
+
+impl PageRange {
+    /// Builds a single-page range.
+    pub fn single(page: usize) -> Self {
+        Self {
+            start: page,
+            end: page,
+        }
+    }
+}
+
+impl FromStr for PageRange {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let (start, end) = parse_number_range(value, "page")?;
+        Ok(Self { start, end })
+    }
+}
+
+impl std::fmt::Display for PageRange {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.start == self.end {
+            write!(formatter, "{}", self.start)
+        } else {
+            write!(formatter, "{}:{}", self.start, self.end)
+        }
+    }
+}
+
+fn parse_number_range(value: &str, kind: &str) -> Result<(usize, usize), String> {
+    let value = value.trim();
+    let (start_text, end_text) = match value.split_once(':') {
+        Some((start, end)) => (start, Some(end)),
+        None => (value, None),
+    };
+
+    let start = parse_number(start_text, kind)?;
+    let end = match end_text {
+        Some(end) => parse_number(end, kind)?,
+        None => start,
+    };
+
+    if start > end {
+        return Err(format!("{kind} range start must not exceed end"));
+    }
+
+    Ok((start, end))
+}
+
+fn parse_number(value: &str, kind: &str) -> Result<usize, String> {
+    let number = value
         .trim()
         .parse::<usize>()
-        .map_err(|_| format!("'{value}' is not a line number"))?;
-    if line == 0 {
-        return Err("line numbers start at 1".to_string());
+        .map_err(|_| format!("'{value}' is not a {kind} number"))?;
+    if number == 0 {
+        return Err(format!("{kind} numbers start at 1"));
     }
-    Ok(line)
+    Ok(number)
 }
 
 /// How the terminal selected a passage.
@@ -121,21 +165,19 @@ impl Document {
         self.lines.len()
     }
 
-    /// Finds the first exact occurrence of `phrase`.
+    /// Finds the first occurrence of `phrase`.
+    ///
+    /// An exact match wins. Otherwise whitespace runs are collapsed and
+    /// hyphenated line breaks are joined, so a passage copied out of a PDF can
+    /// still be located in the extracted text.
     pub fn find(&self, phrase: &str) -> Option<(usize, usize)> {
-        if phrase.is_empty() {
-            return None;
-        }
-        let start = self.text.find(phrase)?;
-        Some((start, start + phrase.len()))
+        find_text(&self.text, phrase)
     }
 
-    /// Counts exact occurrences of `phrase`.
+    /// Counts occurrences of `phrase`, ignoring exact whitespace and line-break
+    /// hyphenation.
     pub fn occurrence_count(&self, phrase: &str) -> usize {
-        if phrase.is_empty() {
-            return 0;
-        }
-        self.text.match_indices(phrase).count()
+        count_text(&self.text, phrase)
     }
 
     /// Extracts a line range and its byte offsets.
@@ -161,6 +203,100 @@ impl Document {
         let end = self.lines[range.end - 1].1;
         Ok((self.text[start..end].to_string(), start, end))
     }
+}
+
+/// Finds the first occurrence of `needle` in `haystack`.
+///
+/// An exact match wins. Otherwise whitespace runs are collapsed and hyphenated
+/// line breaks are joined before searching. Offsets in the result always index
+/// `haystack`.
+pub fn find_text(haystack: &str, needle: &str) -> Option<(usize, usize)> {
+    if needle.is_empty() {
+        return None;
+    }
+    if let Some(start) = haystack.find(needle) {
+        return Some((start, start + needle.len()));
+    }
+
+    let (normalized, offsets) = normalize_for_search(haystack);
+    let needle = normalize_for_search(needle).0;
+    let needle = needle.trim();
+    if needle.is_empty() {
+        return None;
+    }
+    let start = normalized.find(needle)?;
+    let end = start + needle.len();
+    map_match(&normalized, &offsets, start, end)
+}
+
+/// Counts occurrences of `needle`, ignoring exact whitespace and line-break
+/// hyphenation.
+pub fn count_text(haystack: &str, needle: &str) -> usize {
+    if needle.is_empty() {
+        return 0;
+    }
+    let (normalized, _) = normalize_for_search(haystack);
+    let needle = normalize_for_search(needle).0;
+    let needle = needle.trim();
+    if needle.is_empty() {
+        return 0;
+    }
+    normalized.match_indices(needle).count()
+}
+
+/// Collapses whitespace runs to one space, drops soft hyphens, and joins
+/// hyphenated line breaks. Returns the normalized text and the byte offset in
+/// the original text for every normalized character.
+fn normalize_for_search(text: &str) -> (String, Vec<usize>) {
+    let mut normalized = String::with_capacity(text.len());
+    let mut offsets = Vec::with_capacity(text.len());
+    let mut characters = text.char_indices().peekable();
+
+    while let Some((offset, character)) = characters.next() {
+        if character == '\u{00ad}' {
+            continue;
+        }
+        if is_hyphen(character) && characters.peek().is_some_and(|(_, next)| *next == '\n') {
+            characters.next();
+            continue;
+        }
+        if character.is_whitespace() {
+            if !normalized.ends_with(' ') {
+                normalized.push(' ');
+                offsets.push(offset);
+            }
+            continue;
+        }
+        normalized.push(character);
+        offsets.push(offset);
+    }
+
+    while normalized.ends_with(' ') {
+        normalized.pop();
+        offsets.pop();
+    }
+    (normalized, offsets)
+}
+
+fn is_hyphen(character: char) -> bool {
+    matches!(character, '-' | '\u{2010}')
+}
+
+/// Maps a byte range in the normalized text back to the original text.
+fn map_match(
+    normalized: &str,
+    offsets: &[usize],
+    start: usize,
+    end: usize,
+) -> Option<(usize, usize)> {
+    let start_char = normalized[..start].chars().count();
+    let end_char = normalized[..end].chars().count();
+    let start_offset = *offsets.get(start_char)?;
+    let last = end_char.checked_sub(1)?;
+    let last_offset = *offsets.get(last)?;
+    let last_byte = normalized.char_indices().nth(last)?.0;
+    let last_character = normalized[last_byte..].chars().next()?;
+    Some((start_offset, last_offset + last_character.len_utf8()))
 }
 
 /// Reads a line of input for missing terminal arguments.
@@ -214,6 +350,8 @@ impl Prompter for NoPrompter {
 pub struct RequestOptions<'a> {
     /// Document path, or `-` for stdin.
     pub file: Option<&'a Path>,
+    /// Page range for PDF documents.
+    pub pages: Option<PageRange>,
     /// Selection supplied on the command line.
     pub selection: Option<SelectionArg>,
     /// Question supplied on the command line.
@@ -234,6 +372,7 @@ pub fn resolve_request(
     let requires_context = options.requires.contains(&Requirement::Context);
 
     let mut file = options.file.map(Path::to_path_buf);
+    let pages = options.pages;
     let mut selection = options.selection;
     let mut question = options.question;
 
@@ -254,8 +393,8 @@ pub fn resolve_request(
     }
 
     let document = match &file {
-        Some(path) => Some(read_document(path, stdin_is_terminal, stdin)?),
-        None if !stdin_is_terminal => Some(read_stdin(stdin)?),
+        Some(path) => Some(read_document(path, pages, stdin_is_terminal, stdin)?),
+        None if !stdin_is_terminal => Some(read_stdin(pages, stdin)?),
         None => None,
     };
 
@@ -285,14 +424,14 @@ pub fn resolve_request(
 
     let (selection_text, byte_start, byte_end) = match selection {
         None => (String::new(), None, None),
-        Some(SelectionArg::Text(text)) => {
-            let offsets = document.as_ref().and_then(|document| document.find(&text));
-            (
-                text,
-                offsets.map(|(start, _)| start),
-                offsets.map(|(_, end)| end),
-            )
-        }
+        Some(SelectionArg::Text(text)) => match document.as_ref().and_then(|document| {
+            document
+                .find(&text)
+                .map(|range| (document.text[range.0..range.1].to_string(), range))
+        }) {
+            Some((selection, (start, end))) => (selection, Some(start), Some(end)),
+            None => (text, None, None),
+        },
         Some(SelectionArg::Phrase(phrase)) => {
             let Some(document) = document.as_ref() else {
                 return Err(DocentError::Input(
@@ -309,7 +448,11 @@ pub fn resolve_request(
                     document.name
                 );
             }
-            (phrase, Some(start), Some(end))
+            (
+                document.text[start..end].to_string(),
+                Some(start),
+                Some(end),
+            )
         }
         Some(SelectionArg::Lines(range)) => {
             let Some(document) = document.as_ref() else {
@@ -393,6 +536,7 @@ fn parse_prompt_selection(value: &str) -> Result<SelectionArg, DocentError> {
 
 fn read_document(
     path: &Path,
+    pages: Option<PageRange>,
     stdin_is_terminal: bool,
     stdin: &mut dyn Read,
 ) -> Result<Document, DocentError> {
@@ -400,22 +544,55 @@ fn read_document(
         if stdin_is_terminal {
             return Err(DocentError::StdinIsTerminal);
         }
-        return read_stdin(stdin);
+        return read_stdin(pages, stdin);
     }
 
-    let text = fs::read_to_string(path).map_err(|source| DocentError::ReadDocument {
+    let bytes = fs::read(path).map_err(|source| DocentError::ReadDocument {
         path: path.to_path_buf(),
         source,
     })?;
-    Ok(Document::from_text(path.display().to_string(), text))
+    document_from_bytes(&path.display().to_string(), bytes, pages)
 }
 
-fn read_stdin(stdin: &mut dyn Read) -> Result<Document, DocentError> {
-    let mut text = String::new();
+fn read_stdin(pages: Option<PageRange>, stdin: &mut dyn Read) -> Result<Document, DocentError> {
+    let mut bytes = Vec::new();
     stdin
-        .read_to_string(&mut text)
+        .read_to_end(&mut bytes)
         .map_err(DocentError::ReadStdin)?;
-    Ok(Document::from_text(STDIN_NAME, text))
+    document_from_bytes(STDIN_NAME, bytes, pages)
+}
+
+/// Builds a document from raw file or stdin bytes, decoding PDFs when the
+/// content starts with the PDF header.
+fn document_from_bytes(
+    name: &str,
+    bytes: Vec<u8>,
+    pages: Option<PageRange>,
+) -> Result<Document, DocentError> {
+    if pdf::is_pdf(&bytes) {
+        let text = pdf::extract(&bytes, pages).map_err(|message| {
+            DocentError::Input(format!("failed to read PDF {name}: {message}"))
+        })?;
+        if text.trim().is_empty() {
+            return Err(DocentError::Input(format!(
+                "{name} has no extractable text; the PDF may be scanned or image-only"
+            )));
+        }
+        return Ok(Document::from_text(name, text));
+    }
+
+    if pages.is_some() {
+        return Err(DocentError::Input(format!(
+            "--pages requires a PDF; {name} is not a PDF"
+        )));
+    }
+
+    let text = String::from_utf8(bytes).map_err(|_| {
+        DocentError::Input(format!(
+            "{name} is not UTF-8 text; supported inputs are plain text and PDF"
+        ))
+    })?;
+    Ok(Document::from_text(name, text))
 }
 
 #[cfg(test)]
@@ -453,6 +630,13 @@ mod tests {
         (directory, path)
     }
 
+    fn temp_byte_file(name: &str, bytes: &[u8]) -> (tempfile::TempDir, PathBuf) {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(name);
+        fs::write(&path, bytes).unwrap();
+        (directory, path)
+    }
+
     fn options<'a>(
         file: Option<&'a Path>,
         selection: Option<SelectionArg>,
@@ -461,6 +645,7 @@ mod tests {
     ) -> RequestOptions<'a> {
         RequestOptions {
             file,
+            pages: None,
             selection,
             question: question.map(str::to_string),
             requires,
@@ -493,6 +678,27 @@ mod tests {
     fn displays_line_ranges() {
         assert_eq!(LineRange::single(7).to_string(), "7");
         assert_eq!(LineRange { start: 7, end: 9 }.to_string(), "7:9");
+    }
+
+    #[test]
+    fn parses_page_ranges() {
+        assert_eq!("5".parse::<PageRange>().unwrap(), PageRange::single(5));
+        assert_eq!(
+            "5:7".parse::<PageRange>().unwrap(),
+            PageRange { start: 5, end: 7 }
+        );
+        assert_eq!(
+            "0:2".parse::<PageRange>().unwrap_err(),
+            "page numbers start at 1"
+        );
+        assert_eq!(
+            "7:5".parse::<PageRange>().unwrap_err(),
+            "page range start must not exceed end"
+        );
+        assert_eq!(
+            "x".parse::<PageRange>().unwrap_err(),
+            "'x' is not a page number"
+        );
     }
 
     #[test]
@@ -541,6 +747,33 @@ mod tests {
         assert_eq!(document.occurrence_count("beta"), 2);
         assert_eq!(document.find("missing"), None);
         assert_eq!(document.occurrence_count(""), 0);
+    }
+
+    #[test]
+    fn finds_phrases_across_line_breaks() {
+        let document = Document::from_text("paper.txt", "alpha beta\ngamma delta");
+        assert_eq!(document.find("beta gamma"), Some((6, 16)));
+        assert_eq!(document.find("beta   gamma"), Some((6, 16)));
+        assert_eq!(document.find("beta gamma"), document.find("beta\ngamma"));
+    }
+
+    #[test]
+    fn joins_hyphenated_line_breaks() {
+        let document = Document::from_text("paper.txt", "signifi-\ncantly better");
+        assert_eq!(document.find("significantly"), Some((0, 15)));
+        assert_eq!(document.find("significantly better"), Some((0, 22)));
+    }
+
+    #[test]
+    fn does_not_join_words_across_missing_whitespace() {
+        let document = Document::from_text("notes.md", "ab");
+        assert_eq!(document.find("a b"), None);
+    }
+
+    #[test]
+    fn maps_offsets_through_utf8_whitespace() {
+        let document = Document::from_text("notes.md", "αβ\nγδ");
+        assert_eq!(document.find("β γ"), Some((2, 7)));
     }
 
     #[test]
@@ -629,6 +862,149 @@ mod tests {
         assert_eq!(request.selection, "beta");
         assert_eq!(request.byte_start, Some(6));
         assert_eq!(request.byte_end, Some(10));
+    }
+
+    #[test]
+    fn resolves_wrapped_text_to_document_offsets() {
+        let (_directory, path) = temp_file("notes.md", "alpha beta\ngamma");
+        let mut stdin = Cursor::new(Vec::new());
+        let request = resolve_request(
+            options(
+                Some(&path),
+                Some(SelectionArg::Text("beta gamma".to_string())),
+                None,
+                &[Requirement::Selection],
+            ),
+            &mut NoPrompter,
+            false,
+            &mut stdin,
+        )
+        .unwrap();
+
+        assert_eq!(request.selection, "beta\ngamma");
+        assert_eq!(request.byte_start, Some(6));
+        assert_eq!(request.byte_end, Some(16));
+    }
+
+    #[test]
+    fn reads_pdf_documents() {
+        let pdf = crate::pdf::sample_pdf(&["alpha page", "beta page"]);
+        let (_directory, path) = temp_byte_file("paper.pdf", &pdf);
+        let mut stdin = Cursor::new(Vec::new());
+        let request = resolve_request(
+            options(
+                Some(&path),
+                Some(SelectionArg::Text("beta page".to_string())),
+                None,
+                &[Requirement::Selection],
+            ),
+            &mut NoPrompter,
+            false,
+            &mut stdin,
+        )
+        .unwrap();
+
+        let document = request.document.unwrap();
+        assert!(document.contains("alpha page"), "{document:?}");
+        assert!(document.contains("beta page"), "{document:?}");
+        assert_eq!(request.file.as_deref(), path.to_str());
+        assert!(request.byte_start.is_some());
+        assert!(request.byte_end.is_some());
+    }
+
+    #[test]
+    fn reads_pdf_documents_from_stdin() {
+        let pdf = crate::pdf::sample_pdf(&["alpha page"]);
+        let mut stdin = Cursor::new(pdf);
+        let request = resolve_request(
+            options(
+                None,
+                Some(SelectionArg::Text("alpha page".to_string())),
+                None,
+                &[Requirement::Selection],
+            ),
+            &mut NoPrompter,
+            false,
+            &mut stdin,
+        )
+        .unwrap();
+
+        assert_eq!(request.file.as_deref(), Some("(stdin)"));
+        assert!(request.document.unwrap().contains("alpha page"));
+    }
+
+    #[test]
+    fn scopes_pdf_documents_to_pages() {
+        let pdf = crate::pdf::sample_pdf(&["alpha page", "beta page", "gamma page"]);
+        let (_directory, path) = temp_byte_file("paper.pdf", &pdf);
+        let mut stdin = Cursor::new(Vec::new());
+        let mut options = options(Some(&path), None, None, &[Requirement::Context]);
+        options.pages = Some(PageRange { start: 2, end: 3 });
+        let request = resolve_request(options, &mut NoPrompter, false, &mut stdin).unwrap();
+
+        let document = request.document.unwrap();
+        assert!(!document.contains("alpha page"), "{document:?}");
+        assert!(document.contains("beta page"), "{document:?}");
+        assert!(document.contains("gamma page"), "{document:?}");
+    }
+
+    #[test]
+    fn reports_a_page_range_past_the_end() {
+        let pdf = crate::pdf::sample_pdf(&["alpha page"]);
+        let (_directory, path) = temp_byte_file("paper.pdf", &pdf);
+        let mut stdin = Cursor::new(Vec::new());
+        let mut options = options(Some(&path), None, None, &[Requirement::Context]);
+        options.pages = Some(PageRange::single(2));
+        let error = resolve_request(options, &mut NoPrompter, false, &mut stdin).unwrap_err();
+
+        assert!(error.to_string().contains("out of bounds"), "{error}");
+        assert!(error.to_string().contains("1 pages"), "{error}");
+    }
+
+    #[test]
+    fn rejects_pages_for_non_pdf_documents() {
+        let (_directory, path) = temp_file("notes.md", "alpha");
+        let mut stdin = Cursor::new(Vec::new());
+        let mut options = options(Some(&path), None, None, &[Requirement::Context]);
+        options.pages = Some(PageRange::single(1));
+        let error = resolve_request(options, &mut NoPrompter, false, &mut stdin).unwrap_err();
+
+        assert!(
+            error.to_string().contains("--pages requires a PDF"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn rejects_pdfs_without_a_text_layer() {
+        let pdf = crate::pdf::sample_pdf(&[""]);
+        let (_directory, path) = temp_byte_file("scan.pdf", &pdf);
+        let mut stdin = Cursor::new(Vec::new());
+        let error = resolve_request(
+            options(Some(&path), None, None, &[Requirement::Context]),
+            &mut NoPrompter,
+            false,
+            &mut stdin,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("no extractable text"), "{error}");
+    }
+
+    #[test]
+    fn rejects_binary_files_that_are_not_pdfs() {
+        let (_directory, path) = temp_byte_file("blob.docx", &[0xff, 0xfe, 0x00]);
+        let mut stdin = Cursor::new(Vec::new());
+        let error = resolve_request(
+            options(Some(&path), None, None, &[Requirement::Context]),
+            &mut NoPrompter,
+            false,
+            &mut stdin,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("is not UTF-8 text"), "{error}");
+        assert!(error.to_string().contains("plain text and PDF"), "{error}");
     }
 
     #[test]

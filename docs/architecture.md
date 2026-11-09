@@ -58,9 +58,11 @@ The terminal commands (`explain`, `ask`, `translate`, `summarize`, `do`) build t
 - A file is read as the document. `-` means stdin.
 - With no file and piped stdin, the piped text becomes the document.
 - With no file and a terminal stdin, Docent prompts for a file.
+- Inputs whose bytes start with `%PDF-` are decoded with `pdf-extract`; `--page` and `--pages` select 1-based pages before the text is joined.
 - Line ranges are 1-based and inclusive and are converted to byte offsets through a line index.
-- `--phrase` uses the first exact phrase occurrence and fails when the phrase is absent.
+- `--phrase` uses the first phrase occurrence and fails when the phrase is absent.
 - `--text` supplies a selection without line numbers. Offsets are resolved when the text occurs in the document.
+- Phrase and text matching also succeeds across line breaks and hyphenated line breaks by collapsing whitespace; offsets still index the original document.
 - CRLF is normalized to LF before the line index is built, so offsets and selections stay consistent.
 
 Prompts use a small `Prompter` trait. The real implementation reads from stdin and writes labels to stderr; tests substitute a scripted implementation. Prompts only run when stdin is a terminal, so a piped document is never consumed as prompt input. The profile is loaded before input resolution, which lets its `requires` list drive file, selection, and question prompts.
@@ -211,7 +213,7 @@ The stream ends with `done` or an error. A stream that ends without either is tr
 | `0` | Success. |
 | `2` | Configuration or usage error: bad TOML, missing API key variable, invalid settings, missing profile. |
 | `3` | Provider or network error: HTTP error, timeout, malformed response, empty response. |
-| `4` | Invalid input: malformed request JSON, missing required selection or question, unreadable document, empty document, phrase not found, line range out of bounds. |
+| `4` | Invalid input: malformed request JSON, missing required selection or question, unreadable document, empty document, phrase not found, line or page range out of bounds, unreadable PDF, PDF without a text layer. |
 
 Diagnostics and prompt labels go to stderr. The answer goes to stdout. A CLI invocation that is piped into another program can therefore keep the two separate.
 
@@ -236,7 +238,8 @@ These names are easy to confuse. Use them consistently.
 | `docent` | The product, the CLI binary, and the library crate. |
 | `provider` | The service connection, configured under `[provider]`: OpenAI, Anthropic, OpenRouter, or a local server. |
 | `wire_format` | The request shape, `openai` or `anthropic`. It is not the provider itself. |
-| `input` | The terminal input adapters in `src/input.rs`: files, stdin, line ranges, phrases, and pasted text. |
+| `input` | The terminal input adapters in `src/input.rs`: files, stdin, line ranges, phrases, pasted text, and PDF page ranges. |
+| `pdf` | The PDF text extractor in `src/pdf.rs`: magic-byte detection and page-range decoding. |
 | `source` | The caller recorded in history (`cli`, `nvim`, `qutebrowser`, `firefox`, `zathura`), set by `--source`. It is not the input adapter. |
 | `storage` | The SQLite store in `src/storage.rs` for run history and the answer cache. |
 | `run history` | The user-facing record of provider calls, configured by `[history]` and `--no-history`. |

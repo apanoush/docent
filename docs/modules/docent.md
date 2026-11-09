@@ -11,7 +11,8 @@ The crate has two binary targets and a library target. `src/main.rs` is the CLI:
 | `defaults` | `include_str!` copies of the shipped `config.toml`, `answer.css`, and profiles. |
 | `profile` | Profile schema, validation, placeholder parsing, discovery, and metadata for `docent profiles`. |
 | `request` | The JSON request type and selection range resolution. |
-| `input` | Terminal input adapters: file and stdin documents, line ranges, phrase and text selection, prompts, and request construction. |
+| `input` | Terminal input adapters: file and stdin documents, line and page ranges, phrase and text selection, prompts, and request construction. |
+| `pdf` | PDF magic-byte detection and page-range text extraction with `pdf-extract`. |
 | `context` | Context modes, windowing, line alignment, selection and truncation markers. |
 | `prompt` | Effective settings precedence and strict placeholder rendering. |
 | `provider` | Provider dispatch, shared HTTP code, error extraction, streaming types. |
@@ -73,6 +74,10 @@ pub fn resolve_request(
     stdin: &mut dyn Read,
 ) -> Result<Request, DocentError>;
 
+// pdf
+pub fn is_pdf(bytes: &[u8]) -> bool;
+pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<String, String>;
+
 // context
 pub fn build(request: &Request, options: ContextOptions) -> ContextResult;
 
@@ -120,7 +125,11 @@ Profile validation covers TOML fields, numeric ranges, placeholder syntax, requi
 
 ## Terminal input and output
 
-`input::Document` normalizes CRLF and stores a byte range for every line. Line selections are sliced from the first line start to the last line end, so they include newlines between lines but not the trailing newline after the final line. `--phrase` uses the first exact phrase occurrence and reports the count when it is ambiguous; `--text` resolves offsets only when the text occurs in the document.
+`input::Document` normalizes CRLF and stores a byte range for every line. Line selections are sliced from the first line start to the last line end, so they include newlines between lines but not the trailing newline after the final line. `--phrase` uses the first matching occurrence and reports the count when it is ambiguous; `--text` resolves offsets when the text occurs in the document.
+
+Files and stdin are read as bytes. Inputs starting with `%PDF-` go through `pdf::extract`, which decodes every page or only the requested `--page`/`--pages` range before joining them into one document. PDF extraction failures, page ranges past the end, `--pages` on a non-PDF, and PDFs without a text layer become input errors with a specific message. Other inputs must be UTF-8 text.
+
+`Document::find` tries an exact match first, then falls back to a tolerant search that collapses whitespace runs and joins hyphenated line breaks. Offsets map back to the original text, so a passage copied out of a wrapped PDF still centers the context window. When a tolerant match succeeds for `--text` or `--phrase`, the request uses the document slice as the selection so the stored offsets remain valid.
 
 `input::resolve_request` reads a file or stdin, applies the profile's `requires` list, and prompts through the `Prompter` trait when stdin is a terminal. `TerminalPrompter` writes labels to stderr and reads one line from stdin. `NoPrompter` is used for piped input, so a document on stdin is never consumed as prompt answers.
 
@@ -138,7 +147,7 @@ Streaming clients parse SSE through `provider::stream::stream_sse`. The decoder 
 
 Rust tests are split into four layers:
 
-- Unit tests in each module for parsing, validation, windowing, rendering, request bodies, response parsing, SSE decoding, settings precedence, line ranges, prompt sequencing, terminal request construction, Markdown sanitization, cache keys and eviction, and viewer page/server behavior.
+- Unit tests in each module for parsing, validation, windowing, rendering, request bodies, response parsing, SSE decoding, settings precedence, line and page ranges, PDF detection and extraction, tolerant phrase matching, prompt sequencing, terminal request construction, Markdown sanitization, cache keys and eviction, and viewer page/server behavior.
 - Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, the bare getting-started output, and viewer flag conflicts.
 - Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, selection errors, input errors, the `html` event, the qutebrowser and Firefox viewers with a fake browser, and cache reuse, bypass, refresh, invalidation, and uncached failures. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
 - Native host tests in `src/native_host.rs` with a fake `docent` shell script for framing, partial reads, oversized messages, invalid requests, spawn failures, line forwarding, exit codes, `exec`, and `css`.

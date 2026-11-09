@@ -53,6 +53,16 @@ docent summarize paper.md
 docent summarize paper.md --lines 12:40
 ```
 
+Read a PDF directly, or only some of its pages:
+
+```bash
+docent summarize paper.pdf
+docent summarize paper.pdf --pages 1:4
+docent ask paper.pdf --text "a passage from the PDF" --question "Why?"
+```
+
+PDFs are decoded with a built-in text extractor, so no external tools are needed. `--page` and `--pages` are 1-based and inclusive and scope the document before `--lines`, `--text`, or `--phrase` apply. PDFs without a text layer, such as scanned pages, are rejected; run OCR first if the document is image-only.
+
 Use a pasted passage with a file as context:
 
 ```bash
@@ -81,7 +91,7 @@ Set `[viewer] default = "firefox"` in `config.toml` to stop passing `--viewer` o
 
 `--viewer firefox` opens a standalone local answer page. It does not use the Docent Firefox extension; the extension remains the way to capture a page selection from inside Firefox.
 
-When a run has no selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. Use `--context-mode full` to send everything, raise `context.max_chars`, or narrow the subject with `--lines`.
+When a run has no selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. Use `--context-mode full` to send everything, raise `context.max_chars`, or narrow the subject with `--lines` or `--pages`.
 
 The JSON stdin interface used by Neovim, qutebrowser, Firefox, and zathura remains available:
 
@@ -168,7 +178,7 @@ Select text with the mouse and press `<C-e>`. The answer streams into a terminal
 
 ## Status
 
-Early development, version 0.1.0. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, Firefox adapter, and zathura adapter work. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
+Early development, version 0.1.0. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, Firefox adapter, and zathura adapter work. PDF input is text-extraction only; layout reconstruction, OCR, and password-protected PDFs are not supported. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
 
 ## Documentation
 
