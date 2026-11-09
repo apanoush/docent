@@ -341,6 +341,73 @@ mod tests {
     }
 
     #[test]
+    fn rejects_a_non_get_method() {
+        let (mut server, path) = start("page");
+        let mut stream = TcpStream::connect(server.addr).unwrap();
+        write!(
+            stream,
+            "POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n"
+        )
+        .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+
+        assert!(response.starts_with("HTTP/1.1 405 Method Not Allowed"));
+        assert!(response.contains("method not allowed"));
+        server.stop();
+    }
+
+    #[test]
+    fn rejects_an_oversized_request_line() {
+        let (mut server, _) = start("page");
+        let mut stream = TcpStream::connect(server.addr).unwrap();
+        write!(
+            stream,
+            "GET /{} HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            "a".repeat(9000)
+        )
+        .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+
+        assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
+        server.stop();
+    }
+
+    #[test]
+    fn rejects_a_second_event_stream() {
+        let (mut server, path) = start("page");
+        let addr = server.addr;
+        let events_path = format!("{path}events");
+        let client_path = events_path.clone();
+        let client = thread::spawn(move || {
+            let mut stream = TcpStream::connect(addr).unwrap();
+            write!(
+                stream,
+                "GET {client_path} HTTP/1.1\r\nHost: localhost\r\n\r\n"
+            )
+            .unwrap();
+            let mut response = String::new();
+            stream.read_to_string(&mut response).unwrap();
+            response
+        });
+
+        assert!(server.wait_connected(Duration::from_secs(2)));
+        let second = request(&server, &events_path);
+        assert!(second.starts_with("HTTP/1.1 409 Conflict"));
+        assert!(second.contains("already connected"));
+
+        server
+            .send(ServerEvent::Done {
+                label: "docent: explain".to_string(),
+            })
+            .unwrap();
+        server.wait_finished(Duration::from_secs(2));
+        client.join().unwrap();
+        server.stop();
+    }
+
+    #[test]
     fn tokens_differ_between_servers() {
         let (mut first, first_path) = start("page");
         let (mut second, second_path) = start("page");

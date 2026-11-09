@@ -1947,6 +1947,62 @@ fn errors_are_not_cached() {
 }
 
 #[test]
+fn cached_plain_stream_replays_the_answer() {
+    let server = MockServer::start(MockResponse::sse(
+        200,
+        [
+            "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
+            "data: [DONE]\n\n",
+        ]
+        .concat(),
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    enable_cache(&dir);
+    let notes = write_notes(temp.path(), "alpha\nbeta gamma\ndelta\n");
+    let args = ["explain", notes.to_str().unwrap(), "--lines", "2:3"];
+
+    let first = run(&dir, &args, "", Some("secret"));
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+    assert_eq!(String::from_utf8_lossy(&first.stdout), "Hello world\n");
+
+    let second = run(&dir, &args, "", None);
+    assert!(second.status.success(), "stderr: {}", stderr(&second));
+
+    assert_eq!(server.requests().len(), 1);
+    assert_eq!(String::from_utf8_lossy(&second.stdout), "Hello world\n");
+}
+
+#[test]
+fn plain_stream_ends_with_a_newline_when_the_provider_fails() {
+    let server = MockServer::start(MockResponse::sse(
+        200,
+        [
+            "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n",
+            "data: {\"error\":{\"message\":\"boom\"}}\n\n",
+        ]
+        .concat(),
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    let notes = write_notes(temp.path(), "alpha\nbeta\n");
+
+    let output = run(
+        &dir,
+        &["explain", notes.to_str().unwrap(), "--lines", "1:1"],
+        "",
+        Some("secret"),
+    );
+
+    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "partial\n");
+    assert!(stderr(&output).contains("boom"));
+}
+
+#[test]
 fn ndjson_replays_a_cached_answer() {
     let server = MockServer::start(MockResponse::sse(
         200,

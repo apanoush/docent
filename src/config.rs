@@ -923,4 +923,56 @@ temperature = 0.1
         let error = init(&path, false).unwrap_err();
         assert!(matches!(error, DocentError::ConfigDirNotDirectory(_)));
     }
+
+    #[test]
+    fn config_rejects_empty_and_out_of_range_values() {
+        struct Case {
+            expected: &'static str,
+            mutate: fn(&mut Config),
+        }
+
+        let cases = [
+            Case {
+                expected: "api.base_url must not be empty",
+                mutate: |config| config.api.base_url.clear(),
+            },
+            Case {
+                expected: "api.model must not be empty",
+                mutate: |config| config.api.model.clear(),
+            },
+            Case {
+                expected: "api.timeout_secs must be greater than zero",
+                mutate: |config| config.api.timeout_secs = 0,
+            },
+            Case {
+                expected: "api.temperature must be between 0.0 and 2.0",
+                mutate: |config| config.api.temperature = 2.5,
+            },
+            Case {
+                expected: "context.max_chars must be greater than zero",
+                mutate: |config| config.context.max_chars = 0,
+            },
+            Case {
+                expected: "response.language must not be empty",
+                mutate: |config| config.response.language.clear(),
+            },
+            Case {
+                expected: "response.target_language must not be empty",
+                mutate: |config| config.response.target_language.clear(),
+            },
+        ];
+
+        for case in cases {
+            let mut config = Config::default();
+            (case.mutate)(&mut config);
+
+            let error = config.validate(Path::new("config.toml")).unwrap_err();
+
+            assert!(
+                error.to_string().contains(case.expected),
+                "missing {:?} in {error}",
+                case.expected
+            );
+        }
+    }
 }

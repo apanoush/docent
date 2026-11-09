@@ -1276,3 +1276,53 @@ fn print_init_report(report: &InitReport) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_source_accepts_a_plugin_name() {
+        assert_eq!(parse_source(" my-plugin ").unwrap(), "my-plugin");
+        assert_eq!(parse_source("plugin_1.2").unwrap(), "plugin_1.2");
+        assert_eq!(parse_source(&"a".repeat(64)).unwrap(), "a".repeat(64));
+    }
+
+    #[test]
+    fn parse_source_rejects_unusable_names() {
+        let cases = [
+            ("", "source must not be empty"),
+            ("   ", "source must not be empty"),
+            ("bad source", "source may only contain letters"),
+            ("bad/source", "source may only contain letters"),
+        ];
+
+        for (value, expected) in cases {
+            let error = parse_source(value).unwrap_err();
+            assert!(error.contains(expected), "missing {expected:?} in {error}");
+        }
+
+        assert_eq!(
+            parse_source(&"a".repeat(65)).unwrap_err(),
+            "source must be at most 64 characters"
+        );
+    }
+
+    #[test]
+    fn parse_line_number_accepts_positive_numbers() {
+        assert_eq!(parse_line_number_value("7").unwrap(), 7);
+        assert_eq!(parse_line_number_value(" 12 ").unwrap(), 12);
+    }
+
+    #[test]
+    fn parse_line_number_rejects_zero_and_non_numbers() {
+        assert_eq!(
+            parse_line_number_value("0").unwrap_err(),
+            "line numbers start at 1"
+        );
+        assert_eq!(
+            parse_line_number_value("abc").unwrap_err(),
+            "'abc' is not a line number"
+        );
+    }
+}
