@@ -8,7 +8,7 @@ The adapter lives in `plugins/zathura/`, separate from the Rust crate. It has no
 |---|---|
 | `docent-zathura` | Executable entry point. Adds the package directory to `sys.path` and calls `cli.main`. |
 | `docent_zathura/clipboard.py` | Selects and runs `wl-paste`, `xclip`, or `xsel`; returns the selected text. |
-| `docent_zathura/pdf.py` | Page window calculation and `pdftotext` invocation. |
+| `docent_zathura/pdf.py` | Page window calculation and `docent extract` invocation. |
 | `docent_zathura/request.py` | Builds the JSON request, document-only requests for summarize, and optional UTF-8 byte offsets. |
 | `docent_zathura/render.py` | Parses NDJSON, prints deltas, handles errors, and keeps the terminal open. |
 | `docent_zathura/logs.py` | Extracts `[WARN ...]` lines from CLI stderr, without the log prefix. |
@@ -32,11 +32,11 @@ The capture process uses the JSON stdin contract rather than `docent explain --t
 
 ## Capture
 
-`clipboard.py` prefers `wl-paste` when `WAYLAND_DISPLAY` or `XDG_SESSION_TYPE=wayland` is set, then `xclip` and `xsel` when `DISPLAY` is set. With no explicit target it reads both clipboards and prefers the longest text that occurs in the extracted page, using an exact match before a whitespace-normalized one. That stops a short stale token from shadowing the selection. When neither occurs in the page, it uses the longer text. `--primary` and `--clipboard` force a target. The page check avoids sending unrelated clipboard text when the configured clipboard is empty or stale. Matching joins hyphenated line breaks, so `enhanc-\ning` matches `enhancing` in the pdftotext output.
+`clipboard.py` prefers `wl-paste` when `WAYLAND_DISPLAY` or `XDG_SESSION_TYPE=wayland` is set, then `xclip` and `xsel` when `DISPLAY` is set. With no explicit target it reads both clipboards and prefers the longest text that occurs in the extracted page, using an exact match before a whitespace-normalized one. That stops a short stale token from shadowing the selection. When neither occurs in the page, it uses the longer text. `--primary` and `--clipboard` force a target. The page check avoids sending unrelated clipboard text when the configured clipboard is empty or stale. Matching joins hyphenated line breaks, so `enhanc-\ning` matches `enhancing` in the extracted output.
 
-`pdf.py` computes `(max(1, page - radius), page + radius)` and runs `pdftotext -f START -l END FILE -`. It rejects empty output, which usually means the page is scanned.
+`pdf.py` computes `(max(1, page - radius), page + radius)` and runs `docent extract FILE --pages START:END`. `docent extract` uses the same PDF reader as the terminal commands and clamps the end page, so a window around the last page does not need a page count. It rejects empty output, which usually means the page is scanned.
 
-`request.py` normalizes CRLF, strips a trailing newline from the selection, and adds `byte_start` and `byte_end` only when the selection occurs exactly in the UTF-8 document. The CLI revalidates the offsets and falls back to the first exact occurrence.
+`request.py` normalizes CRLF, strips a trailing newline from the selection, and adds `byte_start` and `byte_end` only when the selection occurs exactly in the UTF-8 document. The CLI revalidates the offsets and falls back to its whitespace-tolerant search.
 
 `cli.py` resolves `--docent` with `shutil.which`, then searches `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, and `/usr/bin`. This keeps desktop-launched zathura working when its `PATH` does not include the user's shell path.
 
@@ -66,7 +66,7 @@ Neovim adds the plugin path to the runtimepath, runs the viewer script, and the 
 
 ## Tests
 
-`tests/zathura/run.sh` runs pytest, ruff, and ty. The unit tests cover clipboard backend selection, automatic PRIMARY and CLIPBOARD matching, page windows and `pdftotext` arguments, request offsets, terminal argv building, NDJSON parsing, error paths, request-file cleanup, `docent` lookup, error dialogs, and CLI orchestration.
+`tests/zathura/run.sh` runs pytest, ruff, and ty. The unit tests cover clipboard backend selection, automatic PRIMARY and CLIPBOARD matching, page windows and `docent extract` arguments, request offsets, terminal argv building, NDJSON parsing, error paths, request-file cleanup, `docent` lookup, error dialogs, and CLI orchestration.
 
 `tests/zathura/e2e.sh` is a manual end-to-end check. It creates a small PDF with `ps2pdf`, puts a selection on the clipboard, runs the adapter with a fake terminal and a fake `docent`, and checks the streamed answer. It needs a display and a clipboard tool and is not part of `scripts/check.sh`.
 

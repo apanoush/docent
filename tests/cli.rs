@@ -1,6 +1,10 @@
+mod common;
+
 use std::fs;
+use std::io::Write;
 use std::process::{Command, Stdio};
 
+use common::sample_pdf;
 use serde_json::Value;
 
 fn docent() -> Command {
@@ -322,4 +326,117 @@ fn request_viewer_rejects_streaming_flags() {
         assert_eq!(output.status.code(), Some(4));
         assert!(stderr(&output).contains("browser viewers cannot be combined"));
     }
+}
+
+fn run_extract(args: &[&str], stdin: &[u8]) -> std::process::Output {
+    let config = tempfile::tempdir().unwrap();
+    let mut child = docent()
+        .args(["--config-dir", config.path().to_str().unwrap(), "extract"])
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(stdin).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn extract_prints_selected_pdf_pages() {
+    let temp = tempfile::tempdir().unwrap();
+    let paper = temp.path().join("paper.pdf");
+    fs::write(
+        &paper,
+        sample_pdf(&["alpha page", "beta page", "gamma page"]),
+    )
+    .unwrap();
+
+    let output = run_extract(&[paper.to_str().unwrap(), "--pages", "2:3"], b"");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("beta page"), "{text}");
+    assert!(text.contains("gamma page"), "{text}");
+    assert!(!text.contains("alpha page"), "{text}");
+}
+
+#[test]
+fn extract_clamps_the_end_page() {
+    let temp = tempfile::tempdir().unwrap();
+    let paper = temp.path().join("paper.pdf");
+    fs::write(&paper, sample_pdf(&["alpha page", "beta page"])).unwrap();
+
+    let output = run_extract(&[paper.to_str().unwrap(), "--pages", "2:99"], b"");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("beta page"), "{text}");
+    assert!(!text.contains("alpha page"), "{text}");
+}
+
+#[test]
+fn extract_prints_every_page_by_default() {
+    let temp = tempfile::tempdir().unwrap();
+    let paper = temp.path().join("paper.pdf");
+    fs::write(&paper, sample_pdf(&["alpha page", "beta page"])).unwrap();
+
+    let output = run_extract(&[paper.to_str().unwrap()], b"");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("alpha page"), "{text}");
+    assert!(text.contains("beta page"), "{text}");
+}
+
+#[test]
+fn extract_reads_a_pdf_from_stdin() {
+    let pdf = sample_pdf(&["from stdin"]);
+
+    let output = run_extract(&["-", "--page", "1"], &pdf);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("from stdin"), "{text}");
+}
+
+#[test]
+fn extract_prints_text_files_as_is() {
+    let temp = tempfile::tempdir().unwrap();
+    let notes = temp.path().join("notes.md");
+    fs::write(&notes, "alpha\nbeta\n").unwrap();
+
+    let output = run_extract(&[notes.to_str().unwrap()], b"");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "alpha\nbeta\n");
+}
+
+#[test]
+fn extract_rejects_a_start_page_past_the_end() {
+    let temp = tempfile::tempdir().unwrap();
+    let paper = temp.path().join("paper.pdf");
+    fs::write(&paper, sample_pdf(&["alpha page"])).unwrap();
+
+    let output = run_extract(&[paper.to_str().unwrap(), "--pages", "2:3"], b"");
+    assert_eq!(output.status.code(), Some(4));
+    assert!(
+        stderr(&output).contains("out of bounds"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn extract_rejects_pages_for_a_text_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let notes = temp.path().join("notes.md");
+    fs::write(&notes, "alpha\n").unwrap();
+
+    let output = run_extract(&[notes.to_str().unwrap(), "--pages", "1"], b"");
+    assert_eq!(output.status.code(), Some(4));
+    assert!(
+        stderr(&output).contains("--pages requires a PDF"),
+        "{}",
+        stderr(&output)
+    );
 }

@@ -34,6 +34,7 @@ const AFTER_HELP: &str = "Examples:
   docent init
 
 Machine interface:
+  docent extract paper.pdf --pages 2:4
   docent request --profile explain < request.json";
 
 /// Command line arguments.
@@ -106,6 +107,8 @@ pub enum Command {
     Summarize(HumanArgs),
     /// Run a custom profile.
     Do(DoArgs),
+    /// Print a document's text, decoding PDFs.
+    Extract(ExtractArgs),
     /// Read a JSON request from stdin (machine interface).
     Request(RequestArgs),
     /// Print the resolved config directory.
@@ -310,6 +313,18 @@ impl PageArgs {
     }
 }
 
+/// Arguments for `docent extract`.
+#[derive(Debug, Args)]
+pub struct ExtractArgs {
+    /// Document file. Use - for stdin.
+    #[arg(value_name = "FILE")]
+    pub file: PathBuf,
+
+    /// Page options for PDF documents.
+    #[command(flatten)]
+    pub pages: PageArgs,
+}
+
 /// Arguments for `docent request`.
 #[derive(Debug, Args)]
 pub struct RequestArgs {
@@ -446,6 +461,7 @@ pub fn run() -> Result<(), DocentError> {
             )?;
         }
         Command::Do(args) => run_do(&config_dir, args, &source, record_history, cache_mode)?,
+        Command::Extract(args) => run_extract(args)?,
         Command::Request(args) => {
             run_request(&config_dir, args, &source, record_history, cache_mode)?;
         }
@@ -695,6 +711,7 @@ fn resolve_human_request(
     let options = input::RequestOptions {
         file,
         pages,
+        clamp_pages: false,
         selection: selection.into_arg(),
         question,
         requires: &profile.requires,
@@ -709,6 +726,35 @@ fn resolve_human_request(
         let mut prompter = NoPrompter;
         input::resolve_request(options, &mut prompter, false, &mut stdin)
     }
+}
+
+fn run_extract(args: ExtractArgs) -> Result<(), DocentError> {
+    let stdin_is_terminal = std::io::stdin().is_terminal();
+    let options = input::RequestOptions {
+        file: Some(&args.file),
+        pages: args.pages.range(),
+        clamp_pages: true,
+        selection: None,
+        question: None,
+        requires: &[],
+    };
+    let request = if stdin_is_terminal {
+        let mut empty = std::io::empty();
+        input::resolve_request(options, &mut NoPrompter, true, &mut empty)?
+    } else {
+        let mut stdin = std::io::stdin().lock();
+        input::resolve_request(options, &mut NoPrompter, false, &mut stdin)?
+    };
+
+    let text = request.document.unwrap_or_default();
+    let mut stdout = std::io::stdout().lock();
+    stdout
+        .write_all(text.as_bytes())
+        .map_err(DocentError::WriteStdout)?;
+    if !text.ends_with('\n') {
+        stdout.write_all(b"\n").map_err(DocentError::WriteStdout)?;
+    }
+    Ok(())
 }
 
 fn run_request(

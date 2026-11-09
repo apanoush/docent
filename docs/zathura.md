@@ -1,13 +1,12 @@
 # Zathura adapter
 
-The zathura adapter reads the selected text from the system clipboard, extracts the current page and its neighbors with `pdftotext`, calls the `docent` CLI, and streams the answer into a terminal window, a Neovim float, or a qutebrowser window or tab. It is an external adapter, not a zathura plugin: zathura's plugin API only loads document backends, so the integration uses a `zathurarc` `exec` binding.
+The zathura adapter reads the selected text from the system clipboard, extracts the current page and its neighbors through the `docent` CLI, and streams the answer into a terminal window, a Neovim float, or a qutebrowser window or tab. It is an external adapter, not a zathura plugin: zathura's plugin API only loads document backends, so the integration uses a `zathurarc` `exec` binding.
 
 ## Requirements
 
 - zathura with `$FILE` and `$PAGE` expansion in `exec`. The adapter targets zathura 2026.10.4 and the poppler plugin.
 - Python 3.10 or newer for the adapter script.
-- `pdftotext` from poppler-utils. The adapter is PDF only.
-- `docent` installed and available on `PATH`, or in `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, or `/usr/bin`. Use `--docent` for any other location.
+- `docent` installed and available on `PATH`, or in `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, or `/usr/bin`. Use `--docent` for any other location. The CLI must include the `extract` subcommand; reinstall or update it if PDF capture fails with `unexpected argument 'extract'`.
 - A clipboard tool: `wl-paste` on Wayland, or `xclip` or `xsel` on X11.
 - A terminal emulator: `foot`, `kitty`, `alacritty`, or `xterm`, or a command in `DOCENT_TERMINAL` or `--terminal`.
 - Neovim 0.10 or newer for `--viewer nvim`.
@@ -86,9 +85,9 @@ Quote values that contain spaces inside the quoted `exec` command. Zathura's `ex
 ## What gets captured
 
 - The selection is read from zathura's clipboard. Zathura copies it when a mouse selection ends. `exec` has no `$SELECTION` placeholder. The adapter checks both clipboards and prefers the longest text that appears in the extracted page, exact match first and whitespace-normalized match second. That keeps a short stale token from shadowing the actual selection. A CLIPBOARD-only text that does not appear on the page is rejected unless you force it with `--clipboard`. Hyphenated line breaks are joined for matching, so a selection containing `enhanc-\ning` still matches `enhancing` in the PDF text.
-- The document is the current page plus `--context-pages` pages on each side, extracted with `pdftotext -f START -l END`. `pdftotext` clamps ranges beyond the last page, so the adapter does not need a page count.
+- The document is the current page plus `--context-pages` pages on each side, extracted with `docent extract FILE --pages START:END`. `docent extract` clamps the end of the range to the last page, so the adapter does not need a page count.
 - The file label is `<name> (page N)`, not the full path, so the provider does not see your home directory.
-- Byte offsets are included only when the selection appears exactly in the extracted text. Otherwise the CLI falls back to the first exact occurrence. With the default one-page context window, the extracted text is usually under the CLI's 32k `auto` budget, so the whole window is sent even when the exact selection is not found.
+- Byte offsets are included only when the selection appears exactly in the extracted text. Otherwise the CLI locates the selection with its whitespace-tolerant search, including hyphenated line breaks. With the default one-page context window, the extracted text is usually under the CLI's 32k `auto` budget, so the whole window is sent even when the exact selection is not found.
 
 ## Answer viewers
 
@@ -114,7 +113,9 @@ The terminal viewer and Neovim viewer use a separate terminal window, not a zath
 
 - `no text selected`: select text with the mouse first. The adapter checks both clipboards; if neither contains the selection, select again or pass `--primary` or `--clipboard`.
 - `the CLIPBOARD selection does not appear on this page`: the clipboard holds unrelated text. Select the passage again, or force the target with `--clipboard` if the text extraction differs from the viewer.
-- `pdftotext not found`: install poppler-utils.
+- `docent not found`: use an absolute `--docent` path or fix `PATH` for the process that starts zathura.
+- `unexpected argument 'extract'`: the installed `docent` predates PDF extraction through the CLI. Reinstall or update it.
+- `docent extract failed` or a page-range error: check that the file is a readable PDF with a text layer.
 - `no text layer`: the PDF is scanned or the page has no text. OCR and vision input are not implemented.
 - `no terminal emulator found`: set `DOCENT_TERMINAL` or pass `--terminal`.
 - `nvim not found`: install Neovim or pass `--nvim` with an absolute path.

@@ -8,7 +8,7 @@ Docent has five pieces:
 - `plugins/nvim/`, a Neovim plugin that captures the selection and buffer, calls the CLI asynchronously, and streams the answer into a floating window.
 - `plugins/qutebrowser/`, a qutebrowser adapter that captures the page selection and rendered text, calls the CLI asynchronously, and streams the answer into a new tab.
 - `plugins/firefox/`, a Firefox extension plus a native messaging host that captures the page selection and rendered text and streams the answer into a new tab.
-- `plugins/zathura/`, a zathura adapter that reads the selection from the clipboard, extracts the current page with `pdftotext`, calls the CLI, and streams the answer into a terminal window, a Neovim float, or a qutebrowser window or tab.
+- `plugins/zathura/`, a zathura adapter that reads the selection from the clipboard, extracts the current page and its neighbors through the `docent` CLI, and streams the answer into a terminal window, a Neovim float, or a qutebrowser window or tab.
 
 ## Why
 
@@ -16,7 +16,7 @@ Most lookup tools treat a word or phrase in isolation. Docent sends the selectio
 
 ## Install
 
-Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, the Firefox adapter needs Firefox 140 or newer, and the zathura adapter needs zathura plus `pdftotext`. The CLI browser viewers need qutebrowser 3.7 or newer for `--viewer qutebrowser`, and Firefox with the standard `--new-tab`, `--new-window`, and `--private-window` flags for `--viewer firefox`. The zathura `--viewer nvim` option needs Neovim 0.10 or newer. The adapter tests need Node 18 or newer.
+Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, the Firefox adapter needs Firefox 140 or newer, and the zathura adapter needs zathura. The CLI browser viewers need qutebrowser 3.7 or newer for `--viewer qutebrowser`, and Firefox with the standard `--new-tab`, `--new-window`, and `--private-window` flags for `--viewer firefox`. The zathura `--viewer nvim` option needs Neovim 0.10 or newer. The adapter tests need Node 18 or newer.
 
 ```bash
 cargo install --path .
@@ -99,7 +99,7 @@ The JSON stdin interface used by Neovim, qutebrowser, Firefox, and zathura remai
 printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence using attention.","byte_start":2,"byte_end":13,"file":"notes.md"}' | docent request --profile explain
 ```
 
-Inspect the exact prompt without calling the provider with `--print-prompt`, or stream newline-delimited events with `--stream`. Add `--html` with `--stream` to include the final answer as rendered HTML before the `done` event; the browser adapters use this. Run `docent --help` for the terminal commands and `docent request --help` for the machine interface.
+Inspect the exact prompt without calling the provider with `--print-prompt`, or stream newline-delimited events with `--stream`. Add `--html` with `--stream` to include the final answer as rendered HTML before the `done` event; the browser adapters use this. `docent extract FILE --pages START:END` prints the text the CLI would send, which is useful for checking PDF extraction. Run `docent --help` for the terminal commands and `docent request --help` for the machine interface.
 
 Every provider run is recorded in a local SQLite database by default, including the prompt, answer, model, parameters, token usage, and source. The database lives in the platform data directory, for example `~/.local/share/docent/docent.db` on Linux. Set `history.database` to move it, `history.enabled = false` to disable it, or pass `--no-history` for one run. See [run history](docs/history.md).
 

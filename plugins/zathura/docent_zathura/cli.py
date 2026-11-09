@@ -199,7 +199,8 @@ def _capture(args: argparse.Namespace) -> int:
         raise ValueError("context pages must not be negative")
 
     start, end = page_window(args.page, args.context_pages)
-    document = extract_text(path, start, end)
+    docent_cmd = find_docent(args.docent)
+    document = extract_text(path, start, end, docent_cmd)
 
     target = None
     if args.clipboard:
@@ -222,7 +223,6 @@ def _capture(args: argparse.Namespace) -> int:
         request = build_request(
             read_best_selection(document, target), document, label, question
         )
-    docent_cmd = find_docent(args.docent)
 
     payload = {
         "profile": getattr(args, "profile", args.command),

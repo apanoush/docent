@@ -37,7 +37,9 @@ def capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     monkeypatch.setattr(cli, "launch_terminal", fake_launch)
     monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
-    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(
+        cli, "extract_text", lambda path, start, end, docent_cmd: "alpha beta"
+    )
     monkeypatch.setattr(cli, "detect_terminal", lambda: "foot")
     return captured
 
@@ -208,7 +210,9 @@ def test_capture_launches_nvim_viewer(
 
     monkeypatch.setattr(cli, "launch_terminal", fake_launch)
     monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
-    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(
+        cli, "extract_text", lambda path, start, end, docent_cmd: "alpha beta"
+    )
     monkeypatch.setattr(cli, "detect_terminal", lambda: "foot")
     monkeypatch.setattr(cli, "find_docent", lambda value: "/home/me/.local/bin/docent")
     monkeypatch.setattr(cli, "_resolve_executable", lambda value: "/usr/bin/nvim")
@@ -230,6 +234,40 @@ def test_capture_launches_nvim_viewer(
         assert payload["request"]["selection"] == "alpha"
     finally:
         shutil.rmtree(request_file.parent, ignore_errors=True)
+
+
+def test_capture_extracts_with_resolved_docent(
+    pdf: Path, monkeypatch: pytest.MonkeyPatch, capture: dict[str, Any]
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake_extract(path: Path, start: int, end: int, docent_cmd: str) -> str:
+        seen.update(path=path, start=start, end=end, docent_cmd=docent_cmd)
+        return "alpha beta"
+
+    monkeypatch.setattr(cli, "extract_text", fake_extract)
+    monkeypatch.setattr(cli, "find_docent", lambda value: "/home/me/.local/bin/docent")
+
+    code = cli.main(
+        [
+            "explain",
+            str(pdf),
+            "4",
+            "--context-pages",
+            "1",
+            "--terminal",
+            "foot",
+        ]
+    )
+
+    assert code == 0
+    assert seen == {
+        "path": pdf.resolve(),
+        "start": 3,
+        "end": 5,
+        "docent_cmd": "/home/me/.local/bin/docent",
+    }
+    _payload(capture)
 
 
 def test_capture_launches_qutebrowser_viewer(
@@ -256,7 +294,9 @@ def test_capture_launches_qutebrowser_viewer(
 
     monkeypatch.setattr(cli, "serve_qutebrowser", fake_serve)
     monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
-    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(
+        cli, "extract_text", lambda path, start, end, docent_cmd: "alpha beta"
+    )
     monkeypatch.setattr(cli, "find_docent", lambda value: "/home/me/.local/bin/docent")
     monkeypatch.setattr(
         cli, "_resolve_executable", lambda value: "/usr/bin/qutebrowser"
@@ -302,7 +342,9 @@ def test_capture_reads_qutebrowser_css(
 
     monkeypatch.setattr(cli, "serve_qutebrowser", fake_serve)
     monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
-    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(
+        cli, "extract_text", lambda path, start, end, docent_cmd: "alpha beta"
+    )
     monkeypatch.setattr(cli, "find_docent", lambda value: "/bin/docent")
     monkeypatch.setattr(
         cli, "_resolve_executable", lambda value: "/usr/bin/qutebrowser"
@@ -330,7 +372,9 @@ def test_capture_requires_qutebrowser(
     messages: list[str] = []
 
     monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
-    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(
+        cli, "extract_text", lambda path, start, end, docent_cmd: "alpha beta"
+    )
     monkeypatch.setattr(cli, "find_docent", lambda value: "/bin/docent")
     monkeypatch.setattr(cli, "_resolve_executable", lambda value: None)
     monkeypatch.setattr(cli, "_show_error", messages.append)
@@ -345,7 +389,9 @@ def test_capture_requires_nvim(pdf: Path, monkeypatch: pytest.MonkeyPatch) -> No
     messages: list[str] = []
 
     monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
-    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(
+        cli, "extract_text", lambda path, start, end, docent_cmd: "alpha beta"
+    )
     monkeypatch.setattr(cli, "detect_terminal", lambda: "foot")
     monkeypatch.setattr(cli, "_resolve_executable", lambda value: None)
     monkeypatch.setattr(cli, "_show_error", messages.append)
@@ -365,7 +411,9 @@ def test_capture_reports_clipboard_errors(
         raise ClipboardError("nothing selected")
 
     monkeypatch.setattr(cli, "read_best_selection", fail)
-    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha beta")
+    monkeypatch.setattr(
+        cli, "extract_text", lambda path, start, end, docent_cmd: "alpha beta"
+    )
     monkeypatch.setattr(cli, "_show_error", messages.append)
 
     code = cli.main(["explain", str(pdf), "1", "--terminal", "foot"])
@@ -380,7 +428,9 @@ def test_capture_requires_a_terminal(
     messages: list[str] = []
 
     monkeypatch.setattr(cli, "read_best_selection", lambda document, target: "alpha")
-    monkeypatch.setattr(cli, "extract_text", lambda path, start, end: "alpha")
+    monkeypatch.setattr(
+        cli, "extract_text", lambda path, start, end, docent_cmd: "alpha"
+    )
     monkeypatch.setattr(cli, "detect_terminal", lambda: None)
     monkeypatch.setattr(cli, "_show_error", messages.append)
 

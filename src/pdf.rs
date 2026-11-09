@@ -13,11 +13,22 @@ pub fn is_pdf(bytes: &[u8]) -> bool {
     bytes.starts_with(b"%PDF-")
 }
 
+/// Extracted text and the number of pages in the document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtractedText {
+    /// Joined page text.
+    pub text: String,
+    /// Total number of pages in the document.
+    pub pages: usize,
+}
+
 /// Extracts text from every page, or only from `pages` when given.
 ///
-/// Page numbers are 1-based and inclusive. The returned text joins pages with a
-/// blank line and strips the trailing newline each page contributes.
-pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<String, String> {
+/// Page numbers are 1-based and inclusive. The end of the range is clamped to
+/// the last page, matching `pdftotext -l`, so a caller can request a window
+/// around the final page without knowing the page count. A start past the last
+/// page is still an error.
+pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, String> {
     let page_texts = extract_text_from_mem_by_pages(bytes)
         .map_err(|error| format!("could not decode the PDF: {error}"))?;
     let page_count = page_texts.len();
@@ -32,18 +43,22 @@ pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<String, String>
     if range.start == 0 {
         return Err("page numbers start at 1".to_string());
     }
-    if range.end > page_count {
+    if range.start > page_count {
         return Err(format!(
             "page range {range} is out of bounds; the PDF has {page_count} pages"
         ));
     }
 
-    let text = page_texts[range.start - 1..range.end]
+    let end = range.end.min(page_count);
+    let text = page_texts[range.start - 1..end]
         .iter()
         .map(|page| page.trim_matches('\n'))
         .collect::<Vec<_>>()
         .join("\n\n");
-    Ok(text)
+    Ok(ExtractedText {
+        text,
+        pages: page_count,
+    })
 }
 
 #[cfg(test)]
@@ -111,25 +126,36 @@ mod tests {
     #[test]
     fn extracts_all_pages() {
         let pdf = sample_pdf(&["first page", "second page"]);
-        let text = extract(&pdf, None).unwrap();
-        assert!(text.contains("first page"), "{text:?}");
-        assert!(text.contains("second page"), "{text:?}");
-        assert!(text.find("first page") < text.find("second page"));
+        let extracted = extract(&pdf, None).unwrap();
+        assert_eq!(extracted.pages, 2);
+        assert!(extracted.text.contains("first page"), "{}", extracted.text);
+        assert!(extracted.text.contains("second page"), "{}", extracted.text);
+        assert!(extracted.text.find("first page") < extracted.text.find("second page"));
     }
 
     #[test]
     fn extracts_a_selected_page_range() {
         let pdf = sample_pdf(&["first page", "second page", "third page"]);
-        let text = extract(&pdf, Some(PageRange { start: 2, end: 3 })).unwrap();
-        assert!(!text.contains("first page"), "{text:?}");
-        assert!(text.contains("second page"), "{text:?}");
-        assert!(text.contains("third page"), "{text:?}");
+        let extracted = extract(&pdf, Some(PageRange { start: 2, end: 3 })).unwrap();
+        assert_eq!(extracted.pages, 3);
+        assert!(!extracted.text.contains("first page"), "{}", extracted.text);
+        assert!(extracted.text.contains("second page"), "{}", extracted.text);
+        assert!(extracted.text.contains("third page"), "{}", extracted.text);
     }
 
     #[test]
-    fn rejects_pages_past_the_end() {
+    fn clamps_the_end_page() {
         let pdf = sample_pdf(&["first page", "second page"]);
-        let error = extract(&pdf, Some(PageRange { start: 1, end: 3 })).unwrap_err();
+        let extracted = extract(&pdf, Some(PageRange { start: 2, end: 9 })).unwrap();
+        assert_eq!(extracted.pages, 2);
+        assert!(extracted.text.contains("second page"), "{}", extracted.text);
+        assert!(!extracted.text.contains("first page"), "{}", extracted.text);
+    }
+
+    #[test]
+    fn rejects_a_start_page_past_the_end() {
+        let pdf = sample_pdf(&["first page", "second page"]);
+        let error = extract(&pdf, Some(PageRange { start: 3, end: 4 })).unwrap_err();
         assert!(error.contains("out of bounds"), "{error}");
         assert!(error.contains("2 pages"), "{error}");
     }
@@ -137,7 +163,8 @@ mod tests {
     #[test]
     fn returns_empty_text_for_pages_without_a_text_layer() {
         let pdf = sample_pdf(&[""]);
-        assert!(extract(&pdf, None).unwrap().trim().is_empty());
+        let extracted = extract(&pdf, None).unwrap();
+        assert!(extracted.text.trim().is_empty());
     }
 
     #[test]

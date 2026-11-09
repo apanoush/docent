@@ -6,7 +6,7 @@ The crate has two binary targets and a library target. `src/main.rs` is the CLI:
 
 | Module | Responsibility |
 |---|---|
-| `cli` | Clap definitions, subcommand dispatch, terminal prompts, stdin request reading, output modes, NDJSON writing. |
+| `cli` | Clap definitions, subcommand dispatch (including `extract`), terminal prompts, stdin request reading, output modes, NDJSON writing. |
 | `config` | Config directory resolution, `config.toml` parsing and validation, default file creation. |
 | `defaults` | `include_str!` copies of the shipped `config.toml`, `answer.css`, and profiles. |
 | `profile` | Profile schema, validation, placeholder parsing, discovery, and metadata for `docent profiles`. |
@@ -76,7 +76,7 @@ pub fn resolve_request(
 
 // pdf
 pub fn is_pdf(bytes: &[u8]) -> bool;
-pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<String, String>;
+pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, String>;
 
 // context
 pub fn build(request: &Request, options: ContextOptions) -> ContextResult;
@@ -127,7 +127,9 @@ Profile validation covers TOML fields, numeric ranges, placeholder syntax, requi
 
 `input::Document` normalizes CRLF and stores a byte range for every line. Line selections are sliced from the first line start to the last line end, so they include newlines between lines but not the trailing newline after the final line. `--phrase` uses the first matching occurrence and reports the count when it is ambiguous; `--text` resolves offsets when the text occurs in the document.
 
-Files and stdin are read as bytes. Inputs starting with `%PDF-` go through `pdf::extract`, which decodes every page or only the requested `--page`/`--pages` range before joining them into one document. PDF extraction failures, page ranges past the end, `--pages` on a non-PDF, and PDFs without a text layer become input errors with a specific message. Other inputs must be UTF-8 text.
+Files and stdin are read as bytes. Inputs starting with `%PDF-` go through `pdf::extract`, which decodes every page or only the requested `--page`/`--pages` range before joining them into one document. `pdf::extract` clamps the end of a page range to the last page; the human commands still reject a range that ends past the document, while `docent extract` uses the clamped text. PDF extraction failures, out-of-range starts, `--pages` on a non-PDF, and PDFs without a text layer become input errors with a specific message. Other inputs must be UTF-8 text.
+
+`docent extract FILE [--page N | --pages START:END]` prints the document text to stdout. It is the machine interface to the same reader and is used by the zathura adapter for page windows; it is also useful for checking extraction by hand.
 
 `Document::find` tries an exact match first, then falls back to a tolerant search that collapses whitespace runs and joins hyphenated line breaks. Offsets map back to the original text, so a passage copied out of a wrapped PDF still centers the context window. When a tolerant match succeeds for `--text` or `--phrase`, the request uses the document slice as the selection so the stored offsets remain valid.
 

@@ -19,7 +19,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for tool in ps2pdf pdftotext python3; do
+for tool in ps2pdf python3; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         echo "missing $tool; skipping"
         exit 0
@@ -54,6 +54,14 @@ cat > "$tmp/docent" <<'PY'
 import json
 import sys
 
+if len(sys.argv) > 1 and sys.argv[1] == "extract":
+    pages = sys.argv[sys.argv.index("--pages") + 1]
+    if pages != "1:1":
+        print(f"unexpected page range: {pages}", file=sys.stderr)
+        raise SystemExit(2)
+    print("Page one alpha beta gamma.")
+    raise SystemExit(0)
+
 request = json.loads(sys.stdin.read())
 print(json.dumps({"type": "delta", "text": "Fake answer: " + request["selection"]}), flush=True)
 print(json.dumps({"type": "done", "model": "fake"}), flush=True)
@@ -85,7 +93,7 @@ esac
     --context-pages 0 </dev/null
 
 for _ in $(seq 1 50); do
-    [ -s "$FAKE_TERMINAL_OUTPUT" ] && break
+    grep -q "Fake answer: alpha beta" "$FAKE_TERMINAL_OUTPUT" 2>/dev/null && break
     sleep 0.1
 done
 

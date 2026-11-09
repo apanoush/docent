@@ -149,8 +149,8 @@ def matches_document(selection: str, document: str) -> bool:
     """Return whether ``selection`` occurs in ``document``.
 
     The exact check is tried first. A normalized check then covers line breaks,
-    spacing differences, and hyphenated line breaks between the viewer and
-    pdftotext.
+    spacing differences, and hyphenated line breaks between the viewer and the
+    extracted page text.
     """
     return _match_score(selection, document) is not None
 

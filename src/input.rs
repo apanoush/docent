@@ -352,6 +352,8 @@ pub struct RequestOptions<'a> {
     pub file: Option<&'a Path>,
     /// Page range for PDF documents.
     pub pages: Option<PageRange>,
+    /// Clamp a PDF page range to the last page instead of rejecting it.
+    pub clamp_pages: bool,
     /// Selection supplied on the command line.
     pub selection: Option<SelectionArg>,
     /// Question supplied on the command line.
@@ -373,6 +375,7 @@ pub fn resolve_request(
 
     let mut file = options.file.map(Path::to_path_buf);
     let pages = options.pages;
+    let clamp_pages = options.clamp_pages;
     let mut selection = options.selection;
     let mut question = options.question;
 
@@ -393,8 +396,14 @@ pub fn resolve_request(
     }
 
     let document = match &file {
-        Some(path) => Some(read_document(path, pages, stdin_is_terminal, stdin)?),
-        None if !stdin_is_terminal => Some(read_stdin(pages, stdin)?),
+        Some(path) => Some(read_document(
+            path,
+            pages,
+            clamp_pages,
+            stdin_is_terminal,
+            stdin,
+        )?),
+        None if !stdin_is_terminal => Some(read_stdin(pages, clamp_pages, stdin)?),
         None => None,
     };
 
@@ -537,6 +546,7 @@ fn parse_prompt_selection(value: &str) -> Result<SelectionArg, DocentError> {
 fn read_document(
     path: &Path,
     pages: Option<PageRange>,
+    clamp_pages: bool,
     stdin_is_terminal: bool,
     stdin: &mut dyn Read,
 ) -> Result<Document, DocentError> {
@@ -544,22 +554,26 @@ fn read_document(
         if stdin_is_terminal {
             return Err(DocentError::StdinIsTerminal);
         }
-        return read_stdin(pages, stdin);
+        return read_stdin(pages, clamp_pages, stdin);
     }
 
     let bytes = fs::read(path).map_err(|source| DocentError::ReadDocument {
         path: path.to_path_buf(),
         source,
     })?;
-    document_from_bytes(&path.display().to_string(), bytes, pages)
+    document_from_bytes(&path.display().to_string(), bytes, pages, clamp_pages)
 }
 
-fn read_stdin(pages: Option<PageRange>, stdin: &mut dyn Read) -> Result<Document, DocentError> {
+fn read_stdin(
+    pages: Option<PageRange>,
+    clamp_pages: bool,
+    stdin: &mut dyn Read,
+) -> Result<Document, DocentError> {
     let mut bytes = Vec::new();
     stdin
         .read_to_end(&mut bytes)
         .map_err(DocentError::ReadStdin)?;
-    document_from_bytes(STDIN_NAME, bytes, pages)
+    document_from_bytes(STDIN_NAME, bytes, pages, clamp_pages)
 }
 
 /// Builds a document from raw file or stdin bytes, decoding PDFs when the
@@ -568,17 +582,26 @@ fn document_from_bytes(
     name: &str,
     bytes: Vec<u8>,
     pages: Option<PageRange>,
+    clamp_pages: bool,
 ) -> Result<Document, DocentError> {
     if pdf::is_pdf(&bytes) {
-        let text = pdf::extract(&bytes, pages).map_err(|message| {
+        let extracted = pdf::extract(&bytes, pages).map_err(|message| {
             DocentError::Input(format!("failed to read PDF {name}: {message}"))
         })?;
-        if text.trim().is_empty() {
+        if let Some(range) = pages {
+            if !clamp_pages && range.end > extracted.pages {
+                return Err(DocentError::Input(format!(
+                    "failed to read PDF {name}: page range {range} is out of bounds; the PDF has {} pages",
+                    extracted.pages
+                )));
+            }
+        }
+        if extracted.text.trim().is_empty() {
             return Err(DocentError::Input(format!(
                 "{name} has no extractable text; the PDF may be scanned or image-only"
             )));
         }
-        return Ok(Document::from_text(name, text));
+        return Ok(Document::from_text(name, extracted.text));
     }
 
     if pages.is_some() {
@@ -646,6 +669,7 @@ mod tests {
         RequestOptions {
             file,
             pages: None,
+            clamp_pages: false,
             selection,
             question: question.map(str::to_string),
             requires,

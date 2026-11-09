@@ -33,13 +33,7 @@ def test_page_window_rejects_invalid_values() -> None:
         page_window(1, -1)
 
 
-def test_extract_text_builds_pdftotext_command(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setattr(
-        "docent_zathura.pdf.shutil.which",
-        lambda name: "/usr/bin/pdftotext",
-    )
+def test_extract_text_builds_docent_extract_command(tmp_path: Path) -> None:
     calls: list[Sequence[str]] = []
 
     def runner(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -47,92 +41,54 @@ def test_extract_text_builds_pdftotext_command(
         return _completed(argv, 0, "Page text\n")
 
     path = tmp_path / "paper.pdf"
-    text = extract_text(path, 2, 4, runner)
+    text = extract_text(path, 2, 4, "/usr/bin/docent", runner)
 
     assert text == "Page text"
     assert calls == [
-        ["pdftotext", "-f", "2", "-l", "4", str(path), "-"],
+        [
+            "/usr/bin/docent",
+            "extract",
+            str(path),
+            "--pages",
+            "2:4",
+        ],
     ]
 
 
-def test_extract_text_normalizes_crlf(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setattr(
-        "docent_zathura.pdf.shutil.which",
-        lambda name: "/usr/bin/pdftotext",
-    )
-
+def test_extract_text_normalizes_crlf(tmp_path: Path) -> None:
     def runner(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         return _completed(argv, 0, "a\r\nb\r\n")
 
-    assert extract_text(tmp_path / "paper.pdf", 1, 1, runner) == "a\nb"
+    assert extract_text(tmp_path / "paper.pdf", 1, 1, "docent", runner) == "a\nb"
 
 
-def test_extract_text_requires_pdftotext(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setattr("docent_zathura.pdf.shutil.which", lambda name: None)
-
-    with pytest.raises(PDFError, match="poppler-utils"):
-        extract_text(tmp_path / "paper.pdf", 1, 2)
-
-
-def test_extract_text_reports_pdftotext_failure(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setattr(
-        "docent_zathura.pdf.shutil.which",
-        lambda name: "/usr/bin/pdftotext",
-    )
-
+def test_extract_text_reports_missing_docent(tmp_path: Path) -> None:
     def runner(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        return _completed(argv, 1, "", "bad pdf")
+        raise FileNotFoundError("docent")
 
-    with pytest.raises(PDFError, match="bad pdf"):
-        extract_text(tmp_path / "paper.pdf", 1, 2, runner)
+    with pytest.raises(PDFError, match="docent not found"):
+        extract_text(tmp_path / "paper.pdf", 1, 2, "docent", runner)
 
 
-def test_extract_text_reports_timeout(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setattr(
-        "docent_zathura.pdf.shutil.which",
-        lambda name: "/usr/bin/pdftotext",
-    )
+def test_extract_text_reports_docent_failure(tmp_path: Path) -> None:
+    def runner(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return _completed(argv, 4, "", "page range 2:4 is out of bounds")
 
+    with pytest.raises(PDFError, match="out of bounds"):
+        extract_text(tmp_path / "paper.pdf", 2, 4, "docent", runner)
+
+
+def test_extract_text_reports_timeout(tmp_path: Path) -> None:
     def runner(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(argv, 30)
 
-    with pytest.raises(PDFError, match="pdftotext failed"):
-        extract_text(tmp_path / "paper.pdf", 1, 2, runner)
+    with pytest.raises(PDFError, match="docent extract failed"):
+        extract_text(tmp_path / "paper.pdf", 1, 2, "docent", runner)
 
 
-def test_extract_text_reports_missing_binary(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setattr(
-        "docent_zathura.pdf.shutil.which",
-        lambda name: "/usr/bin/pdftotext",
-    )
-
-    def runner(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        raise FileNotFoundError("pdftotext")
-
-    with pytest.raises(PDFError, match="pdftotext failed"):
-        extract_text(tmp_path / "paper.pdf", 1, 2, runner)
-
-
-def test_extract_text_rejects_empty_text(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setattr(
-        "docent_zathura.pdf.shutil.which",
-        lambda name: "/usr/bin/pdftotext",
-    )
-
+def test_extract_text_rejects_empty_text(tmp_path: Path) -> None:
     def runner(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         return _completed(argv, 0, " \n")
 
     with pytest.raises(PDFError, match="scanned"):
-        extract_text(tmp_path / "paper.pdf", 1, 2, runner)
+        extract_text(tmp_path / "paper.pdf", 1, 2, "docent", runner)
