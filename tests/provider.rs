@@ -694,6 +694,40 @@ fn html_streaming_event_renders_the_answer() {
 }
 
 #[test]
+fn html_streaming_event_renders_mathml() {
+    let body = concat!(
+        r#"data: {"model":"test-model","choices":[{"delta":{"content":"The model is \\(\\pi_{\\text{ref}}\\)."}}]}"#,
+        "\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let input =
+        r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
+    let output = run(
+        &dir,
+        &["request", "--profile", "explain", "--stream", "--html"],
+        input,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let events: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events[1]["type"], "html");
+    let html = events[1]["html"].as_str().unwrap();
+    assert!(html.contains("math math-inline"), "{html}");
+    assert!(html.contains("<math display=\"inline\""), "{html}");
+    assert!(!html.contains("\\(\\pi"), "{html}");
+}
+
+#[test]
 fn html_requires_a_stream() {
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path().join("config");

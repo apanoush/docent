@@ -5,6 +5,12 @@
 //! same policy as the browser adapters used before the renderer moved into the
 //! CLI: raw HTML is shown as text, images stay alt text, and only `http`,
 //! `https`, and `mailto` URLs become links.
+//!
+//! TeX math is extracted before parsing and rendered as MathML after the
+//! Markdown pass. Code spans, code blocks, and link destinations keep the
+//! original TeX.
+
+mod math;
 
 use pulldown_cmark::{CowStr, Event, Options, Parser, Tag, TagEnd, html};
 
@@ -14,9 +20,10 @@ pub fn render(text: &str) -> String {
         return String::new();
     }
 
+    let (prepared, math_spans) = math::extract(text);
     let options = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH;
-    let parser = Parser::new_ext(text, options);
-    let mut events: Vec<Event<'_>> = Vec::with_capacity(text.len() / 8);
+    let parser = Parser::new_ext(&prepared, options);
+    let mut events: Vec<Event<'_>> = Vec::with_capacity(prepared.len() / 8);
     let mut unsafe_link: Option<String> = None;
 
     for event in parser {
@@ -67,14 +74,15 @@ pub fn render(text: &str) -> String {
         }
     }
 
-    let mut output = String::with_capacity(text.len());
+    let mut output = String::with_capacity(prepared.len());
     html::push_html(&mut output, events.into_iter());
     // The only anchor tags left are the ones this renderer emitted, because
     // raw HTML was converted to text above.
-    output.replace(
+    let output = output.replace(
         "<a href=\"",
         "<a target=\"_blank\" rel=\"noopener noreferrer\" href=\"",
-    )
+    );
+    math::substitute(&output, &math_spans)
 }
 
 /// True for the link schemes the answer page is allowed to activate.

@@ -88,11 +88,11 @@ The answer opens in a new foreground tab by default. The tab:
 
 - Streams text as the provider returns it.
 - Shows the profile and model in the header, and updates the tab title when the stream finishes.
-- Shows the answer rendered as Markdown when the stream finishes. The CLI renders it once and sends an `html` event, so every browser adapter shows the same result.
+- Shows the answer rendered as Markdown when the stream finishes. The CLI renders it once and sends an `html` event, so every browser adapter shows the same result. TeX math in that HTML is rendered as MathML.
 - Uses your status bar colors where possible.
 - Can be scrolled with normal qutebrowser keys such as `j`, `k`, `gg`, `G`, and `/`.
 
-Markdown rendering is intentionally limited. Links open in a new tab and only `http`, `https`, and `mailto` URLs become links. Raw HTML stays escaped text and images stay alt text, so model output cannot inject scripts or fetch remote resources. The Neovim float still shows raw Markdown.
+Markdown rendering is intentionally limited. Links open in a new tab and only `http`, `https`, and `mailto` URLs become links. Raw HTML stays escaped text and images stay alt text, so model output cannot inject scripts or fetch remote resources. TeX math is rendered as MathML in the same HTML, with no JavaScript or remote assets. The Neovim float still shows raw Markdown.
 
 ## Customizing the answer style
 

@@ -99,7 +99,7 @@ The JSON stdin interface used by Neovim, qutebrowser, Firefox, and zathura remai
 printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence using attention.","byte_start":2,"byte_end":13,"file":"notes.md"}' | docent request --profile explain
 ```
 
-Inspect the exact prompt without calling the provider with `--print-prompt`, or stream newline-delimited events with `--stream`. Add `--html` with `--stream` to include the final answer as rendered HTML before the `done` event; the browser adapters use this. `docent extract FILE --pages START:END` prints the text the CLI would send, which is useful for checking PDF extraction. Run `docent --help` for the terminal commands and `docent request --help` for the machine interface.
+Inspect the exact prompt without calling the provider with `--print-prompt`, or stream newline-delimited events with `--stream`. Add `--html` with `--stream` to include the final answer as rendered HTML before the `done` event; the browser adapters use this. The rendered HTML includes MathML for TeX math. `docent extract FILE --pages START:END` prints the text the CLI would send, which is useful for checking PDF extraction. Run `docent --help` for the terminal commands and `docent request --help` for the machine interface.
 
 Every provider run is recorded in a local SQLite database by default, including the prompt, answer, model, parameters, token usage, and source. The database lives in the platform data directory, for example `~/.local/share/docent/docent.db` on Linux. Set `history.database` to move it, `history.enabled = false` to disable it, or pass `--no-history` for one run. See [run history](docs/history.md).
 

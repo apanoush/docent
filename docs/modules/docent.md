@@ -21,7 +21,7 @@ The crate has two binary targets and a library target. `src/main.rs` is the CLI:
 | `provider::stream` | Incremental SSE decoding. |
 | `storage` | SQLite storage for run history and the answer cache, schema creation and migration, path resolution, and inserts. |
 | `cache` | Exact-match answer cache keyed on the rendered prompt: key construction, lookup, store, hit counters, and eviction. |
-| `markdown` | Safe Markdown-to-HTML rendering shared by the CLI viewer and the `html` stream event. |
+| `markdown` | Safe Markdown-to-HTML rendering and TeX-to-MathML math, shared by the CLI viewer and the `html` stream event. |
 | `viewer` | Qutebrowser and Firefox answer viewer: page shell, loopback SSE server, token, launch, and cancellation. |
 | `native_host` | Firefox native messaging framing, request validation, process spawning, line forwarding, `exec`, and `css`. |
 | `error` | `DocentError` and process exit codes. |
@@ -137,7 +137,7 @@ Files and stdin are read as bytes. Inputs starting with `%PDF-` go through `pdf:
 
 `cli::execute` selects one of seven output modes: plain streaming for terminal commands, plain buffered for `--no-stream`, JSON for `docent request --json`, NDJSON for `docent request --stream`, NDJSON with a rendered `html` event for `docent request --stream --html`, prompt JSON for `--print-prompt`, and the qutebrowser or Firefox viewer for `--viewer`. Before dispatch it checks the answer cache. A hit is replayed as one delta through the same callback, so all streaming modes and the browser viewer work unchanged, and buffered modes skip the provider call entirely. Plain streaming writes each fragment directly and flushes it, then adds a final newline if needed. The browser viewer runs the same provider stream, sends deltas over Server-Sent Events, and renders the finished answer with `markdown::render_answer`. When the context was truncated and the request has no resolvable selection, `cli::execute` logs a warning before rendering, so a whole-document run never silently covers only part of the document.
 
-`markdown::render` enables tables and strikethrough, converts raw HTML to escaped text, drops images to alt text, restricts links to `http`, `https`, and `mailto`, wraps tables in `.table-wrap`, and adds `target="_blank"` to links. `viewer::Viewer` binds `127.0.0.1:0`, serves a tokenized page and event stream, waits 30 seconds for qutebrowser or Firefox to connect, and treats a closed page as cancellation. `DocentError::ViewerClosed` maps to a successful exit and a history status of `cancelled`.
+`markdown::render` enables tables and strikethrough, converts raw HTML to escaped text, drops images to alt text, restricts links to `http`, `https`, and `mailto`, wraps tables in `.table-wrap`, and adds `target="_blank"` to links. It extracts TeX math before parsing, renders it as MathML with `pulldown-latex`, and restores the original TeX inside code spans, code blocks, and link destinations. Inline `\(...\)` and `$...$` become `math-inline` spans; display `\[...\]` and `$$...$$` become `math-display` spans. A formula that the MathML renderer rejects stays visible as escaped TeX. `viewer::Viewer` binds `127.0.0.1:0`, serves a tokenized page and event stream, waits 30 seconds for qutebrowser or Firefox to connect, and treats a closed page as cancellation. `DocentError::ViewerClosed` maps to a successful exit and a history status of `cancelled`.
 
 ## Provider clients
 
@@ -149,7 +149,7 @@ Streaming clients parse SSE through `provider::stream::stream_sse`. The decoder 
 
 Rust tests are split into four layers:
 
-- Unit tests in each module for parsing, validation, windowing, rendering, request bodies, response parsing, SSE decoding, settings precedence, line and page ranges, PDF detection and extraction, tolerant phrase matching, prompt sequencing, terminal request construction, Markdown sanitization, cache keys and eviction, and viewer page/server behavior.
+- Unit tests in each module for parsing, validation, windowing, rendering, math delimiters and MathML fallbacks, request bodies, response parsing, SSE decoding, settings precedence, line and page ranges, PDF detection and extraction, tolerant phrase matching, prompt sequencing, terminal request construction, Markdown sanitization, cache keys and eviction, and viewer page/server behavior.
 - Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, the bare getting-started output, and viewer flag conflicts.
 - Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, selection errors, input errors, the `html` event, the qutebrowser and Firefox viewers with a fake browser, and cache reuse, bypass, refresh, invalidation, and uncached failures. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
 - Native host tests in `src/native_host.rs` with a fake `docent` shell script for framing, partial reads, oversized messages, invalid requests, spawn failures, line forwarding, exit codes, `exec`, and `css`.

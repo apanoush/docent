@@ -85,9 +85,11 @@ While the answer streams, the page shows plain text. When the stream finishes, t
 
 Raw HTML in a model answer is escaped, images stay alt text, and only `http`, `https`, and `mailto` links become clickable. Links open in a new tab. Tables, headings, lists, code fences, blockquotes, emphasis, and strikethrough are rendered.
 
+TeX math is rendered as MathML, so it works without JavaScript or a network connection. Inline `\(...\)` and `$...$` and display `\[...\]` and `$$...$$` are recognized. Code spans, code blocks, and link destinations keep their original TeX. A formula that the MathML renderer cannot handle stays visible as TeX instead of breaking the answer.
+
 ## Security
 
-The server binds only to `127.0.0.1` on a random port. The page URL contains a random 128-bit token, and the server exposes only the page and its event stream. The token is not reachable from another machine and is discarded when the viewer exits.
+The server binds only to `127.0.0.1` on a random port. The page URL contains a random 128-bit token, and the server exposes only the page and its event stream. The token is not reachable from another machine and is discarded when the viewer exits. Answer pages load no scripts or remote resources; math is plain MathML in the HTML fragment.
 
 ## Troubleshooting
 

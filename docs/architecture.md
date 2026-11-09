@@ -108,7 +108,7 @@ The terminal commands and `docent request` can open a loopback answer page in qu
 
 ## Output modes
 
-Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. `--viewer qutebrowser` or `--viewer firefox` streams the answer into a loopback Server-Sent Events page instead of stdout and renders Markdown once at the end. The Neovim, qutebrowser, Firefox, and zathura integrations use `docent request --stream`, which emits newline-delimited JSON instead. `docent request --json` wraps the final answer in one JSON object, and `--stream --html` adds a rendered HTML event for browser front ends.
+Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. `--viewer qutebrowser` or `--viewer firefox` streams the answer into a loopback Server-Sent Events page instead of stdout and renders Markdown once at the end, including TeX math as MathML. The Neovim, qutebrowser, Firefox, and zathura integrations use `docent request --stream`, which emits newline-delimited JSON instead. `docent request --json` wraps the final answer in one JSON object, and `--stream --html` adds a rendered HTML event for browser front ends.
 
 The shared executor builds the context and prompt once, then selects the output mode or replays a cached answer. This keeps buffered, streamed, JSON, and prompt-preview paths on the same request and prompt code.
 
@@ -195,7 +195,7 @@ With `docent request --stream`, stdout contains one JSON object per line:
 {"type":"done","model":"test-model","usage":{"input_tokens":3,"output_tokens":4}}
 ```
 
-The `html` event is emitted only with `--html` (which requires `--stream`), after the last delta and before `done`. It is the CLI-rendered Markdown answer: raw HTML is escaped, images stay alt text, and only `http`, `https`, and `mailto` links are active. The qutebrowser, Firefox, and zathura adapters use it, so they no longer carry their own renderers.
+The `html` event is emitted only with `--html` (which requires `--stream`), after the last delta and before `done`. It is the CLI-rendered Markdown answer: raw HTML is escaped, images stay alt text, only `http`, `https`, and `mailto` links are active, and TeX math becomes MathML. The qutebrowser, Firefox, and zathura adapters use it, so they no longer carry their own renderers.
 
 Errors emitted after streaming starts use the same channel:
 
@@ -228,7 +228,7 @@ Diagnostics and prompt labels go to stderr. The answer goes to stdout. A CLI inv
 - Error messages include provider messages and truncated response bodies, never request headers.
 - The document is treated as untrusted content. The default system prompt tells the model not to follow instructions inside it.
 - The CLI browser viewer binds only to `127.0.0.1`, uses a random 128-bit token path, serves only the answer page and its event stream, and closes when the page closes.
-- The shared Markdown renderer treats model output as untrusted: raw HTML is escaped, images are replaced by alt text, and links are limited to `http`, `https`, and `mailto`.
+- The shared Markdown renderer treats model output as untrusted: raw HTML is escaped, images are replaced by alt text, links are limited to `http`, `https`, and `mailto`, and generated MathML is validated before insertion.
 
 ## Terminology
 

@@ -99,7 +99,7 @@ Select text on a page, then click the Docent toolbar button or press `Alt+Shift+
 
 The same profiles appear under **Docent** in the selection context menu. A profile that needs a question asks for it in the answer tab before starting the request.
 
-The answer opens in a new foreground tab and streams as the provider returns it. When the stream finishes, the CLI renders the Markdown and the tab shows the same HTML as the qutebrowser and zathura answer pages. Press `d` to close the tab. Closing it, or navigating it away, cancels the request. Links in the answer open in a new tab.
+The answer opens in a new foreground tab and streams as the provider returns it. When the stream finishes, the CLI renders the Markdown and the tab shows the same HTML as the qutebrowser and zathura answer pages, including MathML for TeX math. Press `d` to close the tab. Closing it, or navigating it away, cancels the request. Links in the answer open in a new tab.
 
 The popup's **Refresh** button reloads the profile list; **Options** opens the settings page.
 
