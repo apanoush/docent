@@ -8,6 +8,13 @@ use pdf_extract::{Document, PlainTextOutput, extract_text_from_mem_by_pages, out
 
 use crate::input::PageRange;
 
+/// Error reported when the extractor panics on a document.
+const UNSUPPORTED_PDF: &str =
+    "could not decode the PDF: the extractor failed on an unsupported document structure";
+
+/// Page count at which decoding is spread across worker threads.
+const PARALLEL_PAGE_THRESHOLD: usize = 4;
+
 /// Whether `bytes` start with the PDF magic header.
 pub fn is_pdf(bytes: &[u8]) -> bool {
     bytes.starts_with(b"%PDF-")
@@ -30,12 +37,13 @@ pub struct ExtractedText {
 /// page is still an error.
 pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, String> {
     let (page_texts, page_count) = match pages {
-        Some(range) => decode_range(bytes, range)?,
-        None => {
+        None if worker_count() < 2 => {
+            // Keep the library's single-pass decoder on single-core machines.
             let page_texts = decode_all(bytes)?;
             let page_count = page_texts.len();
             (page_texts, page_count)
         }
+        _ => decode(bytes, pages)?,
     };
     if page_count == 0 {
         return Err("the PDF has no pages".to_string());
@@ -52,7 +60,7 @@ pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, 
     })
 }
 
-/// Decodes every page of a PDF.
+/// Decodes every page of a PDF with the library's single-pass decoder.
 fn decode_all(bytes: &[u8]) -> Result<Vec<String>, String> {
     guard(|| {
         extract_text_from_mem_by_pages(bytes)
@@ -60,11 +68,12 @@ fn decode_all(bytes: &[u8]) -> Result<Vec<String>, String> {
     })
 }
 
-/// Decodes only the requested page range.
+/// Parses the document once and decodes the requested pages.
 ///
-/// The document structure is parsed once and each selected page is rendered on
-/// its own, so a one-page window does not pay for the text of every other page.
-fn decode_range(bytes: &[u8], range: PageRange) -> Result<(Vec<String>, usize), String> {
+/// A page range only renders the selected pages, so a one-page window does not
+/// pay for the text of every other page. Larger page sets are spread across
+/// worker threads.
+fn decode(bytes: &[u8], pages: Option<PageRange>) -> Result<(Vec<String>, usize), String> {
     guard(|| {
         let mut document = Document::load_mem(bytes)
             .map_err(|error| format!("could not decode the PDF: {error}"))?;
@@ -78,33 +87,91 @@ fn decode_range(bytes: &[u8], range: PageRange) -> Result<(Vec<String>, usize), 
         if page_count == 0 {
             return Err("the PDF has no pages".to_string());
         }
-        if range.start == 0 {
-            return Err("page numbers start at 1".to_string());
-        }
-        if range.end < range.start {
-            return Err("page range start must not exceed end".to_string());
-        }
-        if range.start > page_count {
-            return Err(format!(
-                "page range {range} is out of bounds; the PDF has {page_count} pages"
-            ));
-        }
+
+        let range = match pages {
+            Some(range) => {
+                if range.start == 0 {
+                    return Err("page numbers start at 1".to_string());
+                }
+                if range.end < range.start {
+                    return Err("page range start must not exceed end".to_string());
+                }
+                if range.start > page_count {
+                    return Err(format!(
+                        "page range {range} is out of bounds; the PDF has {page_count} pages"
+                    ));
+                }
+                range
+            }
+            None => PageRange {
+                start: 1,
+                end: page_count,
+            },
+        };
 
         let end = range.end.min(page_count);
-        let mut texts = Vec::with_capacity(end - range.start + 1);
-        for page in range.start..=end {
-            let page_number =
-                u32::try_from(page).map_err(|_| format!("page {page} is out of range"))?;
-            let mut text = String::new();
-            {
-                let mut output = PlainTextOutput::new(&mut text);
-                output_doc_page(&document, &mut output, page_number)
-                    .map_err(|error| format!("could not decode the PDF: {error}"))?;
-            }
-            texts.push(text);
-        }
+        let numbers: Vec<usize> = (range.start..=end).collect();
+        let texts = extract_pages(&document, &numbers)?;
         Ok((texts, page_count))
     })
+}
+
+/// Decodes selected pages sequentially or across worker threads.
+fn extract_pages(document: &Document, pages: &[usize]) -> Result<Vec<String>, String> {
+    let workers = worker_count().min(pages.len());
+    if pages.len() < PARALLEL_PAGE_THRESHOLD || workers < 2 {
+        return extract_pages_sequential(document, pages);
+    }
+
+    let chunk_size = pages.len().div_ceil(workers);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = pages
+            .chunks(chunk_size)
+            .map(|chunk| scope.spawn(|| extract_pages_sequential(document, chunk)))
+            .collect();
+
+        let mut texts = Vec::with_capacity(pages.len());
+        for handle in handles {
+            match handle.join() {
+                Ok(result) => texts.extend(result?),
+                Err(_) => return Err(UNSUPPORTED_PDF.to_string()),
+            }
+        }
+        Ok(texts)
+    })
+}
+
+fn extract_pages_sequential(document: &Document, pages: &[usize]) -> Result<Vec<String>, String> {
+    pages
+        .iter()
+        .map(|&page| extract_page(document, page))
+        .collect()
+}
+
+/// Decodes one page, turning extractor panics into a normal error.
+fn extract_page(document: &Document, page: usize) -> Result<String, String> {
+    let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let page_number =
+            u32::try_from(page).map_err(|_| format!("page {page} is out of range"))?;
+        let mut text = String::new();
+        {
+            let mut output = PlainTextOutput::new(&mut text);
+            output_doc_page(document, &mut output, page_number)
+                .map_err(|error| format!("could not decode the PDF: {error}"))?;
+        }
+        Ok::<String, String>(text)
+    }));
+
+    match decoded {
+        Ok(result) => result,
+        Err(_) => Err(UNSUPPORTED_PDF.to_string()),
+    }
+}
+
+fn worker_count() -> usize {
+    std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(1)
 }
 
 /// Runs the decoder, turning panics into normal errors.
@@ -113,10 +180,7 @@ fn guard<T>(
 ) -> Result<T, String> {
     match catch_decoder_panic(decoder) {
         Ok(result) => result,
-        Err(_) => Err(
-            "could not decode the PDF: the extractor failed on an unsupported document structure"
-                .to_string(),
-        ),
+        Err(_) => Err(UNSUPPORTED_PDF.to_string()),
     }
 }
 
@@ -267,6 +331,19 @@ mod tests {
             error.contains("extractor failed on an unsupported document structure"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn preserves_page_order_with_parallel_extraction() {
+        let pdf = sample_pdf(&["first page", "second page", "third page", "fourth page"]);
+        let extracted = extract(&pdf, None).unwrap();
+        let text = extracted.text;
+        let first = text.find("first page").unwrap();
+        let second = text.find("second page").unwrap();
+        let third = text.find("third page").unwrap();
+        let fourth = text.find("fourth page").unwrap();
+
+        assert!(first < second && second < third && third < fourth, "{text}");
     }
 
     #[test]
