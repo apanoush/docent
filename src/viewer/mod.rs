@@ -107,6 +107,8 @@ pub enum Browser {
         command: String,
         /// Qutebrowser target.
         target: QutebrowserTarget,
+        /// Extra arguments inserted before the answer URL.
+        extra_args: Vec<String>,
     },
     /// Firefox with its URL flags.
     Firefox {
@@ -142,8 +144,12 @@ impl Browser {
 
     fn arguments(&self) -> Vec<String> {
         match self {
-            Self::Qutebrowser { target, .. } => {
-                vec![format!("--target={}", target.as_str())]
+            Self::Qutebrowser {
+                target, extra_args, ..
+            } => {
+                let mut arguments = vec![format!("--target={}", target.as_str())];
+                arguments.extend(extra_args.iter().cloned());
+                arguments
             }
             Self::Firefox { target, .. } => target
                 .arguments()
@@ -329,6 +335,7 @@ mod tests {
         let browser = Browser::Qutebrowser {
             command: "qutebrowser".to_string(),
             target: QutebrowserTarget::TabBg,
+            extra_args: Vec::new(),
         };
         assert_eq!(
             browser.launch("http://127.0.0.1:1/token/"),
@@ -342,6 +349,32 @@ mod tests {
         );
         assert_eq!(browser.name(), "qutebrowser");
         assert_eq!(browser.target_flag(), "--qutebrowser-target");
+    }
+
+    #[test]
+    fn qutebrowser_launch_appends_extra_args_before_the_url() {
+        let browser = Browser::Qutebrowser {
+            command: "qutebrowser".to_string(),
+            target: QutebrowserTarget::Window,
+            extra_args: vec![
+                "--qt-arg".to_string(),
+                "name".to_string(),
+                "qute docent".to_string(),
+            ],
+        };
+        assert_eq!(
+            browser.launch("http://127.0.0.1:1/token/"),
+            (
+                "qutebrowser".to_string(),
+                vec![
+                    "--target=window".to_string(),
+                    "--qt-arg".to_string(),
+                    "name".to_string(),
+                    "qute docent".to_string(),
+                    "http://127.0.0.1:1/token/".to_string()
+                ]
+            )
+        );
     }
 
     #[test]

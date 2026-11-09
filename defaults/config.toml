@@ -27,6 +27,7 @@ target_language = "English"
 default = "terminal"           # terminal | qutebrowser | firefox
 qutebrowser = "qutebrowser"
 qutebrowser_target = "window"  # auto | tab | tab-bg | tab-silent | tab-bg-silent | window | private-window
+# qutebrowser_args = ["--qt-arg", "name", "qute-docent"]  # extra argv entries, inserted before the answer URL
 firefox = "firefox"
 firefox_target = "window"      # auto | tab | window | private-window
 

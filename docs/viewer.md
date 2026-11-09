@@ -37,6 +37,7 @@ Set the viewer once in `config.toml` instead of passing `--viewer` on every comm
 default = "firefox"          # terminal | qutebrowser | firefox
 qutebrowser = "qutebrowser"
 qutebrowser_target = "window"
+# qutebrowser_args = ["--qt-arg", "name", "qute-docent"]
 firefox = "firefox"
 firefox_target = "window"
 ```
@@ -52,12 +53,15 @@ The configured default applies to `explain`, `ask`, `translate`, `summarize`, an
 | `--viewer {terminal,qutebrowser,firefox}` | `viewer.default`, else `terminal` | Show the answer in the terminal, qutebrowser, or Firefox. |
 | `--qutebrowser PATH` | `viewer.qutebrowser`, else `qutebrowser` | Qutebrowser executable or command name. |
 | `--qutebrowser-target TARGET` | `viewer.qutebrowser_target`, else `window` | `auto`, `tab`, `tab-bg`, `tab-silent`, `tab-bg-silent`, `window`, or `private-window`. |
+| `--qutebrowser-arg ARG` | `viewer.qutebrowser_args`, else none | Extra qutebrowser argument inserted before the answer URL. Repeat the flag to pass several arguments. |
 | `--firefox PATH` | `viewer.firefox`, else `firefox` | Firefox executable or command name. |
 | `--firefox-target TARGET` | `viewer.firefox_target`, else `window` | `auto`, `tab`, `window`, or `private-window`. |
 | `--answer-css PATH` | none | Extra CSS appended after the built-in styles and `<config>/answer.css`. `--qutebrowser-css` is an alias. |
 | `--header TEXT` | request file | `docent request` only; text shown after the profile in the page header. |
 
-`--qutebrowser-target` is passed to qutebrowser as `--target=TARGET`. Qutebrowser applies that value only when an instance is already running; otherwise it opens a window. Use `--qutebrowser-target tab` to reuse a running qutebrowser window, or `window` for a separate answer window. The `--qutebrowser` and `--qutebrowser-target` options apply only to `--viewer qutebrowser`.
+`--qutebrowser-target` is passed to qutebrowser as `--target=TARGET`. Qutebrowser applies that value only when an instance is already running; otherwise it opens a window. Use `--qutebrowser-target tab` to reuse a running qutebrowser window, or `window` for a separate answer window. The `--qutebrowser`, `--qutebrowser-target`, and `--qutebrowser-arg` options apply only to `--viewer qutebrowser`.
+
+`qutebrowser_args` and repeated `--qutebrowser-arg` flags are appended to the qutebrowser command line after `--target` and before the answer URL. Each list entry or flag becomes one argv entry, so arguments with spaces stay intact and are never interpreted by a shell. When `--qutebrowser-arg` is passed, it replaces `viewer.qutebrowser_args` for that run. Some qutebrowser arguments only take effect when qutebrowser starts a new instance or window rather than reusing a running one.
 
 `--firefox-target` maps to Firefox's URL flags: `tab` passes `--new-tab`, `window` passes `--new-window`, `private-window` passes `--private-window`, and `auto` passes no flag. Firefox applies the target to a running instance when one exists. The `--firefox` and `--firefox-target` options apply only to `--viewer firefox`.
 

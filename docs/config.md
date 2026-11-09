@@ -61,6 +61,7 @@ target_language = "English"
 default = "terminal"
 qutebrowser = "qutebrowser"
 qutebrowser_target = "window"
+# qutebrowser_args = ["--qt-arg", "name", "qute-docent"]
 firefox = "firefox"
 firefox_target = "window"
 
@@ -182,10 +183,11 @@ A local server that does not check keys still needs a key source. Set `api_key =
 | `default` | `"terminal"`, `"qutebrowser"`, or `"firefox"` | `"terminal"` | Viewer used by `explain`, `ask`, `translate`, `summarize`, and `do` when `--viewer` is not passed. |
 | `qutebrowser` | string | `"qutebrowser"` | Qutebrowser executable or command name. |
 | `qutebrowser_target` | string | `"window"` | Qutebrowser `--target` value: `auto`, `tab`, `tab-bg`, `tab-silent`, `tab-bg-silent`, `window`, or `private-window`. |
+| `qutebrowser_args` | list of strings | `[]` | Extra argv entries passed to qutebrowser after `--target` and before the answer URL. They are not shell-interpreted. |
 | `firefox` | string | `"firefox"` | Firefox executable or command name. |
 | `firefox_target` | string | `"window"` | Firefox URL target: `auto`, `tab`, `window`, or `private-window`. |
 
-A partial table is valid, so `[viewer]\ndefault = "firefox"` is enough. The other keys keep their built-in defaults. Command-line flags still win, for example `--viewer terminal` overrides the configured default for one run.
+A partial table is valid, so `[viewer]\ndefault = "firefox"` is enough. The other keys keep their built-in defaults. Command-line flags still win, for example `--viewer terminal` overrides the configured default for one run. Repeated `--qutebrowser-arg` flags replace `qutebrowser_args` for that run. Each entry in `qutebrowser_args` becomes one argv entry, is inserted after `--target` and before the answer URL, and is never interpreted by a shell.
 
 The viewer default applies to the terminal-facing commands. `docent request` keeps `terminal` as its default because it is the machine interface used by the Neovim, qutebrowser, Firefox, and zathura adapters. Pass `--viewer` to `docent request` to open a browser page explicitly; the configured executable and target still apply.
 

@@ -193,6 +193,8 @@ pub struct ViewerConfig {
     pub qutebrowser: String,
     /// Qutebrowser `--target` value.
     pub qutebrowser_target: QutebrowserTarget,
+    /// Extra arguments passed to qutebrowser before the answer URL.
+    pub qutebrowser_args: Vec<String>,
     /// Firefox executable or command name.
     pub firefox: String,
     /// Firefox URL target.
@@ -205,6 +207,7 @@ impl Default for ViewerConfig {
             default: AnswerTarget::Terminal,
             qutebrowser: "qutebrowser".to_string(),
             qutebrowser_target: QutebrowserTarget::Window,
+            qutebrowser_args: Vec::new(),
             firefox: "firefox".to_string(),
             firefox_target: FirefoxTarget::Window,
         }
@@ -306,6 +309,22 @@ impl Config {
         }
         if self.viewer.qutebrowser.trim().is_empty() {
             errors.push("viewer.qutebrowser must not be empty".to_string());
+        }
+        if self
+            .viewer
+            .qutebrowser_args
+            .iter()
+            .any(|arg| arg.is_empty())
+        {
+            errors.push("viewer.qutebrowser_args must not contain empty arguments".to_string());
+        }
+        if self
+            .viewer
+            .qutebrowser_args
+            .iter()
+            .any(|arg| arg.contains('\0'))
+        {
+            errors.push("viewer.qutebrowser_args must not contain NUL bytes".to_string());
         }
         if self.viewer.firefox.trim().is_empty() {
             errors.push("viewer.firefox must not be empty".to_string());
@@ -570,6 +589,7 @@ mod tests {
         assert_eq!(config.viewer.default, AnswerTarget::Terminal);
         assert_eq!(config.viewer.qutebrowser, "qutebrowser");
         assert_eq!(config.viewer.qutebrowser_target, QutebrowserTarget::Window);
+        assert!(config.viewer.qutebrowser_args.is_empty());
         assert_eq!(config.viewer.firefox, "firefox");
         assert_eq!(config.viewer.firefox_target, FirefoxTarget::Window);
     }
@@ -588,6 +608,7 @@ default = "firefox"
         assert_eq!(config.viewer.default, AnswerTarget::Firefox);
         assert_eq!(config.viewer.firefox, "firefox");
         assert_eq!(config.viewer.qutebrowser_target, QutebrowserTarget::Window);
+        assert!(config.viewer.qutebrowser_args.is_empty());
     }
 
     #[test]
@@ -598,6 +619,7 @@ default = "firefox"
 default = "qutebrowser"
 qutebrowser = "/usr/bin/qutebrowser"
 qutebrowser_target = "tab-bg"
+qutebrowser_args = ["--qt-arg", "name", "qute-docent"]
 firefox = "firefox-esr"
 firefox_target = "private-window"
 "#,
@@ -608,6 +630,10 @@ firefox_target = "private-window"
         assert_eq!(config.viewer.default, AnswerTarget::Qutebrowser);
         assert_eq!(config.viewer.qutebrowser, "/usr/bin/qutebrowser");
         assert_eq!(config.viewer.qutebrowser_target, QutebrowserTarget::TabBg);
+        assert_eq!(
+            config.viewer.qutebrowser_args,
+            vec!["--qt-arg", "name", "qute-docent"]
+        );
         assert_eq!(config.viewer.firefox, "firefox-esr");
         assert_eq!(config.viewer.firefox_target, FirefoxTarget::PrivateWindow);
     }
@@ -641,6 +667,24 @@ firefox_target = "private-window"
         let message = error.to_string();
         assert!(message.contains("viewer.qutebrowser"));
         assert!(message.contains("viewer.firefox"));
+    }
+
+    #[test]
+    fn viewer_config_rejects_empty_qutebrowser_args() {
+        let mut config = Config::default();
+        config.viewer.qutebrowser_args.push(String::new());
+
+        let error = config.validate(Path::new("config.toml")).unwrap_err();
+        assert!(error.to_string().contains("viewer.qutebrowser_args"));
+    }
+
+    #[test]
+    fn viewer_config_rejects_nul_qutebrowser_args() {
+        let mut config = Config::default();
+        config.viewer.qutebrowser_args.push("bad\0arg".to_string());
+
+        let error = config.validate(Path::new("config.toml")).unwrap_err();
+        assert!(error.to_string().contains("viewer.qutebrowser_args"));
     }
 
     #[test]

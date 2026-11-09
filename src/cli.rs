@@ -186,6 +186,15 @@ pub struct ViewerArgs {
     #[arg(long, value_enum)]
     pub qutebrowser_target: Option<QutebrowserTarget>,
 
+    /// Extra argument passed to qutebrowser before the answer URL.
+    #[arg(
+        long = "qutebrowser-arg",
+        value_name = "ARG",
+        action = clap::ArgAction::Append,
+        allow_hyphen_values = true
+    )]
+    pub qutebrowser_arg: Vec<String>,
+
     /// Firefox executable or command name.
     #[arg(long)]
     pub firefox: Option<String>,
@@ -216,6 +225,15 @@ impl ViewerArgs {
     fn qutebrowser_target(&self, config: &config::Config) -> QutebrowserTarget {
         self.qutebrowser_target
             .unwrap_or(config.viewer.qutebrowser_target)
+    }
+
+    /// Extra qutebrowser arguments from the flags or the config.
+    fn qutebrowser_args(&self, config: &config::Config) -> Vec<String> {
+        if self.qutebrowser_arg.is_empty() {
+            config.viewer.qutebrowser_args.clone()
+        } else {
+            self.qutebrowser_arg.clone()
+        }
     }
 
     /// Firefox executable from the flag or the config.
@@ -565,6 +583,7 @@ fn browser_options(
                 .display()
                 .to_string(),
             target: args.qutebrowser_target(config),
+            extra_args: args.qutebrowser_args(config),
         },
         AnswerTarget::Firefox => Browser::Firefox {
             command: config::expand_path(Path::new(args.firefox(config)))?

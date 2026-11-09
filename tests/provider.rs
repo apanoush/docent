@@ -900,6 +900,91 @@ fn config_default_viewer_applies_to_firefox() {
     check_config_viewer("firefox", "--new-tab");
 }
 
+/// Run one qutebrowser viewer request and return the fake browser's argv.
+#[cfg(unix)]
+fn captured_qutebrowser_argv(extra_config: &str, extra_cli: &[&str]) -> Vec<String> {
+    let body = concat!(
+        "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let notes = temp.path().join("notes.md");
+    fs::write(&notes, "alpha beta gamma\n").unwrap();
+    let output_file = temp.path().join("browser.json");
+    let browser = temp.path().join("fake-browser");
+    write_fake_browser(&browser);
+    append_viewer_config(
+        &dir,
+        &format!(
+            r#"
+[viewer]
+default = "qutebrowser"
+qutebrowser = "{}"
+qutebrowser_target = "tab-bg"
+{extra_config}
+"#,
+            browser.display()
+        ),
+    );
+
+    let mut args = vec!["explain", notes.to_str().unwrap(), "--lines", "1:1"];
+    args.extend_from_slice(extra_cli);
+    let output = run_with_env(
+        &dir,
+        &args,
+        "",
+        Some("secret"),
+        &[("FAKE_BROWSER_OUTPUT", output_file.to_str().unwrap())],
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let captured: Value = serde_json::from_str(&fs::read_to_string(&output_file).unwrap()).unwrap();
+    captured["argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| arg.as_str().unwrap().to_string())
+        .collect()
+}
+
+#[cfg(unix)]
+#[test]
+fn qutebrowser_config_args_are_passed_before_the_url() {
+    let argv = captured_qutebrowser_argv(
+        r#"qutebrowser_args = ["--qt-arg", "name", "qute-docent"]"#,
+        &[],
+    );
+
+    assert_eq!(argv.len(), 5);
+    assert_eq!(argv[0], "--target=tab-bg");
+    assert_eq!(&argv[1..4], ["--qt-arg", "name", "qute-docent"]);
+    assert!(argv[4].starts_with("http://127.0.0.1:"));
+}
+
+#[cfg(unix)]
+#[test]
+fn qutebrowser_arg_flags_override_config_args() {
+    let argv = captured_qutebrowser_argv(
+        r#"qutebrowser_args = ["--from-config"]"#,
+        &[
+            "--qutebrowser-arg",
+            "--from-cli",
+            "--qutebrowser-arg",
+            "value",
+        ],
+    );
+
+    assert_eq!(argv.len(), 4);
+    assert_eq!(argv[0], "--target=tab-bg");
+    assert_eq!(&argv[1..3], ["--from-cli", "value"]);
+    assert!(argv[3].starts_with("http://127.0.0.1:"));
+    assert!(!argv.iter().any(|arg| arg == "--from-config"));
+}
+
 #[cfg(unix)]
 #[test]
 fn viewer_flag_overrides_the_config_default() {
