@@ -89,7 +89,7 @@ TeX math is rendered as MathML, so it works without JavaScript or a network conn
 
 ## Security
 
-The server binds only to `127.0.0.1` on a random port. The page URL contains a random 128-bit token, and the server exposes only the page and its event stream. The token is not reachable from another machine and is discarded when the viewer exits. Answer pages load no scripts or remote resources; math is plain MathML in the HTML fragment.
+The server binds only to `127.0.0.1` on a random port. The page URL contains a random 128-bit token, and the server exposes only the page and its event stream. The token is not reachable from another machine and is discarded when the viewer exits. Math rendering adds no scripts or remote resources; formulas are plain MathML in the HTML fragment.
 
 ## Troubleshooting
 

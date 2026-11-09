@@ -92,7 +92,7 @@ The answer opens in a new foreground tab by default. The tab:
 - Uses your status bar colors where possible.
 - Can be scrolled with normal qutebrowser keys such as `j`, `k`, `gg`, `G`, and `/`.
 
-Markdown rendering is intentionally limited. Links open in a new tab and only `http`, `https`, and `mailto` URLs become links. Raw HTML stays escaped text and images stay alt text, so model output cannot inject scripts or fetch remote resources. TeX math is rendered as MathML in the same HTML, with no JavaScript or remote assets. The Neovim float still shows raw Markdown.
+Markdown rendering is intentionally limited. Links open in a new tab and only `http`, `https`, and `mailto` URLs become links. Raw HTML stays escaped text and images stay alt text, so model output cannot inject scripts or fetch remote resources. TeX math is rendered as MathML in the same HTML, with no additional JavaScript or remote assets. The Neovim float still shows raw Markdown.
 
 ## Customizing the answer style
 
