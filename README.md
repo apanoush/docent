@@ -77,6 +77,8 @@ docent summarize paper.md --viewer firefox
 
 The page uses the same answer styles as the qutebrowser and Firefox adapters. Pass `--answer-css PATH` for extra overrides, or edit `<config dir>/answer.css`. See [the browser viewer guide](docs/viewer.md).
 
+Set `[viewer] default = "firefox"` in `config.toml` to stop passing `--viewer` on every command. The other `[viewer]` keys set the executable and target, and command-line flags still win per run. `docent run` keeps `terminal` as its default unless `--viewer` is passed, so the adapters are unaffected.
+
 `--viewer firefox` opens a standalone local answer page. It does not use the Docent Firefox extension; the extension remains the way to capture a page selection from inside Firefox.
 
 When a run has no selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. Use `--context-mode full` to send everything, raise `context.max_chars`, or narrow the subject with `--lines`.

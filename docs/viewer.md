@@ -28,15 +28,32 @@ printf '%s' '{"selection":"transformer","document":"A transformer maps a sequenc
   docent run --profile explain --viewer firefox --header notes.md
 ```
 
+## Default viewer
+
+Set the viewer once in `config.toml` instead of passing `--viewer` on every command:
+
+```toml
+[viewer]
+default = "firefox"          # terminal | qutebrowser | firefox
+qutebrowser = "qutebrowser"
+qutebrowser_target = "window"
+firefox = "firefox"
+firefox_target = "window"
+```
+
+A partial table is valid, so the `default` key alone is enough. Each key falls back to its built-in default when omitted. CLI flags win over the config for one run, for example `--viewer terminal`.
+
+The configured default applies to `explain`, `ask`, `translate`, `summarize`, and `do`. `docent run` keeps `terminal` as its default because the Neovim, qutebrowser, Firefox, and zathura adapters call it with `--stream`; pass `--viewer` explicitly to open a browser page from `docent run`. The configured executable and target still apply when you do.
+
 ## Options
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--viewer {terminal,qutebrowser,firefox}` | `terminal` | Show the answer in the terminal, qutebrowser, or Firefox. |
-| `--qutebrowser PATH` | `qutebrowser` | Qutebrowser executable or command name. |
-| `--qutebrowser-target TARGET` | `window` | `auto`, `tab`, `tab-bg`, `tab-silent`, `tab-bg-silent`, `window`, or `private-window`. |
-| `--firefox PATH` | `firefox` | Firefox executable or command name. |
-| `--firefox-target TARGET` | `window` | `auto`, `tab`, `window`, or `private-window`. |
+| `--viewer {terminal,qutebrowser,firefox}` | `viewer.default`, else `terminal` | Show the answer in the terminal, qutebrowser, or Firefox. |
+| `--qutebrowser PATH` | `viewer.qutebrowser`, else `qutebrowser` | Qutebrowser executable or command name. |
+| `--qutebrowser-target TARGET` | `viewer.qutebrowser_target`, else `window` | `auto`, `tab`, `tab-bg`, `tab-silent`, `tab-bg-silent`, `window`, or `private-window`. |
+| `--firefox PATH` | `viewer.firefox`, else `firefox` | Firefox executable or command name. |
+| `--firefox-target TARGET` | `viewer.firefox_target`, else `window` | `auto`, `tab`, `window`, or `private-window`. |
 | `--answer-css PATH` | none | Extra CSS appended after the built-in styles and `<config>/answer.css`. `--qutebrowser-css` is an alias. |
 | `--header TEXT` | request file | `docent run` only; text shown after the profile in the page header. |
 

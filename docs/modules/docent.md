@@ -112,6 +112,8 @@ pub fn serve(request: HostRequest, writer: &mut impl Write) -> io::Result<()>;
 
 Profile validation covers TOML fields, numeric ranges, placeholder syntax, requirement consistency, and the conflict between `requires = ["context"]` and `context_mode = "none"`.
 
+`config::ViewerConfig` supplies the default viewer, browser executables, and targets for the terminal commands. `cli::ViewerArgs` resolves each value with the CLI flag first and the config second. `docent run` only honors an explicit `--viewer`, so the configured browser default never affects adapters that call it with `--stream`.
+
 ## Context windowing
 
 `context::build` uses byte offsets from the request only when they match the selected text. It converts byte budgets to character counts with `char_indices`, so slicing never lands inside a UTF-8 sequence. Windows are aligned to line starts and ends. `max_chars` is a soft budget; line alignment can add up to one line.

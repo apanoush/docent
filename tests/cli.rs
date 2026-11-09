@@ -272,6 +272,36 @@ fn viewer_rejects_no_stream() {
 }
 
 #[test]
+fn viewer_config_default_rejects_no_stream() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    let output = docent()
+        .args(["--config-dir", dir.to_str().unwrap(), "init"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let path = dir.join("config.toml");
+    let contents = fs::read_to_string(&path).unwrap();
+    let contents = contents.replace("default = \"terminal\"", "default = \"firefox\"");
+    assert!(contents.contains("default = \"firefox\""));
+    fs::write(&path, contents).unwrap();
+
+    let output = docent()
+        .args([
+            "--config-dir",
+            dir.to_str().unwrap(),
+            "explain",
+            "notes.md",
+            "--no-stream",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(4));
+    assert!(stderr(&output).contains("cannot be combined with --no-stream"));
+}
+
+#[test]
 fn run_viewer_rejects_streaming_flags() {
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path().join("config");

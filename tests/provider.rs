@@ -703,28 +703,11 @@ fn html_requires_a_stream() {
 }
 
 #[cfg(unix)]
-fn check_browser_viewer(viewer: &str, browser_flag: &str, expected_target: &str) {
+fn write_fake_browser(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
 
-    let body = concat!(
-        "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
-        "data: [DONE]\n\n"
-    );
-    let server = MockServer::start(MockResponse::sse(200, body));
-    let temp = tempfile::tempdir().unwrap();
-    let dir = temp.path().join("config");
-    setup(&dir, "openai", &server.base_url());
-
-    let notes = temp.path().join("notes.md");
-    fs::write(&notes, "alpha beta gamma\n").unwrap();
-    let css = temp.path().join("custom.css");
-    fs::write(&css, ".markdown h2 { color: red; }").unwrap();
-    let output_file = temp.path().join("browser.json");
-
-    let browser = temp.path().join("fake-browser");
     fs::write(
-        &browser,
+        path,
         r#"#!/usr/bin/env python3
 import json
 import os
@@ -748,9 +731,39 @@ with open(os.environ["FAKE_BROWSER_OUTPUT"], "w", encoding="utf-8") as handle:
 "#,
     )
     .unwrap();
-    let mut permissions = fs::metadata(&browser).unwrap().permissions();
+    let mut permissions = fs::metadata(path).unwrap().permissions();
     permissions.set_mode(0o755);
-    fs::set_permissions(&browser, permissions).unwrap();
+    fs::set_permissions(path, permissions).unwrap();
+}
+
+#[cfg(unix)]
+fn append_viewer_config(dir: &Path, contents: &str) {
+    let path = dir.join("config.toml");
+    let mut config = fs::read_to_string(&path).unwrap();
+    config.push_str(contents);
+    fs::write(path, config).unwrap();
+}
+
+#[cfg(unix)]
+fn check_browser_viewer(viewer: &str, browser_flag: &str, expected_target: &str) {
+    let body = concat!(
+        "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let notes = temp.path().join("notes.md");
+    fs::write(&notes, "alpha beta gamma\n").unwrap();
+    let css = temp.path().join("custom.css");
+    fs::write(&css, ".markdown h2 { color: red; }").unwrap();
+    let output_file = temp.path().join("browser.json");
+
+    let browser = temp.path().join("fake-browser");
+    write_fake_browser(&browser);
 
     let output = run_with_env(
         &dir,
@@ -812,6 +825,157 @@ fn browser_viewer_streams_into_qutebrowser() {
 #[test]
 fn browser_viewer_streams_into_firefox() {
     check_browser_viewer("firefox", "--firefox", "--new-window");
+}
+
+#[cfg(unix)]
+fn check_config_viewer(viewer: &str, expected_target: &str) {
+    let body = concat!(
+        "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let notes = temp.path().join("notes.md");
+    fs::write(&notes, "alpha beta gamma\n").unwrap();
+    let output_file = temp.path().join("browser.json");
+    let browser = temp.path().join("fake-browser");
+    write_fake_browser(&browser);
+
+    append_viewer_config(
+        &dir,
+        &format!(
+            r#"
+[viewer]
+default = "{viewer}"
+qutebrowser = "{}"
+qutebrowser_target = "tab-bg"
+firefox = "{}"
+firefox_target = "tab"
+"#,
+            browser.display(),
+            browser.display()
+        ),
+    );
+
+    let output = run_with_env(
+        &dir,
+        &["explain", notes.to_str().unwrap(), "--lines", "1:1"],
+        "",
+        Some("secret"),
+        &[("FAKE_BROWSER_OUTPUT", output_file.to_str().unwrap())],
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(output.stdout.is_empty());
+
+    let captured: Value = serde_json::from_str(&fs::read_to_string(&output_file).unwrap()).unwrap();
+    let argv = captured["argv"].as_array().unwrap();
+    assert_eq!(argv[0].as_str().unwrap(), expected_target);
+    assert!(argv[1].as_str().unwrap().starts_with("http://127.0.0.1:"));
+}
+
+#[cfg(unix)]
+#[test]
+fn config_default_viewer_applies_to_qutebrowser() {
+    check_config_viewer("qutebrowser", "--target=tab-bg");
+}
+
+#[cfg(unix)]
+#[test]
+fn config_default_viewer_applies_to_firefox() {
+    check_config_viewer("firefox", "--new-tab");
+}
+
+#[cfg(unix)]
+#[test]
+fn viewer_flag_overrides_the_config_default() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"model":"test-model","choices":[{"message":{"role":"assistant","content":"Hello"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let notes = temp.path().join("notes.md");
+    fs::write(&notes, "alpha beta gamma\n").unwrap();
+    let output_file = temp.path().join("browser.json");
+    let browser = temp.path().join("fake-browser");
+    write_fake_browser(&browser);
+    append_viewer_config(
+        &dir,
+        &format!(
+            r#"
+[viewer]
+default = "firefox"
+firefox = "{}"
+"#,
+            browser.display()
+        ),
+    );
+
+    let output = run_with_env(
+        &dir,
+        &[
+            "explain",
+            notes.to_str().unwrap(),
+            "--lines",
+            "1:1",
+            "--viewer",
+            "terminal",
+            "--no-stream",
+        ],
+        "",
+        Some("secret"),
+        &[("FAKE_BROWSER_OUTPUT", output_file.to_str().unwrap())],
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "Hello");
+    assert!(!output_file.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn run_stream_ignores_the_config_default_viewer() {
+    let body = concat!(
+        "data: {\"model\":\"test-model\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let output_file = temp.path().join("browser.json");
+    let browser = temp.path().join("fake-browser");
+    write_fake_browser(&browser);
+    append_viewer_config(
+        &dir,
+        &format!(
+            r#"
+[viewer]
+default = "firefox"
+firefox = "{}"
+"#,
+            browser.display()
+        ),
+    );
+
+    let input =
+        r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
+    let output = run_with_env(
+        &dir,
+        &["run", "--profile", "explain", "--stream"],
+        input,
+        Some("secret"),
+        &[("FAKE_BROWSER_OUTPUT", output_file.to_str().unwrap())],
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("\"type\":\"done\""));
+    assert!(!output_file.exists());
 }
 
 #[test]

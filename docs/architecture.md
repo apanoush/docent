@@ -101,7 +101,7 @@ The answer is a terminal window rather than a zathura overlay. An overlay would 
 
 ## CLI browser viewer
 
-The terminal commands and `docent run` can open a loopback answer page in qutebrowser or Firefox with `--viewer`. The server, page shell, CSS cascade, Markdown event, cancellation, and history handling are shared. Only the launch arguments differ: qutebrowser uses `--target=VALUE`, and Firefox uses `--new-tab`, `--new-window`, `--private-window`, or no flag for `auto`. `Viewer::open` waits up to 30 seconds for the page's event stream, then fails with a browser-specific message. Closing the page sets the cancellation flag and the provider request is aborted. The Firefox target does not use the Firefox extension; the extension remains a selection-capture client.
+The terminal commands and `docent run` can open a loopback answer page in qutebrowser or Firefox with `--viewer`. The server, page shell, CSS cascade, Markdown event, cancellation, and history handling are shared. Only the launch arguments differ: qutebrowser uses `--target=VALUE`, and Firefox uses `--new-tab`, `--new-window`, `--private-window`, or no flag for `auto`. The terminal commands read their default viewer, executable, and target from `[viewer]` in `config.toml`; `docent run` keeps the terminal default unless `--viewer` is passed, so adapters that call it with `--stream` are unaffected. `Viewer::open` waits up to 30 seconds for the page's event stream, then fails with a browser-specific message. Closing the page sets the cancellation flag and the provider request is aborted. The Firefox target does not use the Firefox extension; the extension remains a selection-capture client.
 
 ## Output modes
 
@@ -141,6 +141,8 @@ Settings resolve in this order, highest first:
 4. Built-in defaults.
 
 Provider selection, base URL, API key environment variable, and timeout are global. Model, temperature, token limit, context mode, and languages can be overridden per profile. Keeping provider selection global avoids mixing credentials and wire formats in a single request.
+
+Viewer selection is separate from prompt settings. The `--viewer`, `--qutebrowser`, `--qutebrowser-target`, `--firefox`, and `--firefox-target` flags override the `[viewer]` table, which overrides the built-in terminal default. Profiles do not carry viewer settings. `docent run` ignores the configured viewer default and keeps the terminal unless `--viewer` is passed, so adapters that call `--stream` are never switched to a browser.
 
 ## Context assembly
 

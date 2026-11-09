@@ -57,6 +57,13 @@ max_chars = 32000
 language = "auto"
 target_language = "English"
 
+[viewer]
+default = "terminal"
+qutebrowser = "qutebrowser"
+qutebrowser_target = "window"
+firefox = "firefox"
+firefox_target = "window"
+
 [history]
 enabled = true
 # database = "~/docent.db"
@@ -168,6 +175,20 @@ A local server that does not check keys still needs a key source. Set `api_key =
 | `language` | string | `"auto"` | Response language. `"auto"` tells the model to match the selected passage. Any other value is inserted into the prompt verbatim. |
 | `target_language` | string | `"English"` | Default translation target used by the translate profile. |
 
+### `[viewer]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `default` | `"terminal"`, `"qutebrowser"`, or `"firefox"` | `"terminal"` | Viewer used by `explain`, `ask`, `translate`, `summarize`, and `do` when `--viewer` is not passed. |
+| `qutebrowser` | string | `"qutebrowser"` | Qutebrowser executable or command name. |
+| `qutebrowser_target` | string | `"window"` | Qutebrowser `--target` value: `auto`, `tab`, `tab-bg`, `tab-silent`, `tab-bg-silent`, `window`, or `private-window`. |
+| `firefox` | string | `"firefox"` | Firefox executable or command name. |
+| `firefox_target` | string | `"window"` | Firefox URL target: `auto`, `tab`, `window`, or `private-window`. |
+
+A partial table is valid, so `[viewer]\ndefault = "firefox"` is enough. The other keys keep their built-in defaults. Command-line flags still win, for example `--viewer terminal` overrides the configured default for one run.
+
+The viewer default applies to the terminal-facing commands. `docent run` keeps `terminal` as its default because it is the machine interface used by the Neovim, qutebrowser, Firefox, and zathura adapters. Pass `--viewer` to `docent run` to open a browser page explicitly; the configured executable and target still apply.
+
 ### `[history]`
 
 | Key | Type | Default | Meaning |
@@ -239,12 +260,12 @@ Each declared requirement must be used by `user_prompt` or `system_prompt`. Dupl
 
 Settings resolve in this order, highest first:
 
-1. CLI flags (`--context-mode`, `--target-language`).
+1. CLI flags (`--context-mode`, `--target-language`, and the viewer flags).
 2. The profile file.
 3. `config.toml`.
 4. Built-in defaults.
 
-`model`, `temperature`, and `max_tokens` have no CLI flags in 0.1.0. Set them in the profile or in `config.toml`.
+`model`, `temperature`, and `max_tokens` have no CLI flags in 0.1.0. Set them in the profile or in `config.toml`. Viewer settings resolve separately: the CLI flags win over the `[viewer]` table, and profiles do not carry viewer settings.
 
 ### Example profile
 
@@ -319,6 +340,7 @@ docent do my-profile notes.md --lines 12:20
 - `--context-mode` and `--target-language` (alias `--to`) work on every terminal command.
 - `--viewer qutebrowser` shows the answer in a qutebrowser window or tab instead of stdout. `--qutebrowser`, `--qutebrowser-target`, and `--answer-css` tune the viewer. See [the browser viewer](viewer.md).
 - `--viewer firefox` shows the answer in a Firefox window or tab instead. `--firefox`, `--firefox-target`, and `--answer-css` tune it.
+- Without `--viewer`, these commands use `viewer.default` from `config.toml`, which defaults to `terminal`. Pass `--viewer terminal` to override a configured browser default.
 
 Piped stdin is always the document, never prompt input. Prompts only appear when stdin is a terminal and a required input is missing. A profile that requires a question prompts for one; a profile that requires a selection prompts for a line range or pasted text.
 

@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use clap::ValueEnum;
+use serde::{Deserialize, Serialize};
 
 use crate::error::DocentError;
 use crate::markdown;
@@ -17,8 +18,28 @@ use server::{Server, ServerEvent};
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const FINISH_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Where to show the answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ViewerKind {
+    /// Print the answer in the terminal.
+    Terminal,
+    /// Stream the answer into a qutebrowser window or tab.
+    Qutebrowser,
+    /// Stream the answer into a Firefox window or tab.
+    Firefox,
+}
+
+impl ViewerKind {
+    /// True for the viewers that open a browser page.
+    pub fn is_browser(self) -> bool {
+        !matches!(self, Self::Terminal)
+    }
+}
+
 /// A qutebrowser `--target` value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum QutebrowserTarget {
     /// Use qutebrowser's configured new-instance target.
     Auto,
@@ -52,7 +73,8 @@ impl QutebrowserTarget {
 }
 
 /// A Firefox URL target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum FirefoxTarget {
     /// Let Firefox use its normal new-instance behavior.
     Auto,

@@ -5,7 +5,7 @@ use std::io::{IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
 
 use crate::cache;
@@ -19,7 +19,7 @@ use crate::prompt::{self, EffectiveSettings};
 use crate::provider::{self, Completion};
 use crate::request::Request;
 use crate::source::{self, LineRange, NoPrompter, SelectionArg, TerminalPrompter};
-use crate::viewer::{Browser, FirefoxTarget, QutebrowserTarget, Viewer, ViewerOptions};
+use crate::viewer::{Browser, FirefoxTarget, QutebrowserTarget, Viewer, ViewerKind, ViewerOptions};
 
 const AFTER_HELP: &str = "Examples:
   docent explain notes.md --lines 12:20
@@ -169,50 +169,62 @@ pub struct CommonArgs {
     pub viewer: ViewerArgs,
 }
 
-/// Where to show the answer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum ViewerKind {
-    /// Print the answer in the terminal.
-    Terminal,
-    /// Stream the answer into a qutebrowser window or tab.
-    Qutebrowser,
-    /// Stream the answer into a Firefox window or tab.
-    Firefox,
-}
-
-impl ViewerKind {
-    /// True for the viewers that open a browser page.
-    fn is_browser(self) -> bool {
-        !matches!(self, Self::Terminal)
-    }
-}
-
 /// Options for the browser answer viewers.
 #[derive(Debug, Args)]
 pub struct ViewerArgs {
     /// Where to show the answer.
-    #[arg(long, value_enum, default_value = "terminal")]
-    pub viewer: ViewerKind,
+    #[arg(long, value_enum)]
+    pub viewer: Option<ViewerKind>,
 
     /// Qutebrowser executable or command name.
-    #[arg(long, default_value = "qutebrowser")]
-    pub qutebrowser: String,
+    #[arg(long)]
+    pub qutebrowser: Option<String>,
 
     /// Qutebrowser --target value.
-    #[arg(long, value_enum, default_value = "window")]
-    pub qutebrowser_target: QutebrowserTarget,
+    #[arg(long, value_enum)]
+    pub qutebrowser_target: Option<QutebrowserTarget>,
 
     /// Firefox executable or command name.
-    #[arg(long, default_value = "firefox")]
-    pub firefox: String,
+    #[arg(long)]
+    pub firefox: Option<String>,
 
     /// Firefox answer target.
-    #[arg(long, value_enum, default_value = "window")]
-    pub firefox_target: FirefoxTarget,
+    #[arg(long, value_enum)]
+    pub firefox_target: Option<FirefoxTarget>,
 
     /// CSS file appended after the answer styles.
     #[arg(long, visible_alias = "qutebrowser-css", value_name = "PATH")]
     pub answer_css: Option<PathBuf>,
+}
+
+impl ViewerArgs {
+    /// Viewer selected by the flag or the config default.
+    fn kind(&self, config: &config::Config) -> ViewerKind {
+        self.viewer.unwrap_or(config.viewer.default)
+    }
+
+    /// Qutebrowser executable from the flag or the config.
+    fn qutebrowser<'a>(&'a self, config: &'a config::Config) -> &'a str {
+        self.qutebrowser
+            .as_deref()
+            .unwrap_or(&config.viewer.qutebrowser)
+    }
+
+    /// Qutebrowser target from the flag or the config.
+    fn qutebrowser_target(&self, config: &config::Config) -> QutebrowserTarget {
+        self.qutebrowser_target
+            .unwrap_or(config.viewer.qutebrowser_target)
+    }
+
+    /// Firefox executable from the flag or the config.
+    fn firefox<'a>(&'a self, config: &'a config::Config) -> &'a str {
+        self.firefox.as_deref().unwrap_or(&config.viewer.firefox)
+    }
+
+    /// Firefox target from the flag or the config.
+    fn firefox_target(&self, config: &config::Config) -> FirefoxTarget {
+        self.firefox_target.unwrap_or(config.viewer.firefox_target)
+    }
 }
 
 /// How the terminal selected a passage.
@@ -431,19 +443,28 @@ fn run_human(
         target_language,
         viewer,
     } = common;
-    if viewer.viewer.is_browser() && no_stream {
+    let label = human_label(file.as_deref(), &selection);
+
+    let config = config::ensure_initialized(config_dir)?;
+    let viewer_kind = viewer.kind(&config);
+    if viewer_kind.is_browser() && no_stream {
         return Err(DocentError::Input(
             "browser viewers cannot be combined with --no-stream".to_string(),
         ));
     }
-    let label = human_label(file.as_deref(), &selection);
 
-    let config = config::ensure_initialized(config_dir)?;
     let profile = ProfileStore::new(config::profiles_dir(config_dir)).load(profile_name)?;
     let settings = resolve_settings(&config, &profile, context_mode, target_language)?;
     let request = resolve_human_request(&profile, file.as_deref(), selection, question)?;
-    let output = if viewer.viewer.is_browser() {
-        OutputMode::Browser(browser_options(config_dir, profile_name, label, &viewer)?)
+    let output = if viewer_kind.is_browser() {
+        OutputMode::Browser(browser_options(
+            &config,
+            config_dir,
+            viewer_kind,
+            profile_name,
+            label,
+            &viewer,
+        )?)
     } else if no_stream {
         OutputMode::PlainBuffered
     } else {
@@ -529,23 +550,25 @@ fn human_label(file: Option<&Path>, selection: &SelectionArgs) -> String {
 
 /// Build the browser viewer options for one command.
 fn browser_options(
+    config: &config::Config,
     config_dir: &Path,
+    kind: ViewerKind,
     profile: &str,
     header: String,
     args: &ViewerArgs,
 ) -> Result<ViewerOptions, DocentError> {
-    let browser = match args.viewer {
+    let browser = match kind {
         ViewerKind::Qutebrowser => Browser::Qutebrowser {
-            command: config::expand_path(Path::new(&args.qutebrowser))?
+            command: config::expand_path(Path::new(args.qutebrowser(config)))?
                 .display()
                 .to_string(),
-            target: args.qutebrowser_target,
+            target: args.qutebrowser_target(config),
         },
         ViewerKind::Firefox => Browser::Firefox {
-            command: config::expand_path(Path::new(&args.firefox))?
+            command: config::expand_path(Path::new(args.firefox(config)))?
                 .display()
                 .to_string(),
-            target: args.firefox_target,
+            target: args.firefox_target(config),
         },
         ViewerKind::Terminal => {
             unreachable!("the terminal viewer does not open a browser")
@@ -634,7 +657,8 @@ fn run_request(
         header,
         viewer,
     } = args;
-    if viewer.viewer.is_browser() && (json || stream || print_prompt || html) {
+    let browser_kind = viewer.viewer.filter(|kind| kind.is_browser());
+    if browser_kind.is_some() && (json || stream || print_prompt || html) {
         return Err(DocentError::Input(
             "browser viewers cannot be combined with --stream, --json, --html, or --print-prompt"
                 .to_string(),
@@ -649,9 +673,11 @@ fn run_request(
     }
     let settings = resolve_settings(&config, &profile, context_mode, target_language)?;
 
-    let output = if viewer.viewer.is_browser() {
+    let output = if let Some(kind) = browser_kind {
         OutputMode::Browser(browser_options(
+            &config,
             config_dir,
+            kind,
             &profile_name,
             header.or(request.file.clone()).unwrap_or_default(),
             &viewer,

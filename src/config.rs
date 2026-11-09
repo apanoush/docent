@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::defaults;
 use crate::error::DocentError;
+use crate::viewer::{FirefoxTarget, QutebrowserTarget, ViewerKind};
 
 /// Environment variable that overrides the config directory.
 pub const CONFIG_DIR_ENV: &str = "DOCENT_CONFIG_DIR";
@@ -30,6 +31,9 @@ pub struct Config {
     /// Response language settings.
     #[serde(default)]
     pub response: ResponseConfig,
+    /// Answer viewer defaults.
+    #[serde(default)]
+    pub viewer: ViewerConfig,
     /// Run history settings.
     #[serde(default)]
     pub history: HistoryConfig,
@@ -176,6 +180,37 @@ impl Default for ResponseConfig {
     }
 }
 
+/// Answer viewer defaults used by the terminal commands.
+///
+/// Missing keys fall back to the built-in defaults, so a partial `[viewer]`
+/// table such as `default = "firefox"` is valid.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct ViewerConfig {
+    /// Default viewer for the terminal commands.
+    pub default: ViewerKind,
+    /// Qutebrowser executable or command name.
+    pub qutebrowser: String,
+    /// Qutebrowser `--target` value.
+    pub qutebrowser_target: QutebrowserTarget,
+    /// Firefox executable or command name.
+    pub firefox: String,
+    /// Firefox URL target.
+    pub firefox_target: FirefoxTarget,
+}
+
+impl Default for ViewerConfig {
+    fn default() -> Self {
+        Self {
+            default: ViewerKind::Terminal,
+            qutebrowser: "qutebrowser".to_string(),
+            qutebrowser_target: QutebrowserTarget::Window,
+            firefox: "firefox".to_string(),
+            firefox_target: FirefoxTarget::Window,
+        }
+    }
+}
+
 /// Run history settings.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -264,6 +299,12 @@ impl Config {
         }
         if self.response.target_language.trim().is_empty() {
             errors.push("response.target_language must not be empty".to_string());
+        }
+        if self.viewer.qutebrowser.trim().is_empty() {
+            errors.push("viewer.qutebrowser must not be empty".to_string());
+        }
+        if self.viewer.firefox.trim().is_empty() {
+            errors.push("viewer.firefox must not be empty".to_string());
         }
         if self
             .history
@@ -514,6 +555,88 @@ mod tests {
         assert_eq!(config.api.model, "deepseek-v4.1-flash");
         assert!(config.history.enabled);
         assert!(config.history.database.is_none());
+        assert_eq!(config.viewer, ViewerConfig::default());
+    }
+
+    #[test]
+    fn viewer_config_defaults_to_the_terminal() {
+        let config = Config::default();
+        config.validate(Path::new("config.toml")).unwrap();
+
+        assert_eq!(config.viewer.default, ViewerKind::Terminal);
+        assert_eq!(config.viewer.qutebrowser, "qutebrowser");
+        assert_eq!(config.viewer.qutebrowser_target, QutebrowserTarget::Window);
+        assert_eq!(config.viewer.firefox, "firefox");
+        assert_eq!(config.viewer.firefox_target, FirefoxTarget::Window);
+    }
+
+    #[test]
+    fn viewer_config_accepts_a_partial_table() {
+        let config: Config = toml::from_str(
+            r#"
+[viewer]
+default = "firefox"
+"#,
+        )
+        .unwrap();
+        config.validate(Path::new("config.toml")).unwrap();
+
+        assert_eq!(config.viewer.default, ViewerKind::Firefox);
+        assert_eq!(config.viewer.firefox, "firefox");
+        assert_eq!(config.viewer.qutebrowser_target, QutebrowserTarget::Window);
+    }
+
+    #[test]
+    fn viewer_config_accepts_executables_and_targets() {
+        let config: Config = toml::from_str(
+            r#"
+[viewer]
+default = "qutebrowser"
+qutebrowser = "/usr/bin/qutebrowser"
+qutebrowser_target = "tab-bg"
+firefox = "firefox-esr"
+firefox_target = "private-window"
+"#,
+        )
+        .unwrap();
+        config.validate(Path::new("config.toml")).unwrap();
+
+        assert_eq!(config.viewer.default, ViewerKind::Qutebrowser);
+        assert_eq!(config.viewer.qutebrowser, "/usr/bin/qutebrowser");
+        assert_eq!(config.viewer.qutebrowser_target, QutebrowserTarget::TabBg);
+        assert_eq!(config.viewer.firefox, "firefox-esr");
+        assert_eq!(config.viewer.firefox_target, FirefoxTarget::PrivateWindow);
+    }
+
+    #[test]
+    fn viewer_config_rejects_unknown_fields() {
+        let error = toml::from_str::<Config>("[viewer]\npath = \"firefox\"\n").unwrap_err();
+        assert!(error.to_string().contains("path"));
+    }
+
+    #[test]
+    fn viewer_config_rejects_an_unknown_viewer() {
+        let error = toml::from_str::<Config>("[viewer]\ndefault = \"chromium\"\n").unwrap_err();
+        assert!(error.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn viewer_config_rejects_an_unknown_target() {
+        let error =
+            toml::from_str::<Config>("[viewer]\nqutebrowser_target = \"overlay\"\n").unwrap_err();
+        assert!(error.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn viewer_config_rejects_empty_executables() {
+        let mut config = Config::default();
+        config.viewer.qutebrowser.clear();
+        config.viewer.firefox.clear();
+
+        let error = config.validate(Path::new("config.toml")).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("viewer.qutebrowser"));
+        assert!(message.contains("viewer.firefox"));
     }
 
     #[test]
