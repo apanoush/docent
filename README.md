@@ -182,4 +182,4 @@ Early development, version 0.1.0. The terminal commands, streaming, profile syst
 
 ## License
 
-GPL-3.0-only. See [LICENSE](LICENSE).
+AGPL-3.0-only. See [LICENSE](LICENSE).
