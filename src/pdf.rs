@@ -29,8 +29,7 @@ pub struct ExtractedText {
 /// around the final page without knowing the page count. A start past the last
 /// page is still an error.
 pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, String> {
-    let page_texts = extract_text_from_mem_by_pages(bytes)
-        .map_err(|error| format!("could not decode the PDF: {error}"))?;
+    let page_texts = decode_pages(|| extract_text_from_mem_by_pages(bytes))?;
     let page_count = page_texts.len();
     if page_count == 0 {
         return Err("the PDF has no pages".to_string());
@@ -59,6 +58,46 @@ pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, 
         text,
         pages: page_count,
     })
+}
+
+/// Decodes every page, turning extractor panics into normal errors.
+fn decode_pages<F>(decoder: F) -> Result<Vec<String>, String>
+where
+    F: FnOnce() -> Result<Vec<String>, pdf_extract::OutputError> + std::panic::UnwindSafe,
+{
+    match catch_decoder_panic(decoder) {
+        Ok(Ok(page_texts)) => Ok(page_texts),
+        Ok(Err(error)) => Err(format!("could not decode the PDF: {error}")),
+        Err(_) => Err(
+            "could not decode the PDF: the extractor failed on an unsupported document structure"
+                .to_string(),
+        ),
+    }
+}
+
+/// Runs the extractor and catches panics.
+///
+/// The CLI is single-threaded while a document is read. The panic hook is
+/// silenced for this call so a library panic does not print a backtrace before
+/// the normal input error. Unit tests keep the default hook so unexpected
+/// panics stay visible.
+fn catch_decoder_panic<F, T>(decoder: F) -> std::thread::Result<T>
+where
+    F: FnOnce() -> T + std::panic::UnwindSafe,
+{
+    #[cfg(not(test))]
+    {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let result = std::panic::catch_unwind(decoder);
+        std::panic::set_hook(previous);
+        result
+    }
+
+    #[cfg(test)]
+    {
+        std::panic::catch_unwind(decoder)
+    }
 }
 
 #[cfg(test)]
@@ -171,5 +210,18 @@ mod tests {
     fn rejects_malformed_pdfs() {
         let error = extract(b"%PDF-1.4\nnot really a pdf", None).unwrap_err();
         assert!(error.contains("could not decode"), "{error}");
+    }
+
+    #[test]
+    fn contains_extractor_panics() {
+        let error = decode_pages(|| -> Result<Vec<String>, pdf_extract::OutputError> {
+            panic!("simulated extractor panic")
+        })
+        .unwrap_err();
+
+        assert!(
+            error.contains("extractor failed on an unsupported document structure"),
+            "{error}"
+        );
     }
 }
