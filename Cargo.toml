@@ -1,12 +1,18 @@
 [package]
 name = "docent"
 version = "0.1.0"
-edition = "2024"
+edition = "2026"
 rust-version = "1.85"
 description = "A context-aware reading companion for the terminal, Neovim, and the browser"
 license = "AGPL-3.0-only"
 authors = ["aa-p"]
 repository = "https://github.com/apanoush/docent"
+
+[package.metadata.wix]
+upgrade-guid = "A2895CD0-41CF-442B-86A1-7660AB99BADE"
+path-guid = "5A6B2066-871A-4A60-AC1C-672D934C6186"
+license = false
+eula = false
 
 [dependencies]
 blake3 = "1.8.7"
