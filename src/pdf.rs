@@ -4,7 +4,7 @@
 //! joined into plain text. Page ranges are applied before joining, so the
 //! document text only contains the pages the user asked for.
 
-use pdf_extract::extract_text_from_mem_by_pages;
+use pdf_extract::{Document, PlainTextOutput, extract_text_from_mem_by_pages, output_doc_page};
 
 use crate::input::PageRange;
 
@@ -29,27 +29,19 @@ pub struct ExtractedText {
 /// around the final page without knowing the page count. A start past the last
 /// page is still an error.
 pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, String> {
-    let page_texts = decode_pages(|| extract_text_from_mem_by_pages(bytes))?;
-    let page_count = page_texts.len();
+    let (page_texts, page_count) = match pages {
+        Some(range) => decode_range(bytes, range)?,
+        None => {
+            let page_texts = decode_all(bytes)?;
+            let page_count = page_texts.len();
+            (page_texts, page_count)
+        }
+    };
     if page_count == 0 {
         return Err("the PDF has no pages".to_string());
     }
 
-    let range = pages.unwrap_or(PageRange {
-        start: 1,
-        end: page_count,
-    });
-    if range.start == 0 {
-        return Err("page numbers start at 1".to_string());
-    }
-    if range.start > page_count {
-        return Err(format!(
-            "page range {range} is out of bounds; the PDF has {page_count} pages"
-        ));
-    }
-
-    let end = range.end.min(page_count);
-    let text = page_texts[range.start - 1..end]
+    let text = page_texts
         .iter()
         .map(|page| page.trim_matches('\n'))
         .collect::<Vec<_>>()
@@ -60,14 +52,67 @@ pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, 
     })
 }
 
-/// Decodes every page, turning extractor panics into normal errors.
-fn decode_pages<F>(decoder: F) -> Result<Vec<String>, String>
-where
-    F: FnOnce() -> Result<Vec<String>, pdf_extract::OutputError> + std::panic::UnwindSafe,
-{
+/// Decodes every page of a PDF.
+fn decode_all(bytes: &[u8]) -> Result<Vec<String>, String> {
+    guard(|| {
+        extract_text_from_mem_by_pages(bytes)
+            .map_err(|error| format!("could not decode the PDF: {error}"))
+    })
+}
+
+/// Decodes only the requested page range.
+///
+/// The document structure is parsed once and each selected page is rendered on
+/// its own, so a one-page window does not pay for the text of every other page.
+fn decode_range(bytes: &[u8], range: PageRange) -> Result<(Vec<String>, usize), String> {
+    guard(|| {
+        let mut document = Document::load_mem(bytes)
+            .map_err(|error| format!("could not decode the PDF: {error}"))?;
+        if document.is_encrypted() {
+            document
+                .decrypt("")
+                .map_err(|error| format!("could not decode the PDF: {error}"))?;
+        }
+
+        let page_count = document.get_pages().len();
+        if page_count == 0 {
+            return Err("the PDF has no pages".to_string());
+        }
+        if range.start == 0 {
+            return Err("page numbers start at 1".to_string());
+        }
+        if range.end < range.start {
+            return Err("page range start must not exceed end".to_string());
+        }
+        if range.start > page_count {
+            return Err(format!(
+                "page range {range} is out of bounds; the PDF has {page_count} pages"
+            ));
+        }
+
+        let end = range.end.min(page_count);
+        let mut texts = Vec::with_capacity(end - range.start + 1);
+        for page in range.start..=end {
+            let page_number =
+                u32::try_from(page).map_err(|_| format!("page {page} is out of range"))?;
+            let mut text = String::new();
+            {
+                let mut output = PlainTextOutput::new(&mut text);
+                output_doc_page(&document, &mut output, page_number)
+                    .map_err(|error| format!("could not decode the PDF: {error}"))?;
+            }
+            texts.push(text);
+        }
+        Ok((texts, page_count))
+    })
+}
+
+/// Runs the decoder, turning panics into normal errors.
+fn guard<T>(
+    decoder: impl FnOnce() -> Result<T, String> + std::panic::UnwindSafe,
+) -> Result<T, String> {
     match catch_decoder_panic(decoder) {
-        Ok(Ok(page_texts)) => Ok(page_texts),
-        Ok(Err(error)) => Err(format!("could not decode the PDF: {error}")),
+        Ok(result) => result,
         Err(_) => Err(
             "could not decode the PDF: the extractor failed on an unsupported document structure"
                 .to_string(),
@@ -214,14 +259,24 @@ mod tests {
 
     #[test]
     fn contains_extractor_panics() {
-        let error = decode_pages(|| -> Result<Vec<String>, pdf_extract::OutputError> {
-            panic!("simulated extractor panic")
-        })
-        .unwrap_err();
+        let error =
+            guard(|| -> Result<Vec<String>, String> { panic!("simulated extractor panic") })
+                .unwrap_err();
 
         assert!(
             error.contains("extractor failed on an unsupported document structure"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn rejects_invalid_page_ranges_on_the_selected_path() {
+        let pdf = sample_pdf(&["first page", "second page"]);
+
+        let error = extract(&pdf, Some(PageRange { start: 0, end: 1 })).unwrap_err();
+        assert!(error.contains("page numbers start at 1"), "{error}");
+
+        let error = extract(&pdf, Some(PageRange { start: 2, end: 1 })).unwrap_err();
+        assert!(error.contains("start must not exceed end"), "{error}");
     }
 }
