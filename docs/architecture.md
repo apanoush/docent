@@ -227,6 +227,24 @@ Diagnostics and prompt labels go to stderr. The answer goes to stdout. A CLI inv
 - The CLI browser viewer binds only to `127.0.0.1`, uses a random 128-bit token path, serves only the answer page and its event stream, and closes when the page closes.
 - The shared Markdown renderer treats model output as untrusted: raw HTML is escaped, images are replaced by alt text, and links are limited to `http`, `https`, and `mailto`.
 
+## Terminology
+
+These names are easy to confuse. Use them consistently.
+
+| Term | Meaning |
+|---|---|
+| `docent` | The product, the CLI binary, and the library crate. |
+| `provider` | The service connection, configured under `[provider]`: OpenAI, Anthropic, OpenRouter, or a local server. |
+| `wire_format` | The request shape, `openai` or `anthropic`. It is not the provider itself. |
+| `input` | The terminal input adapters in `src/input.rs`: files, stdin, line ranges, phrases, and pasted text. |
+| `source` | The caller recorded in history (`cli`, `nvim`, `qutebrowser`, `firefox`, `zathura`), set by `--source`. It is not the input adapter. |
+| `storage` | The SQLite store in `src/storage.rs` for run history and the answer cache. |
+| `run history` | The user-facing record of provider calls, configured by `[history]` and `--no-history`. |
+| `history` | Reserved for the run-history feature and for future conversation history. The module is `storage`. |
+| `answer target` | Where the answer goes: terminal, qutebrowser, or Firefox. The CLI flag and config table keep the name `viewer`, and the Rust `Viewer` type is the browser page process. |
+| `answer` | The model's returned text. `output` is the history and cache column, and `Completion.text` is the provider response field. |
+| `header` | The file or page part shown in the answer page status line. `label` is the whole status line. |
+
 ## Alternatives considered
 
 - **Markdown profiles with a separate metadata block** would be pleasant for prose, but splits one profile across two files or requires a custom front-matter parser. Typed TOML keeps metadata and prompt together and reuses the same parser as `config.toml`.
