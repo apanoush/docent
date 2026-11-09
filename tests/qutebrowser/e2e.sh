@@ -54,8 +54,8 @@ HTML
 cat > "$tmp/config.py" <<PY
 import sys
 sys.path.insert(0, "${root}/plugins/qutebrowser")
-import docent
-docent.setup(config, cmd=["${tmp}/docent"])
+import docent_qutebrowser
+docent_qutebrowser.setup(config, cmd=["${tmp}/docent"])
 PY
 
 log="$tmp/run.log"

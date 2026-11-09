@@ -3,13 +3,13 @@
 The adapter is loaded from qutebrowser's ``config.py``::
 
     import sys
-    sys.path.insert(0, "/path/to/reading-assistant/qutebrowser")
-    import docent
+    sys.path.insert(0, "/path/to/docent/plugins/qutebrowser")
+    import docent_qutebrowser
 
-    docent.setup(config, keymaps={"explain": ",de"})
+    docent_qutebrowser.setup(config, keymaps={"explain": ",de"})
 
 The package itself has no qutebrowser imports. ``setup`` lazily imports
-``docent.plugin`` so the pure request, stream, and profile modules can be tested
+``docent_qutebrowser.plugin`` so the pure request, stream, and profile modules can be tested
 outside a running browser.
 """
 

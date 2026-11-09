@@ -103,7 +103,7 @@ class Session:
     source_tab: apitypes.Tab
     answer_tab: apitypes.Tab
     profile: str
-    page: ui.AnswerPage
+    answer_page: ui.AnswerPage
     settings: Settings
     parser: NdjsonParser = field(default_factory=NdjsonParser)
     process: QProcess | None = None
@@ -143,14 +143,14 @@ class Session:
         process.start()
         if not process.waitForStarted(3000):
             self.error = True
-            self.page.set_error(f"could not start {self.settings.cmd[0]}")
+            self.answer_page.set_error(f"could not start {self.settings.cmd[0]}")
             self._cleanup()
             return
 
         payload = json.dumps(request, ensure_ascii=False).encode("utf-8")
         if process.write(payload) < 0:
             self.error = True
-            self.page.set_error("could not write the request to docent")
+            self.answer_page.set_error("could not write the request to docent")
             self._terminate()
             return
         process.closeWriteChannel()
@@ -173,7 +173,7 @@ class Session:
         if self.cancelled:
             return
         self.cancelled = True
-        self.page.close()
+        self.answer_page.close()
         self._terminate()
         if close_tab:
             try:
@@ -203,7 +203,7 @@ class Session:
             events = self.parser.feed(data)
         except StreamError as exc:
             self.error = True
-            self.page.set_error(str(exc))
+            self.answer_page.set_error(str(exc))
             self._terminate()
             return
         for event in events:
@@ -218,7 +218,7 @@ class Session:
         if kind == "delta":
             text = event.get("text")
             if isinstance(text, str):
-                self.page.append_text(text)
+                self.answer_page.append_text(text)
         elif kind == "html":
             body = event.get("html")
             if isinstance(body, str):
@@ -226,17 +226,19 @@ class Session:
         elif kind == "done":
             self.done = True
             model = event.get("model")
-            self.page.done(
+            self.answer_page.done(
                 model if isinstance(model, str) else None,
                 self.html,
             )
         elif kind == "error":
             self.error = True
             detail = event.get("message")
-            self.page.set_error(detail if isinstance(detail, str) else "unknown error")
+            self.answer_page.set_error(
+                detail if isinstance(detail, str) else "unknown error"
+            )
         else:
             self.error = True
-            self.page.set_error("invalid stream event")
+            self.answer_page.set_error("invalid stream event")
 
     def _finished(self, exit_code: int, _exit_status: QProcess.ExitStatus) -> None:
         if self.cancelled:
@@ -247,7 +249,7 @@ class Session:
             events = self.parser.flush()
         except StreamError as exc:
             self.error = True
-            self.page.set_error(str(exc))
+            self.answer_page.set_error(str(exc))
             events = []
         for event in events:
             self._handle_event(event)
@@ -255,12 +257,14 @@ class Session:
         if not self.error:
             if exit_code != 0:
                 stderr = self.stderr.decode("utf-8", "replace").strip()
-                self.page.set_error(stderr or f"docent exited with code {exit_code}")
+                self.answer_page.set_error(
+                    stderr or f"docent exited with code {exit_code}"
+                )
             else:
                 for warning in _warning_lines(bytes(self.stderr)):
                     message.warning(f"docent: {warning}")
                 if not self.done:
-                    self.page.finish(self.html)
+                    self.answer_page.done(None, self.html)
         self._cleanup()
 
     def _process_error(self, error: QProcess.ProcessError) -> None:
@@ -270,7 +274,7 @@ class Session:
             self.error = True
             detail = self.process.errorString() if self.process is not None else ""
             name = self.settings.cmd[0]
-            self.page.set_error(f"could not start {name}: {detail}".rstrip(": "))
+            self.answer_page.set_error(f"could not start {name}: {detail}".rstrip(": "))
             self._cleanup()
 
     def _cleanup(self) -> None:
@@ -306,8 +310,8 @@ def setup(
 
     if config is None:
         raise ValueError(
-            "docent.setup needs qutebrowser's config object; "
-            "call docent.setup(config, ...) from config.py"
+            "docent_qutebrowser.setup needs qutebrowser's config object; "
+            "call docent_qutebrowser.setup(config, ...) from config.py"
         )
     if context_mode is not None and context_mode not in {"auto", "full", "none"}:
         raise ValueError("context_mode must be one of: auto, full, none")
@@ -358,7 +362,7 @@ def profiles(force: bool = False) -> list[ProfileInfo]:
 
 def _require_settings() -> Settings:
     if _settings is None:
-        raise DocentError("call docent.setup(config) in config.py first")
+        raise DocentError("call docent_qutebrowser.setup(config) in config.py first")
     return _settings
 
 
@@ -558,7 +562,7 @@ def _open_answer(
         source_tab=source_tab,
         answer_tab=answer_tab,
         profile=profile.name,
-        page=page,
+        answer_page=page,
         settings=settings,
     )
     _sessions[answer_tab.tab_id] = session

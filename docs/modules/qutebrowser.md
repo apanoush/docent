@@ -6,19 +6,19 @@ The adapter source lives in `plugins/qutebrowser/`, separate from the Rust crate
 
 | File | Responsibility |
 |---|---|
-| `docent/__init__.py` | Public `setup`, `refresh`, `profile_list`, and `stylesheet` entry points. Lazily imports the qutebrowser integration. |
-| `docent/request.py` | Pure request builder shared by the adapter and tests. |
-| `docent/stream.py` | Pure incremental NDJSON parser. |
-| `docent/profiles.py` | Pure profile metadata loader around `docent profiles --json`. |
-| `docent/plugin.py` | Commands, setup, JavaScript capture, `QProcess` lifecycle, and sessions. |
-| `docent/answer.css` | Default answer-tab stylesheet; plain CSS with `--docent-*` variables, reusable by another browser front end. |
-| `docent/ui.py` | Answer-tab HTML shell, stylesheet loading, and streaming DOM updates. |
+| `docent_qutebrowser/__init__.py` | Public `setup`, `refresh`, `profile_list`, and `stylesheet` entry points. Lazily imports the qutebrowser integration. |
+| `docent_qutebrowser/request.py` | Pure request builder shared by the adapter and tests. |
+| `docent_qutebrowser/stream.py` | Pure incremental NDJSON parser. |
+| `docent_qutebrowser/profiles.py` | Pure profile metadata loader around `docent profiles --json`. |
+| `docent_qutebrowser/plugin.py` | Commands, setup, JavaScript capture, `QProcess` lifecycle, and sessions. |
+| `docent_qutebrowser/answer.css` | Default answer-tab stylesheet; plain CSS with `--docent-*` variables, reusable by another browser front end. |
+| `docent_qutebrowser/ui.py` | Answer-tab HTML shell, stylesheet loading, and streaming DOM updates. |
 
 `request.py`, `stream.py`, and `profiles.py` do not import qutebrowser. The unit tests exercise them without a browser.
 
 ## Loading and commands
 
-`config.py` adds the outer `plugins/qutebrowser/` directory to `sys.path` and imports `docent`. `docent.setup(config, ...)` lazily imports `docent.plugin`, which registers the commands with `qutebrowser.api.cmdutils` and stores the settings.
+`config.py` adds the outer `plugins/qutebrowser/` directory to `sys.path` and imports `docent_qutebrowser`. `docent_qutebrowser.setup(config, ...)` lazily imports `docent_qutebrowser.plugin`, which registers the commands with `qutebrowser.api.cmdutils` and stores the settings.
 
 Commands are registered once per process. The module checks `qutebrowser.misc.objects.commands` before registering, so a manual `importlib.reload` does not fail with a duplicate-command error. `setup` is idempotent: later calls replace settings and rebind keymaps without re-registering commands.
 
@@ -45,7 +45,7 @@ The callback runs after the user has already left the command line, but the page
 
 `Session` owns one `QProcess` and one answer tab. The process is started only after the answer tab's small HTML shell has finished loading. The request is written to stdin as UTF-8 JSON, and the write channel is closed immediately. stdout is parsed incrementally with `NdjsonParser`; stderr is buffered. Warnings the CLI logged (`[WARN ...]` lines) are shown as qutebrowser messages after a successful run, and the rest of stderr is shown only when the process fails without an `error` event.
 
-The process runs with `docent [--config-dir PATH] run --profile NAME --stream --html [--target-language LANG] [--context-mode MODE] --source qutebrowser`. The question travels inside the JSON request rather than on the command line, so it does not appear in the process list.
+The process runs with `docent [--config-dir PATH] request --profile NAME --stream --html [--target-language LANG] [--context-mode MODE] --source qutebrowser`. The question travels inside the JSON request rather than on the command line, so it does not appear in the process list.
 
 `QProcess` inherits qutebrowser's environment, including the API-key variable. There is no shell: the program and arguments are passed as an array.
 
@@ -55,14 +55,13 @@ Closing the answer tab emits `shutting_down`, which calls `Session.cancel`. Canc
 
 `ui.build_shell` returns a small HTML document with a sticky header, a status label, a `d close` hint, and a `<pre id="answer">` body. The `<style>` block is composed from `answer.css` first, then `:root` overrides from qutebrowser's status bar colors, then the optional user CSS from `setup(custom_css=...)`. Profile names are HTML-escaped before insertion.
 
-`answer.css` owns the default palette and font stacks through `--docent-bg`, `--docent-fg`, `--docent-error`, `--docent-warning`, `--docent-font-body`, and `--docent-font-code`. It has no qutebrowser-specific selectors, so another browser adapter can reuse it and set the same variables. The `.docent-warning` rule styles CLI warnings that the zathura qutebrowser viewer appends to the answer. `docent.stylesheet()` exports the default CSS for Python callers.
+`answer.css` owns the default palette and font stacks through `--docent-bg`, `--docent-fg`, `--docent-error`, `--docent-warning`, `--docent-font-body`, and `--docent-font-code`. It has no qutebrowser-specific selectors, so another browser adapter can reuse it and set the same variables. The `.docent-warning` rule styles CLI warnings that the zathura qutebrowser viewer appends to the answer. `docent_qutebrowser.stylesheet()` exports the default CSS for Python callers.
 
 `ui.AnswerPage` injects JavaScript with `run_js_async`:
 
 - `append_text` creates a text node in the raw answer element and auto-scrolls only when the reader is already near the bottom.
 - `set_error` appends a red error line and changes the title to `docent: error`.
-- `done` replaces the raw block with the HTML from the CLI's `html` event and updates the header and tab title with the profile, model, and elapsed time. Without an `html` event it only updates the label and leaves the streamed text visible.
-- `finish` does the same when a process exits successfully without a `done` event.
+- `done` replaces the raw block with the HTML from the CLI's `html` event and updates the header and tab title with the profile, model, and elapsed time. Without an `html` event it only updates the label and leaves the streamed text visible. It also finishes a stream that exits successfully without a `done` event.
 - `close` stops accepting updates after the tab is closed or the process is cancelled.
 
 Rendering happens once, after the stream ends. The CLI renders the Markdown and sends it as an `html` event before `done`; the adapter no longer carries a renderer. The CLI escapes raw HTML, keeps images as alt text, and only turns `http`, `https`, and `mailto` URLs into links, which open in a new tab.

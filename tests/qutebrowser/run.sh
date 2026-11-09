@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 python3 -m pytest -q \
-  --cov=docent \
+  --cov=docent_qutebrowser \
   --cov-report=term-missing \
   --cov-fail-under=80 \
   tests/qutebrowser

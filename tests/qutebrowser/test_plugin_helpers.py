@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import docent
+import docent_qutebrowser
 import pytest
-from docent import plugin, stylesheet, ui
-from docent.profiles import ProfileError, ProfileInfo
-from docent.request import Capture
+from docent_qutebrowser import plugin, stylesheet, ui
+from docent_qutebrowser.profiles import ProfileError, ProfileInfo
+from docent_qutebrowser.request import Capture
 
 
 class FakeConfig:
@@ -54,7 +54,6 @@ class FakePage:
         self.errors: list[str] = []
         self.models: list[str | None] = []
         self.done_calls: list[tuple[str | None, str | None]] = []
-        self.finish_calls: list[str | None] = []
         self.finished = 0
         self.closed = False
 
@@ -65,12 +64,9 @@ class FakePage:
         self.errors.append(message)
 
     def done(self, model: str | None = None, html_body: str | None = None) -> None:
+        self.finished += 1
         self.models.append(model)
         self.done_calls.append((model, html_body))
-
-    def finish(self, html_body: str | None = None) -> None:
-        self.finished += 1
-        self.finish_calls.append(html_body)
 
     def close(self) -> None:
         self.closed = True
@@ -247,7 +243,7 @@ def test_answer_page_finish_uses_the_rendered_html() -> None:
     page = ui.AnswerPage(tab, "explain")
 
     page.append_text("- one")
-    page.finish("<ul><li>one</li></ul>")
+    page.done(None, "<ul><li>one</li></ul>")
 
     rendered = tab.codes[-1]
     assert "<ul><li>one</li></ul>" in rendered
@@ -271,7 +267,7 @@ def test_answer_page_finish_without_html_keeps_the_streamed_text() -> None:
     page = ui.AnswerPage(tab, "explain")
 
     page.append_text("- one")
-    page.finish()
+    page.done(None)
 
     assert page.finished
     assert len(tab.codes) == 2
@@ -389,7 +385,7 @@ def test_session_handles_delta_done_and_error_events() -> None:
         source_tab=FakeTab(),
         answer_tab=FakeTab(),
         profile="explain",
-        page=page,  # type: ignore[arg-type]
+        answer_page=page,  # type: ignore[arg-type]
         settings=_settings(),
     )
 
@@ -414,32 +410,32 @@ def test_session_finishes_cleanly_on_success_exit() -> None:
         source_tab=FakeTab(),
         answer_tab=FakeTab(),
         profile="explain",
-        page=page,  # type: ignore[arg-type]
+        answer_page=page,  # type: ignore[arg-type]
         settings=_settings(),
     )
 
     session._finished(0, None)  # type: ignore[arg-type]
 
     assert page.finished == 1
-    assert page.finish_calls == [None]
+    assert page.done_calls == [(None, None)]
     assert page.errors == []
 
 
-def test_session_passes_rendered_html_to_finish() -> None:
+def test_session_passes_rendered_html_to_done() -> None:
     page = FakePage()
     session = plugin.Session(
         tabbed_browser=None,
         source_tab=FakeTab(),
         answer_tab=FakeTab(),
         profile="explain",
-        page=page,  # type: ignore[arg-type]
+        answer_page=page,  # type: ignore[arg-type]
         settings=_settings(),
     )
     session._handle_event({"type": "html", "html": "<p>hello</p>"})
 
     session._finished(0, None)  # type: ignore[arg-type]
 
-    assert page.finish_calls == ["<p>hello</p>"]
+    assert page.done_calls == [(None, "<p>hello</p>")]
 
 
 def test_session_warns_on_stderr_after_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -449,7 +445,7 @@ def test_session_warns_on_stderr_after_success(monkeypatch: pytest.MonkeyPatch) 
         source_tab=FakeTab(),
         answer_tab=FakeTab(),
         profile="summarize",
-        page=page,  # type: ignore[arg-type]
+        answer_page=page,  # type: ignore[arg-type]
         settings=_settings(),
     )
     session.stderr.extend(
@@ -474,7 +470,7 @@ def test_session_ignores_non_warning_stderr_after_success(
         source_tab=FakeTab(),
         answer_tab=FakeTab(),
         profile="summarize",
-        page=page,  # type: ignore[arg-type]
+        answer_page=page,  # type: ignore[arg-type]
         settings=_settings(),
     )
     session.stderr.extend(b"error: something else\n")
@@ -494,7 +490,7 @@ def test_session_reports_stderr_on_failed_exit() -> None:
         source_tab=FakeTab(),
         answer_tab=FakeTab(),
         profile="explain",
-        page=page,  # type: ignore[arg-type]
+        answer_page=page,  # type: ignore[arg-type]
         settings=_settings(),
     )
     session.stderr.extend(b"provider failed\n")
@@ -512,7 +508,7 @@ def test_session_does_not_finish_after_an_error_event() -> None:
         source_tab=FakeTab(),
         answer_tab=FakeTab(),
         profile="explain",
-        page=page,  # type: ignore[arg-type]
+        answer_page=page,  # type: ignore[arg-type]
         settings=_settings(),
     )
     session._handle_event({"type": "error", "message": "boom"})
@@ -921,7 +917,7 @@ def _session(
         source_tab=FakeTab(),
         answer_tab=FakeAnswerTab(),
         profile="explain",
-        page=page or FakePage(),  # type: ignore[arg-type]
+        answer_page=page or FakePage(),  # type: ignore[arg-type]
         settings=_settings(),
     )
 
@@ -1381,7 +1377,7 @@ def test_open_answer_reports_a_page_that_does_not_load(
 
     tabbed.answer_tab.load_finished.emit(False)
 
-    assert session.page.failed
+    assert session.answer_page.failed
     assert errors == ["docent: could not load the answer page"]
 
 
@@ -1397,14 +1393,14 @@ def test_open_answer_reports_a_shell_that_cannot_be_set(
     plugin._open_answer(FakeTab(), _profile(), {}, None, None)
 
     session = plugin._sessions[tabbed.answer_tab.tab_id]
-    assert session.page.failed
+    assert session.answer_page.failed
     assert errors == ["docent: could not open the answer tab: shell"]
 
 
 def test_package_setup_configures_the_plugin() -> None:
     config = FakeConfig()
 
-    docent.setup(config, cmd=["docent", "--debug"])
+    docent_qutebrowser.setup(config, cmd=["docent", "--debug"])
 
     assert plugin._settings is not None
     assert plugin._settings.config is config
@@ -1414,7 +1410,7 @@ def test_package_setup_configures_the_plugin() -> None:
 def test_package_refresh_clears_the_cached_profiles() -> None:
     plugin._profiles = [ProfileInfo("explain", None, ())]
 
-    docent.refresh()
+    docent_qutebrowser.refresh()
 
     assert plugin._profiles is None
 
@@ -1426,13 +1422,13 @@ def test_package_profile_list_loads_from_the_plugin(
     monkeypatch.setattr(plugin, "load_profiles", lambda cmd, config_dir=None: profiles)
     plugin._settings = _settings()
 
-    assert docent.profile_list(force=True) == profiles
+    assert docent_qutebrowser.profile_list(force=True) == profiles
     assert plugin._profiles == profiles
 
 
 def test_package_stylesheet_returns_the_ui_stylesheet() -> None:
-    assert docent.stylesheet() == ui.stylesheet()
-    assert "--docent-bg" in docent.stylesheet()
+    assert docent_qutebrowser.stylesheet() == ui.stylesheet()
+    assert "--docent-bg" in docent_qutebrowser.stylesheet()
 
 
 class StubbornSignal(FakeSignal):
@@ -1518,7 +1514,7 @@ def test_profiles_loads_once_until_forced(
 
 
 def test_profiles_requires_setup() -> None:
-    with pytest.raises(plugin.DocentError, match="docent.setup"):
+    with pytest.raises(plugin.DocentError, match="docent_qutebrowser.setup"):
         plugin.profiles()
 
 

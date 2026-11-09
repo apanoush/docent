@@ -92,7 +92,7 @@ def build_page(profile: str, header: str, custom_css: str | None = None) -> str:
     """Return the standalone answer page."""
     _ensure_qutebrowser_path()
     try:
-        from docent.ui import build_shell
+        from docent_qutebrowser.ui import build_shell
     except ImportError as exc:
         raise QutebrowserViewError("qutebrowser answer shell not found") from exc
     label = f"docent: {profile}"

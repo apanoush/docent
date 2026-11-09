@@ -27,7 +27,7 @@ profiles/
 `docent init` writes a commented example `answer.css` for browser answer styling. The CLI browser viewer reads it automatically for `--viewer qutebrowser` and `--viewer firefox`; the terminal viewer ignores it. Point a browser adapter at it with its custom CSS option, for example the qutebrowser adapter:
 
 ```python
-docent.setup(config, custom_css="~/.config/docent/answer.css")
+docent_qutebrowser.setup(config, custom_css="~/.config/docent/answer.css")
 ```
 
 The Firefox adapter reads the same file automatically through its native messaging host and applies it after the bundled styles. The CLI applies the file after the built-in styles and before `--answer-css`.

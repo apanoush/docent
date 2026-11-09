@@ -125,9 +125,9 @@ Load the adapter from your qutebrowser `config.py`:
 ```python
 import sys
 sys.path.insert(0, "~/path/to/reading-assistant/plugins/qutebrowser")
-import docent
+import docent_qutebrowser
 
-docent.setup(
+docent_qutebrowser.setup(
     config,
     keymaps={
         "explain": ",de",

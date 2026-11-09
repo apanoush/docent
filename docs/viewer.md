@@ -67,7 +67,7 @@ Neither browser viewer can be combined with `--no-stream`, `--stream`, `--json`,
 
 ## Answer style
 
-The page uses the default styles from `plugins/qutebrowser/docent/answer.css`, which are compiled into the CLI. CSS is applied in this order:
+The page uses the default styles from `plugins/qutebrowser/docent_qutebrowser/answer.css`, which are compiled into the CLI. CSS is applied in this order:
 
 1. The built-in styles.
 2. `<config dir>/answer.css`, when the file exists.

@@ -412,13 +412,13 @@ mod tests {
     #[test]
     fn parses_run_requests() {
         let request: HostRequest = serde_json::from_str(
-            r#"{"type":"run","cmd":["docent"],"args":["run"],"request":{"selection":"x"}}"#,
+            r#"{"type":"run","cmd":["docent"],"args":["request"],"request":{"selection":"x"}}"#,
         )
         .unwrap();
         match request {
             HostRequest::Run { cmd, args, request } => {
                 assert_eq!(cmd, ["docent"]);
-                assert_eq!(args, ["run"]);
+                assert_eq!(args, ["request"]);
                 assert_eq!(request.selection, "x");
             }
             other => panic!("unexpected request: {other:?}"),

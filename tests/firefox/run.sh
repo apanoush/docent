@@ -11,9 +11,9 @@ fi
 node --test tests/firefox/
 
 # The Firefox answer page ships a copy of the qutebrowser stylesheet.
-if ! cmp -s plugins/qutebrowser/docent/answer.css plugins/firefox/answer/answer.css; then
+if ! cmp -s plugins/qutebrowser/docent_qutebrowser/answer.css plugins/firefox/answer/answer.css; then
     echo "plugins/firefox/answer/answer.css differs from the qutebrowser stylesheet" >&2
-    echo "copy plugins/qutebrowser/docent/answer.css over it" >&2
+    echo "copy plugins/qutebrowser/docent_qutebrowser/answer.css over it" >&2
     exit 1
 fi
 

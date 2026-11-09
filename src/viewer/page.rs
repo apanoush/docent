@@ -1,7 +1,7 @@
 //! Standalone answer page served by the CLI browser viewer.
 
 /// Default answer styles shared with the qutebrowser adapter.
-const DEFAULT_CSS: &str = include_str!("../../plugins/qutebrowser/docent/answer.css");
+const DEFAULT_CSS: &str = include_str!("../../plugins/qutebrowser/docent_qutebrowser/answer.css");
 
 const SSE_SCRIPT: &str = r#"
 let answerRoot = document.getElementById('answer');

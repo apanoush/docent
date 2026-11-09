@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from docent.request import Capture, build_request
+from docent_qutebrowser.request import Capture, build_request
 
 
 def test_minimal_request_contains_only_selection_and_document() -> None:

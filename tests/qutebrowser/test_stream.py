@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from docent.stream import NdjsonParser, StreamError
+from docent_qutebrowser.stream import NdjsonParser, StreamError
 
 
 def _line(event: dict[str, object]) -> bytes:

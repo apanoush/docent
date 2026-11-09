@@ -83,7 +83,7 @@ class AnswerPage:
     def __init__(self, tab: Any, profile: str) -> None:
         self.tab = tab
         self.profile = profile
-        self.started = time.monotonic()
+        self.started_at = time.monotonic()
         self.closed = False
         self.finished = False
         self.failed = False
@@ -136,22 +136,15 @@ class AnswerPage:
         )
 
     def done(self, model: str | None = None, html_body: str | None = None) -> None:
-        """Show the rendered answer and set the final title."""
-        if self.closed or self.failed:
-            return
-        self.finished = True
-        label = self._label(model)
-        if html_body is None:
-            self._label_only(label)
-        else:
-            self._show(html_body, label)
+        """Show the rendered answer and set the final title.
 
-    def finish(self, html_body: str | None = None) -> None:
-        """Finish when the stream ends without a done event."""
+        Also finishes a stream that ends without a ``done`` event, in which
+        case ``model`` is None.
+        """
         if self.closed or self.finished or self.failed:
             return
         self.finished = True
-        label = self._label(None)
+        label = self._label(model)
         if html_body is None:
             self._label_only(label)
         else:
@@ -198,7 +191,7 @@ class AnswerPage:
         self.closed = True
 
     def _label(self, model: str | None) -> str:
-        elapsed = time.monotonic() - self.started
+        elapsed = time.monotonic() - self.started_at
         base = f"docent: {self.profile}"
         if model:
             base = f"{base} - {model}"

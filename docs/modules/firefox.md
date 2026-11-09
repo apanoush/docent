@@ -54,7 +54,7 @@ Messages are a 4-byte native-endian length prefix followed by UTF-8 JSON.
 The extension sends one of:
 
 ```json
-{"type":"run","cmd":["docent"],"args":["run","--profile","explain","--stream","--html"],"request":{"selection":"...","document":"..."}}
+{"type":"run","cmd":["docent"],"args":["request","--profile","explain","--stream","--html"],"request":{"selection":"...","document":"..."}}
 {"type":"exec","cmd":["docent"],"args":["profiles","--json"]}
 {"type":"css","cmd":["docent"],"args":[]}
 ```
@@ -80,7 +80,7 @@ The CLI escapes raw HTML, keeps images as alt text, and only turns `http`, `http
 
 Press `d` to close the tab unless focus is in an input. `window.close()` closes an extension tab; `tabs.remove` is the fallback.
 
-The bundled `answer/answer.css` is a copy of `plugins/qutebrowser/docent/answer.css`, and `tests/firefox/run.sh` fails when the two files differ. `answer/page.css` holds Firefox-only components. When `<config dir>/answer.css` exists, the answer page appends it as a `<style>` element after the bundled stylesheet.
+The bundled `answer/answer.css` is a copy of `plugins/qutebrowser/docent_qutebrowser/answer.css`, and `tests/firefox/run.sh` fails when the two files differ. `answer/page.css` holds Firefox-only components. When `<config dir>/answer.css` exists, the answer page appends it as a `<style>` element after the bundled stylesheet.
 
 ## Profiles, questions, and menus
 

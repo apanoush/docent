@@ -10,14 +10,14 @@ The qutebrowser adapter captures the selected text and the surrounding page, cal
 
 ## Install
 
-The adapter is a Python module loaded from your qutebrowser `config.py`. It is not inside a packaged qutebrowser plugin directory, so add the outer `plugins/qutebrowser/` directory to `sys.path` and call `docent.setup` with qutebrowser's `config` object:
+The adapter is a Python module loaded from your qutebrowser `config.py`. It is not inside a packaged qutebrowser plugin directory, so add the outer `plugins/qutebrowser/` directory to `sys.path` and call `docent_qutebrowser.setup` with qutebrowser's `config` object:
 
 ```python
 import sys
 sys.path.insert(0, "~/path/to/reading-assistant/plugins/qutebrowser")
-import docent
+import docent_qutebrowser
 
-docent.setup(
+docent_qutebrowser.setup(
     config,
     keymaps={
         "explain": ",de",
@@ -29,14 +29,14 @@ docent.setup(
 )
 ```
 
-`sys.path` must point at the `plugins/qutebrowser/` directory that contains the `docent` package, not at the repository root. Adding the repository root would make `import qutebrowser` resolve to the adapter directory instead of the installed browser package.
+`sys.path` must point at the `plugins/qutebrowser/` directory that contains the `docent_qutebrowser` package, not at the repository root. Adding the repository root would make `import qutebrowser` resolve to the adapter directory instead of the installed browser package.
 
 Keymaps are opt-in. The adapter binds each key in both `normal` and `caret` mode so mouse selections and caret selections work. The commands themselves are available without keymaps.
 
 If qutebrowser is launched from a desktop entry, it may not inherit the shell `PATH` or the API key environment variable. Use an absolute `cmd` path and export the key in the environment that starts qutebrowser:
 
 ```python
-docent.setup(
+docent_qutebrowser.setup(
     config,
     cmd=["/home/you/.cargo/bin/docent"],
     keymaps={"explain": ",de"},
@@ -96,7 +96,7 @@ Markdown rendering is intentionally limited. Links open in a new tab and only `h
 
 ## Customizing the answer style
 
-The answer tab loads `plugins/qutebrowser/docent/answer.css`. The file is plain CSS, has no qutebrowser-specific selectors, and depends only on these custom properties:
+The answer tab loads `plugins/qutebrowser/docent_qutebrowser/answer.css`. The file is plain CSS, has no qutebrowser-specific selectors, and depends only on these custom properties:
 
 | Property | Purpose |
 |---|---|
@@ -110,7 +110,7 @@ The answer tab loads `plugins/qutebrowser/docent/answer.css`. The file is plain 
 Pass a CSS file to `custom_css` to override them or any other rule. `docent init` creates a commented example at `<config dir>/answer.css`; on Linux that is `~/.config/docent/answer.css`. Edit it and point `custom_css` at it:
 
 ```python
-docent.setup(
+docent_qutebrowser.setup(
     config,
     custom_css="~/.config/docent/answer.css",
 )
@@ -129,11 +129,11 @@ If the config directory is somewhere else, use the path printed by `docent init`
 }
 ```
 
-The custom file is appended after the default stylesheet and after qutebrowser's palette, so its rules win. It is read during `setup`, so `:config-source` reloads CSS changes without restarting qutebrowser; Python changes still need a full restart. `docent.stylesheet()` returns the default CSS, which is useful for tests or another browser adapter.
+The custom file is appended after the default stylesheet and after qutebrowser's palette, so its rules win. It is read during `setup`, so `:config-source` reloads CSS changes without restarting qutebrowser; Python changes still need a full restart. `docent_qutebrowser.stylesheet()` returns the default CSS, which is useful for tests or another browser adapter.
 
 Press `d` to close the answer tab. Closing it before the request finishes terminates the `docent` process. Navigating the answer tab away from its generated page also cancels the request.
 
-Set `open_in_background=True` in `docent.setup` if you prefer the answer to open in a background tab.
+Set `open_in_background=True` in `docent_qutebrowser.setup` if you prefer the answer to open in a background tab.
 
 ## Profiles and questions
 

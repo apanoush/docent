@@ -22,7 +22,7 @@ The profile cache calls `docent profiles --json` synchronously. This is a local 
 The CLI command is an argument array, never a shell string:
 
 ```text
-docent [--config-dir PATH] run --profile NAME --stream [--question TEXT] [--target-language LANG] [--context-mode MODE] --source SOURCE
+docent [--config-dir PATH] request --profile NAME --stream [--question TEXT] [--target-language LANG] [--context-mode MODE] --source SOURCE
 ```
 
 The JSON request is passed through `vim.system`'s `stdin` option. No temporary files are used.

@@ -6,7 +6,7 @@
  *
  * Pass it to the qutebrowser adapter from config.py:
  *
- *   docent.setup(config, custom_css="~/.config/docent/answer.css")
+ *   docent_qutebrowser.setup(config, custom_css="~/.config/docent/answer.css")
  *
  * Use the path printed by `docent init` when the config directory is not
  * ~/.config/docent. Uncomment the examples below to try them.

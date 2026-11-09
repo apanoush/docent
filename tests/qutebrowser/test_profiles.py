@@ -6,7 +6,7 @@ import sys
 from textwrap import dedent
 
 import pytest
-from docent.profiles import ProfileError, has_requirement, load_profiles
+from docent_qutebrowser.profiles import ProfileError, has_requirement, load_profiles
 
 
 def _cmd(source: str) -> list[str]:
