@@ -101,7 +101,7 @@ Add the plugin directory to your configuration with lazy.nvim:
 
 ```lua
 {
-  dir = "~/path/to/reading-assistant/plugins/nvim",
+  dir = "~/path/to/docent/plugins/nvim",
   config = function()
     require("docent").setup({
       keymaps = {
@@ -124,7 +124,7 @@ Load the adapter from your qutebrowser `config.py`:
 
 ```python
 import sys
-sys.path.insert(0, "~/path/to/reading-assistant/plugins/qutebrowser")
+sys.path.insert(0, "~/path/to/docent/plugins/qutebrowser")
 import docent_qutebrowser
 
 docent_qutebrowser.setup(
@@ -161,7 +161,7 @@ The extension is for capturing a page selection. To show a terminal answer in Fi
 Add a binding to `~/.config/zathura/zathurarc`:
 
 ```zathurarc
-map <C-e> exec "/home/you/path/to/reading-assistant/plugins/zathura/docent-zathura explain $FILE $PAGE"
+map <C-e> exec "/home/you/path/to/docent/plugins/zathura/docent-zathura explain $FILE $PAGE"
 ```
 
 Select text with the mouse and press `<C-e>`. The answer streams into a terminal window. Add `--viewer nvim` inside the quotes to stream into the Neovim plugin's Markdown float, or `--viewer qutebrowser` to open a qutebrowser window or tab with rendered Markdown. `ask` and `translate` work the same way; `ask` prompts for the question in the viewer. See [the zathura guide](docs/zathura.md).

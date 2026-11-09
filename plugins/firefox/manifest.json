@@ -5,7 +5,7 @@
   "description": "Explain, translate, or ask about the text you are reading, with the page as context.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "docent@reading-assistant",
+      "id": "{ae094259-bf49-44a7-a0f0-186c52340b02}",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
         "required": ["websiteContent", "browsingActivity"]

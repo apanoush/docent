@@ -26,7 +26,7 @@ The script writes the manifest where Firefox looks for the platform:
 | macOS | `~/Library/Application Support/Mozilla/NativeMessagingHosts/org.docent.host.json` |
 | Windows | `%APPDATA%\Mozilla\NativeMessagingHosts\org.docent.host.json`, registered under `HKCU\SOFTWARE\Mozilla\NativeMessagingHosts\org.docent.host` |
 
-The manifest holds the absolute path to `docent-native-host` and the add-on ID `docent@reading-assistant`. Pass `--host PATH` if the binary is elsewhere, or `--force` to replace an existing manifest. `--manifest-dir DIR` and `DOCENT_FIREFOX_MANIFEST_DIR` override the platform default, which Snap and Flatpak builds need. The script covers Linux and macOS and exits with a pointer to the Windows steps below.
+The manifest holds the absolute path to `docent-native-host` and the add-on ID `{ae094259-bf49-44a7-a0f0-186c52340b02}`. Pass `--host PATH` if the binary is elsewhere, or `--force` to replace an existing manifest. `--manifest-dir DIR` and `DOCENT_FIREFOX_MANIFEST_DIR` override the platform default, which Snap and Flatpak builds need. The script covers Linux and macOS and exits with a pointer to the Windows steps below.
 
 ### Windows
 
@@ -41,7 +41,7 @@ $json = @{
   description = "Native messaging host for the Docent Firefox adapter"
   path = $host
   type = "stdio"
-  allowed_extensions = @("docent@reading-assistant")
+  allowed_extensions = @("{ae094259-bf49-44a7-a0f0-186c52340b02}")
 } | ConvertTo-Json
 [IO.File]::WriteAllText($manifest, $json)
 $key = "HKCU:\SOFTWARE\Mozilla\NativeMessagingHosts\org.docent.host"
@@ -87,7 +87,7 @@ npx web-ext sign --source-dir plugins/firefox --artifacts-dir dist --channel=unl
 
 Keep the signed file as `dist/docent-<version>.xpi`. Renaming the file does not affect the signature. Do not remove `META-INF/`; Firefox rejects the add-on without it.
 
-Install it on another machine with `about:addons` → gear icon → **Install Add-on From File...**, then install the native host manifest and the `docent` and `docent-native-host` binaries on that machine as well. The extension ID stays `docent@reading-assistant`, so keep `allowed_extensions` in the host manifest unchanged.
+Install it on another machine with `about:addons` → gear icon → **Install Add-on From File...**, then install the native host manifest and the `docent` and `docent-native-host` binaries on that machine as well. The extension ID stays `{ae094259-bf49-44a7-a0f0-186c52340b02}`, so keep `allowed_extensions` in the host manifest unchanged.
 
 The XPI contains no author name or email. The manifest has no `author` field, and the signature certificate names Mozilla's signing service and the add-on ID. An author name shown on the AMO page is listing metadata on AMO, not part of the file.
 

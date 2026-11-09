@@ -13,7 +13,7 @@ With lazy.nvim, point `dir` at the `plugins/nvim/` directory inside this reposit
 
 ```lua
 {
-  dir = "~/path/to/reading-assistant/plugins/nvim",
+  dir = "~/path/to/docent/plugins/nvim",
   config = function()
     require("docent").setup({
       keymaps = {
@@ -31,7 +31,7 @@ With lazy.nvim, point `dir` at the `plugins/nvim/` directory inside this reposit
 For a plain runtimepath setup:
 
 ```lua
-vim.opt.runtimepath:append("~/path/to/reading-assistant/plugins/nvim")
+vim.opt.runtimepath:append("~/path/to/docent/plugins/nvim")
 ```
 
 `plugin/docent.lua` calls `require("docent").setup()` with defaults, so `:Docent` and `:DocentProfiles` work even without an explicit `setup()` call. Calling `setup()` with options overrides the defaults and installs keymaps.
@@ -61,7 +61,7 @@ Example with a local binary and a separate config directory:
 
 ```lua
 require("docent").setup({
-  cmd = { vim.fn.expand("~/src/reading-assistant/target/debug/docent") },
+  cmd = { vim.fn.expand("~/src/docent/target/debug/docent") },
   config_dir = vim.fn.expand("~/config/docent-experiments"),
   window = { width = 0.7, height = 0.5, border = "single" },
 })

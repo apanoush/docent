@@ -14,7 +14,7 @@ The adapter is a Python module loaded from your qutebrowser `config.py`. It is n
 
 ```python
 import sys
-sys.path.insert(0, "~/path/to/reading-assistant/plugins/qutebrowser")
+sys.path.insert(0, "~/path/to/docent/plugins/qutebrowser")
 import docent_qutebrowser
 
 docent_qutebrowser.setup(

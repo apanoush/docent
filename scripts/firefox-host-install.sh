@@ -81,7 +81,7 @@ cat > "$manifest" <<EOF
   "description": "Native messaging host for the Docent Firefox adapter",
   "path": "$host",
   "type": "stdio",
-  "allowed_extensions": ["docent@reading-assistant"]
+  "allowed_extensions": ["{ae094259-bf49-44a7-a0f0-186c52340b02}"]
 }
 EOF
 

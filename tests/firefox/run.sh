@@ -35,7 +35,7 @@ function jsFiles(directory) {
 }
 
 const manifest = JSON.parse(fs.readFileSync("plugins/firefox/manifest.json", "utf8"));
-if (manifest.browser_specific_settings.gecko.id !== "docent@reading-assistant") {
+if (manifest.browser_specific_settings.gecko.id !== "{ae094259-bf49-44a7-a0f0-186c52340b02}") {
   throw new Error("the add-on ID must match scripts/firefox-host-install.sh");
 }
 
