@@ -32,7 +32,7 @@ The capture process uses the JSON stdin contract rather than `docent explain --t
 
 ## Capture
 
-`clipboard.py` prefers `wl-paste` when `WAYLAND_DISPLAY` or `XDG_SESSION_TYPE=wayland` is set, then `xclip` and `xsel` when `DISPLAY` is set. With no explicit target it reads PRIMARY first, then CLIPBOARD, and prefers the text that occurs in the extracted page. `--primary` and `--clipboard` force a target. The page check avoids sending unrelated clipboard text when the configured clipboard is empty or stale. Matching joins hyphenated line breaks, so `enhanc-\ning` matches `enhancing` in the pdftotext output.
+`clipboard.py` prefers `wl-paste` when `WAYLAND_DISPLAY` or `XDG_SESSION_TYPE=wayland` is set, then `xclip` and `xsel` when `DISPLAY` is set. With no explicit target it reads both clipboards and prefers the longest text that occurs in the extracted page, using an exact match before a whitespace-normalized one. That stops a short stale token from shadowing the selection. When neither occurs in the page, it uses the longer text. `--primary` and `--clipboard` force a target. The page check avoids sending unrelated clipboard text when the configured clipboard is empty or stale. Matching joins hyphenated line breaks, so `enhanc-\ning` matches `enhancing` in the pdftotext output.
 
 `pdf.py` computes `(max(1, page - radius), page + radius)` and runs `pdftotext -f START -l END FILE -`. It rejects empty output, which usually means the page is scanned.
 

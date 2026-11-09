@@ -127,6 +127,24 @@ def _normalize_for_match(text: str) -> str:
     return " ".join(_HYPHEN_BREAK.sub("", text).split())
 
 
+def _match_score(selection: str, document: str) -> tuple[int, int] | None:
+    """Return ``(length, exact)`` when ``selection`` occurs in ``document``.
+
+    Longer matches win, so a short stale clipboard token cannot shadow the
+    passage the user selected. An exact occurrence breaks ties against a
+    normalized one.
+    """
+    if not selection.strip() or not document.strip():
+        return None
+    if selection in document:
+        return (len(selection), 1)
+    normalized_selection = _normalize_for_match(selection)
+    normalized_document = _normalize_for_match(document)
+    if normalized_selection and normalized_selection in normalized_document:
+        return (len(normalized_selection), 0)
+    return None
+
+
 def matches_document(selection: str, document: str) -> bool:
     """Return whether ``selection`` occurs in ``document``.
 
@@ -134,13 +152,7 @@ def matches_document(selection: str, document: str) -> bool:
     spacing differences, and hyphenated line breaks between the viewer and
     pdftotext.
     """
-    if not selection.strip() or not document.strip():
-        return False
-    if selection in document:
-        return True
-    normalized_selection = _normalize_for_match(selection)
-    normalized_document = _normalize_for_match(document)
-    return bool(normalized_selection) and normalized_selection in normalized_document
+    return _match_score(selection, document) is not None
 
 
 def _empty_selection(errors: list[str]) -> bool:
@@ -157,32 +169,44 @@ def read_best_selection(
 ) -> str:
     """Return the selection that best matches the extracted page.
 
-    With no explicit target, PRIMARY is tried first because it is zathura's
-    default. If it is empty or does not occur in the page, CLIPBOARD is tried.
-    The fallback keeps the default target working when the selection cannot be
-    matched exactly, while avoiding unrelated clipboard text.
+    With no explicit target, both PRIMARY and CLIPBOARD are read. The longest
+    text that occurs in the page wins, so a short stale token such as ``LLM``
+    cannot shadow the passage the user selected, whichever clipboard zathura
+    writes to. An exact occurrence breaks ties against a normalized one, and
+    PRIMARY breaks remaining ties because it is zathura's default.
+
+    When neither clipboard text occurs in the page, the longer text is used so
+    a page-extraction mismatch does not discard the actual selection.
     """
     if target is not None:
         return read_selection(target, environ, runner)
 
     errors: list[str] = []
     primary: str | None = None
+    clipboard: str | None = None
     try:
         primary = read_selection("primary", environ, runner)
     except ClipboardError as exc:
         errors.append(str(exc))
-
-    if primary is not None and matches_document(primary, document):
-        return primary
-
-    clipboard: str | None = None
     try:
         clipboard = read_selection("clipboard", environ, runner)
     except ClipboardError as exc:
         errors.append(str(exc))
 
-    if clipboard is not None and matches_document(clipboard, document):
-        return clipboard
+    matches: list[tuple[tuple[int, int], str]] = []
+    if primary is not None:
+        score = _match_score(primary, document)
+        if score is not None:
+            matches.append((score, primary))
+    if clipboard is not None:
+        score = _match_score(clipboard, document)
+        if score is not None:
+            matches.append((score, clipboard))
+    if matches:
+        return max(matches, key=lambda match: match[0])[1]
+
+    if primary is not None and clipboard is not None:
+        return primary if len(primary) >= len(clipboard) else clipboard
     if primary is not None:
         return primary
     if clipboard is not None:

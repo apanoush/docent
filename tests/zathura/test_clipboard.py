@@ -144,7 +144,7 @@ def _two_clipboard_runner(
     return runner
 
 
-def test_best_selection_uses_matching_primary_without_reading_clipboard() -> None:
+def test_best_selection_uses_matching_primary() -> None:
     calls: list[Sequence[str]] = []
 
     selection = read_best_selection(
@@ -154,7 +154,9 @@ def test_best_selection_uses_matching_primary_without_reading_clipboard() -> Non
     )
 
     assert selection == "alpha beta"
-    assert len(calls) == 1
+    assert len(calls) == 2
+    assert "--primary" in calls[0]
+    assert "--primary" not in calls[1]
 
 
 def test_best_selection_falls_back_to_clipboard_when_primary_is_empty() -> None:
@@ -171,25 +173,36 @@ def test_best_selection_falls_back_to_clipboard_when_primary_is_empty() -> None:
 
 
 def test_best_selection_uses_matching_clipboard_when_primary_does_not_match() -> None:
-    calls: list[Sequence[str]] = []
-
     selection = read_best_selection(
         "alpha beta",
         environ={"WAYLAND_DISPLAY": "wayland-1"},
-        runner=_two_clipboard_runner("stale", "alpha beta", calls),
+        runner=_two_clipboard_runner("stale", "alpha beta", []),
     )
 
     assert selection == "alpha beta"
 
 
-def test_best_selection_prefers_primary_when_both_match() -> None:
+def test_best_selection_prefers_the_longer_match() -> None:
     selection = read_best_selection(
         "alpha beta",
         environ={"WAYLAND_DISPLAY": "wayland-1"},
         runner=_two_clipboard_runner("alpha", "alpha beta", []),
     )
 
-    assert selection == "alpha"
+    assert selection == "alpha beta"
+
+
+def test_best_selection_ignores_a_short_stale_primary_match() -> None:
+    document = "DeepSeek-LLM-Chat and English mathematical datasets with tool-integrated solutions"
+    selection = read_best_selection(
+        document,
+        environ={"WAYLAND_DISPLAY": "wayland-1"},
+        runner=_two_clipboard_runner(
+            "LLM", "English mathematical datasets with tool-integrated solutions", []
+        ),
+    )
+
+    assert selection == "English mathematical datasets with tool-integrated solutions"
 
 
 def test_best_selection_falls_back_to_primary_when_nothing_matches() -> None:
@@ -200,6 +213,18 @@ def test_best_selection_falls_back_to_primary_when_nothing_matches() -> None:
     )
 
     assert selection == "stale"
+
+
+def test_best_selection_falls_back_to_the_longer_candidate_when_nothing_matches() -> (
+    None
+):
+    selection = read_best_selection(
+        "alpha beta",
+        environ={"WAYLAND_DISPLAY": "wayland-1"},
+        runner=_two_clipboard_runner("stale", "a longer unrelated text", []),
+    )
+
+    assert selection == "a longer unrelated text"
 
 
 def test_best_selection_rejects_unrelated_clipboard_text() -> None:

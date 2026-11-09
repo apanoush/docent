@@ -49,7 +49,7 @@ ln -s /home/you/path/to/reading-assistant/plugins/zathura \
 
 Select text with the mouse, then press the key. Zathura has no keyboard text selection, so this is a mouse-first workflow. The answer opens in a terminal window, the Neovim float with `--viewer nvim`, or a qutebrowser page with `--viewer qutebrowser`, and streams as it arrives.
 
-The adapter reads both PRIMARY and CLIPBOARD and uses the text that appears in the extracted page, so it works with either `selection-clipboard` value. Pass `--primary` or `--clipboard` to force a target.
+The adapter reads both PRIMARY and CLIPBOARD and uses the longest text that appears in the extracted page, so it works with either `selection-clipboard` value. Pass `--primary` or `--clipboard` to force a target and skip the page check.
 
 `summarize` is the exception to the mouse-first rule: it needs no selection. Without a matching clipboard selection it summarizes the extracted page window, and with one it summarizes that passage.
 
@@ -85,7 +85,7 @@ Quote values that contain spaces inside the quoted `exec` command. Zathura's `ex
 
 ## What gets captured
 
-- The selection is read from zathura's clipboard. Zathura copies it when a mouse selection ends. `exec` has no `$SELECTION` placeholder. The adapter checks PRIMARY first, then CLIPBOARD, and prefers the text that appears in the extracted page. Unrelated clipboard text is rejected unless you force it with `--clipboard`. Hyphenated line breaks are joined for matching, so a selection containing `enhanc-\ning` still matches `enhancing` in the PDF text.
+- The selection is read from zathura's clipboard. Zathura copies it when a mouse selection ends. `exec` has no `$SELECTION` placeholder. The adapter checks both clipboards and prefers the longest text that appears in the extracted page, exact match first and whitespace-normalized match second. That keeps a short stale token from shadowing the actual selection. A CLIPBOARD-only text that does not appear on the page is rejected unless you force it with `--clipboard`. Hyphenated line breaks are joined for matching, so a selection containing `enhanc-\ning` still matches `enhancing` in the PDF text.
 - The document is the current page plus `--context-pages` pages on each side, extracted with `pdftotext -f START -l END`. `pdftotext` clamps ranges beyond the last page, so the adapter does not need a page count.
 - The file label is `<name> (page N)`, not the full path, so the provider does not see your home directory.
 - Byte offsets are included only when the selection appears exactly in the extracted text. Otherwise the CLI falls back to the first exact occurrence. With the default one-page context window, the extracted text is usually under the CLI's 32k `auto` budget, so the whole window is sent even when the exact selection is not found.
