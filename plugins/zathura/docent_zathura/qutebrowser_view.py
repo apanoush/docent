@@ -46,6 +46,53 @@ function atBottom() {
   return (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 8);
 }
 
+function showQuestionForm() {
+  if (document.getElementById('docent-question')) return;
+  const main = document.querySelector('main');
+  if (!main) return;
+  const form = document.createElement('form');
+  form.id = 'docent-question';
+  form.style.margin = '1rem 0';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Question';
+  input.style.width = '80%';
+  input.style.marginRight = '0.5rem';
+  const button = document.createElement('button');
+  button.type = 'submit';
+  button.textContent = 'Ask';
+  form.append(input, button);
+  form.addEventListener('submit', async (submitEvent) => {
+    submitEvent.preventDefault();
+    const question = input.value.trim();
+    if (!question) {
+      input.focus();
+      return;
+    }
+    button.disabled = true;
+    try {
+      const response = await fetch('question', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      form.remove();
+      status.textContent = 'docent: waiting for answer';
+    } catch (error) {
+      button.disabled = false;
+      status.textContent = `docent: could not submit the question (${error.message})`;
+    }
+  });
+  main.prepend(form);
+  input.focus();
+  status.textContent = 'docent: question';
+  answerElement.textContent = '';
+  answerElement.dataset.placeholder = '0';
+}
+
 source.onmessage = (message) => {
   const event = JSON.parse(message.data);
   if (event.type === 'delta') {
@@ -72,6 +119,8 @@ source.onmessage = (message) => {
     warning.textContent = event.message;
     answerElement.appendChild(warning);
     if (stick) window.scrollTo(0, document.documentElement.scrollHeight);
+  } else if (event.type === 'question') {
+    showQuestionForm();
   } else if (event.type === 'done') {
     status.textContent = event.label || 'done';
     source.close();
@@ -136,6 +185,12 @@ class _Viewer:
         self.process: subprocess.Popen[str] | None = None
         self.html: str | None = None
         self.error = False
+        request = payload.get("request")
+        question = request.get("question") if isinstance(request, dict) else None
+        self.needs_question = bool(payload.get("prompt_for_question")) and not (
+            isinstance(question, str) and question.strip()
+        )
+        self.question_ready = False
 
     def handler_class(self) -> type[BaseHTTPRequestHandler]:
         viewer = self
@@ -145,6 +200,9 @@ class _Viewer:
 
             def do_GET(self) -> None:
                 viewer.handle(self)
+
+            def do_POST(self) -> None:
+                viewer.handle_post(self)
 
             def log_message(self, format: str, *args: object) -> None:
                 return
@@ -160,6 +218,39 @@ class _Viewer:
         else:
             handler.send_error(404)
 
+    def handle_post(self, handler: BaseHTTPRequestHandler) -> None:
+        path = urlsplit(handler.path).path
+        if path != f"/{self.token}/question":
+            handler.send_error(404)
+            return
+        try:
+            length = int(handler.headers.get("Content-Length", "0") or "0")
+        except ValueError:
+            handler.send_error(400)
+            return
+        if length <= 0 or length > 64 * 1024:
+            handler.send_error(400)
+            return
+        try:
+            data = json.loads(handler.rfile.read(length))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            handler.send_error(400)
+            return
+        question = data.get("question") if isinstance(data, dict) else None
+        if not isinstance(question, str) or not question.strip():
+            handler.send_error(400)
+            return
+        request = self.payload.get("request")
+        if not isinstance(request, dict):
+            handler.send_error(500)
+            return
+        request["question"] = question.strip()
+        self.question_ready = True
+        self.start_producer()
+        handler.send_response(204)
+        handler.send_header("Content-Length", "0")
+        handler.end_headers()
+
     def send_page(self, handler: BaseHTTPRequestHandler) -> None:
         body = build_page(self.profile, self.header, self.custom_css).encode("utf-8")
         handler.send_response(200)
@@ -171,13 +262,17 @@ class _Viewer:
 
     def send_events(self, handler: BaseHTTPRequestHandler) -> None:
         self.connected.set()
-        self.start_producer()
         handler.send_response(200)
         handler.send_header("Content-Type", "text/event-stream")
         handler.send_header("Cache-Control", "no-cache")
         handler.send_header("Connection", "keep-alive")
         handler.send_header("Transfer-Encoding", "chunked")
         handler.end_headers()
+
+        if self.needs_question and not self.question_ready:
+            self.queue.put({"type": "question"})
+        else:
+            self.start_producer()
 
         def write_chunk(data: bytes) -> None:
             handler.wfile.write(f"{len(data):X}\r\n".encode() + data + b"\r\n")

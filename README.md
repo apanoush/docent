@@ -66,7 +66,7 @@ PDFs are decoded with a built-in text extractor, so no external tools are needed
 Use a pasted passage with a file as context:
 
 ```bash
-docent explain --text "the passage to explain" --file notes.md
+docent explain notes.md --text "the passage to explain"
 ```
 
 Pipe a document and select a line:
@@ -133,8 +133,9 @@ Select text and press `<leader>de`, or run `:Docent explain`. The answer streams
 Load the adapter from your qutebrowser `config.py`:
 
 ```python
+import os
 import sys
-sys.path.insert(0, "~/path/to/docent/plugins/qutebrowser")
+sys.path.insert(0, os.path.expanduser("~/path/to/docent/plugins/qutebrowser"))
 import docent_qutebrowser
 
 docent_qutebrowser.setup(
@@ -174,7 +175,7 @@ Add a binding to `~/.config/zathura/zathurarc`:
 map <C-e> exec "/home/you/path/to/docent/plugins/zathura/docent-zathura explain $FILE $PAGE"
 ```
 
-Select text with the mouse and press `<C-e>`. The answer streams into a terminal window. Add `--viewer nvim` inside the quotes to stream into the Neovim plugin's Markdown float, or `--viewer qutebrowser` to open a qutebrowser window or tab with rendered Markdown. `ask` and `translate` work the same way; `ask` prompts for the question in the viewer. See [the zathura guide](docs/zathura.md).
+Select text with the mouse and press `<C-e>`. The answer streams into a terminal window. Add `--viewer nvim` inside the quotes to stream into the Neovim plugin's Markdown float, or `--viewer qutebrowser` to open a qutebrowser window or tab with rendered Markdown. `ask` and `translate` work the same way. The terminal, Neovim, and qutebrowser viewers prompt for the question. See [the zathura guide](docs/zathura.md).
 
 ## Status
 
@@ -190,6 +191,7 @@ Early development, version 0.1.0. The terminal commands, streaming, profile syst
 - [Zathura adapter](docs/zathura.md)
 - [Architecture](docs/architecture.md)
 - [Rust module reference](docs/modules/docent.md)
+- [Neovim module reference](docs/modules/nvim.md)
 - [qutebrowser module reference](docs/modules/qutebrowser.md)
 - [Firefox module reference](docs/modules/firefox.md)
 - [Zathura module reference](docs/modules/zathura.md)

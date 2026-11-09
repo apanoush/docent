@@ -322,31 +322,37 @@ The generated profiles use `"""` because their text contains no backslashes.
 docent explain notes.md --lines 12:20
 docent explain notes.md --line 12
 docent explain notes.md --phrase "transformer"
-docent explain --text "a pasted passage" --file notes.md
+docent explain notes.md --text "a pasted passage"
 docent ask notes.md --lines 12:20 --question "Why does this work?"
 docent translate notes.md --lines 12:20 --to French
 docent summarize paper.md
 docent summarize paper.md --lines 12:40
+docent summarize paper.pdf
+docent summarize paper.pdf --pages 1:4
+docent extract paper.pdf --pages 2:4
 docent do my-profile notes.md --lines 12:20
 ```
 
 ### Input rules
 
-- `FILE` is the document used for context and for line or phrase selection. Use `-` for stdin.
+- `FILE` is the document used for context and for line, phrase, or page selection. Use `-` for stdin.
 - With no `FILE` and piped stdin, the piped text is the document.
-- With no `FILE` and a terminal stdin, Docent prompts for a file. The exception is `--text`, which can supply a selection without any document.
+- With no `FILE` and a terminal stdin, Docent prompts for a file. `--text` can supply a selection without a document when the profile does not require context.
 - `--lines START:END` is 1-based and inclusive. `--line N` is a single line.
-- `--phrase PHRASE` uses the first exact occurrence. A missing phrase is an input error.
-- `--text TEXT` supplies a pasted selection. If a file or piped stdin is present, that is the document, and offsets are resolved when the text occurs there.
+- `--page N` and `--pages START:END` are 1-based, inclusive, and PDF-only. They scope the document before `--lines`, `--phrase`, or `--text` apply, and may be combined with those selection options.
+- Inputs whose bytes start with `%PDF-` are decoded with the built-in extractor; other inputs must be UTF-8 text. PDFs without a text layer are rejected.
+- `--phrase PHRASE` uses the first matching occurrence, trying an exact match before a whitespace-tolerant one. A missing phrase is an input error.
+- `--text TEXT` supplies a pasted selection. If a file or piped stdin is present, that is the document, and offsets are resolved with the same exact-then-tolerant search when the text occurs there.
 - Only one of `--lines`, `--line`, `--phrase`, and `--text` may be used.
+- `docent extract FILE [--page N | --pages START:END]` prints the extracted document text, which is useful for checking PDF input.
 - `--context-mode` and `--target-language` (alias `--to`) work on every terminal command.
-- `--viewer qutebrowser` shows the answer in a qutebrowser window or tab instead of stdout. `--qutebrowser`, `--qutebrowser-target`, and `--answer-css` tune the viewer. See [the browser viewer](viewer.md).
+- `--viewer qutebrowser` shows the answer in a qutebrowser window or tab instead of stdout. `--qutebrowser`, `--qutebrowser-target`, `--qutebrowser-arg`, and `--answer-css` tune the viewer. See [the browser viewer](viewer.md).
 - `--viewer firefox` shows the answer in a Firefox window or tab instead. `--firefox`, `--firefox-target`, and `--answer-css` tune it.
 - Without `--viewer`, these commands use `viewer.default` from `config.toml`, which defaults to `terminal`. Pass `--viewer terminal` to override a configured browser default.
 
 Piped stdin is always the document, never prompt input. Prompts only appear when stdin is a terminal and a required input is missing. A profile that requires a question prompts for one; a profile that requires a selection prompts for a line range or pasted text.
 
-When a run has no resolvable selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. `--context-mode full` sends the whole document, raising `context.max_chars` widens the window, and `--lines` narrows the subject.
+When a run has no resolvable selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. `--context-mode full` sends the whole document, raising `context.max_chars` widens the window, and `--lines` or `--pages` narrow the subject.
 
 A bare `docent` prints a short getting-started message. `docent profiles` prints `name: description`; `docent profiles --json` remains the machine-readable form used by the Neovim, qutebrowser, and Firefox pickers.
 
@@ -367,7 +373,7 @@ Terminal commands stream plain text by default. `--no-stream` waits for the comp
 }
 ```
 
-All fields are optional, but most profiles need a selection. Unknown fields are rejected. `byte_start` and `byte_end` are UTF-8 byte offsets into `document`; they are used only when they match `selection` exactly, otherwise Docent falls back to the first exact occurrence of the selection.
+All fields are optional, but most profiles need a selection. Unknown fields are rejected. `byte_start` and `byte_end` are UTF-8 byte offsets into `document`; they are used only when they match `selection` exactly, otherwise Docent falls back to the first matching occurrence, trying an exact match before a whitespace-tolerant search.
 
 Output modes for `docent request`:
 
@@ -384,25 +390,29 @@ Output modes for `docent request`:
 
 ```text
 docent explain [FILE] [--lines START:END | --line N | --phrase PHRASE | --text TEXT]
-               [--question TEXT] [--context-mode auto|full|none]
+               [--page N | --pages START:END] [--question TEXT]
+               [--context-mode auto|full|none]
                [--target-language LANG | --to LANG] [--no-stream]
                [--viewer terminal|qutebrowser|firefox] [--qutebrowser PATH]
-               [--qutebrowser-target TARGET] [--firefox PATH]
-               [--firefox-target TARGET] [--answer-css PATH]
+               [--qutebrowser-target TARGET] [--qutebrowser-arg ARG]
+               [--firefox PATH] [--firefox-target TARGET] [--answer-css PATH]
 docent ask [FILE] ...
 docent translate [FILE] ...
 docent summarize [FILE] ...
 docent do PROFILE [FILE] ...
+docent extract FILE [--page N | --pages START:END]
 docent request [--profile explain] [--question TEXT] [--target-language LANG]
                [--context-mode auto|full|none] [--stream] [--html] [--json]
-               [--viewer terminal|qutebrowser|firefox] [--header TEXT]
-               [--print-prompt] [--config-dir PATH]
+               [--viewer terminal|qutebrowser|firefox] [--qutebrowser PATH]
+               [--qutebrowser-target TARGET] [--qutebrowser-arg ARG]
+               [--firefox PATH] [--firefox-target TARGET] [--answer-css PATH]
+               [--header TEXT] [--print-prompt] [--config-dir PATH]
 docent profiles [--json]
 docent init [--force] [--config-dir PATH]
 docent config-path [--config-dir PATH]
 ```
 
-`--source NAME` and `--no-history` are global flags and work with every command. `--source` is recorded in the history database; `--no-history` skips the database for one run.
+`--config-dir PATH`, `--source NAME`, `--no-history`, `--no-cache`, and `--refresh` are global flags and work with every command. `--config-dir` selects the config directory; `--source` is recorded in the history database; `--no-history` skips the database for one run; `--no-cache` and `--refresh` control the answer cache.
 
 The `...` above stands for the same selection and execution options as `explain`. `docent do` takes a profile name before the optional file.
 

@@ -57,7 +57,7 @@ The adapter reads both PRIMARY and CLIPBOARD and uses the longest text that appe
 | Command | Action |
 |---|---|
 | `docent-zathura explain FILE PAGE` | Explain the selection. |
-| `docent-zathura ask FILE PAGE` | Ask a question. The terminal prompts for the question if `--question` is omitted. |
+| `docent-zathura ask FILE PAGE` | Ask a question. The viewer prompts for the question if `--question` is omitted. |
 | `docent-zathura translate FILE PAGE` | Translate the selection. |
 | `docent-zathura summarize FILE PAGE` | Summarize the page window, or the selection when the clipboard matches it. |
 | `docent-zathura do PROFILE FILE PAGE` | Run a custom profile. |
@@ -77,7 +77,7 @@ Options:
 | `--docent PATH` | searched | CLI executable or command name. |
 | `--context-pages N` | `1` | Pages of context before and after the current page. |
 | `--context-mode MODE` | profile or config | `auto`, `full`, or `none`. |
-| `--question TEXT` | none | Question for `ask` or `do`; `ask` prompts when omitted. |
+| `--question TEXT` | none | Question for `ask` or `do`. The viewer prompts when omitted for `ask`. |
 | `--target-language LANG`, `--to LANG` | profile or config | Translation target for `translate`. |
 
 Quote values that contain spaces inside the quoted `exec` command. Zathura's `exec` splits unquoted words into separate arguments.

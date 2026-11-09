@@ -126,7 +126,7 @@ pub enum SelectionArg {
     Lines(LineRange),
     /// Pasted selection text.
     Text(String),
-    /// An exact phrase to locate in the document.
+    /// A phrase to locate in the document.
     Phrase(String),
 }
 

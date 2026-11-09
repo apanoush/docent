@@ -31,7 +31,7 @@ def build_request(
     """Return a request containing only fields the CLI knows about.
 
     Offsets are added only when the selection occurs exactly in the extracted
-    text. The CLI falls back to the first exact occurrence otherwise.
+    text. The CLI falls back to its whitespace-tolerant search otherwise.
     """
     selection = selection.rstrip("\r\n")
     if not selection.strip():

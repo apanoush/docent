@@ -275,7 +275,7 @@ pub struct SelectionArgs {
     #[arg(long, value_name = "TEXT")]
     pub text: Option<String>,
 
-    /// Find the selection by exact phrase.
+    /// Find the selection by phrase.
     #[arg(long, value_name = "PHRASE")]
     pub phrase: Option<String>,
 }

@@ -20,6 +20,9 @@ request = json.loads(sys.stdin.read())
 if "--html" not in sys.argv:
     print(json.dumps({"type": "error", "message": "missing --html"}), flush=True)
     raise SystemExit(2)
+if request.get("selection") == "question" and request.get("question") != "Why?":
+    print(json.dumps({"type": "error", "message": "missing question"}), flush=True)
+    raise SystemExit(2)
 if request.get("selection") == "fail":
     print(json.dumps({"type": "error", "message": "boom"}), flush=True)
     raise SystemExit(1)
@@ -49,6 +52,14 @@ with urllib.request.urlopen(url.rstrip("/") + "/events") as response:
         if not line.startswith("data: "):
             continue
         event = json.loads(line[6:])
+        if event["type"] == "question":
+            request = urllib.request.Request(
+                url.rstrip("/") + "/question",
+                data=json.dumps({"question": "Why?"}).encode("utf-8"),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(request).read()
         events.append(event)
         if event["type"] in {"done", "error"}:
             break
@@ -93,6 +104,8 @@ def test_build_page_uses_the_shared_shell_and_starts_event_source() -> None:
     assert "--docent-bg" in page
     assert "EventSource('events')" in page
     assert "event.type === 'warning'" in page
+    assert "event.type === 'question'" in page
+    assert "fetch('question'" in page
     assert "d close" not in page
 
 
@@ -128,6 +141,59 @@ def test_serve_streams_the_rendered_html(
             "html": "<p><strong>bold</strong> and <code>code</code></p>",
         }
     ]
+    assert events[-1]["type"] == "done"
+
+
+def test_serve_prompts_for_a_question(
+    fake_docent: Path,
+    fake_qutebrowser: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "answer.json"
+    monkeypatch.setenv("FAKE_QUTEBROWSER_OUTPUT", str(output))
+    payload = _payload("question")
+    payload["prompt_for_question"] = True
+
+    code = serve(
+        payload,
+        docent_cmd=str(fake_docent),
+        target="window",
+        qutebrowser_cmd=str(fake_qutebrowser),
+        timeout=5,
+    )
+
+    assert code == 0
+    events = json.loads(output.read_text(encoding="utf-8"))
+    kinds = [event["type"] for event in events]
+    assert kinds[0] == "question"
+    assert "html" in kinds
+    assert kinds[-1] == "done"
+
+
+def test_serve_does_not_prompt_when_a_question_is_already_present(
+    fake_docent: Path,
+    fake_qutebrowser: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "answer.json"
+    monkeypatch.setenv("FAKE_QUTEBROWSER_OUTPUT", str(output))
+    payload = _payload("question")
+    payload["prompt_for_question"] = True
+    payload["request"]["question"] = "Why?"
+
+    code = serve(
+        payload,
+        docent_cmd=str(fake_docent),
+        target="window",
+        qutebrowser_cmd=str(fake_qutebrowser),
+        timeout=5,
+    )
+
+    assert code == 0
+    events = json.loads(output.read_text(encoding="utf-8"))
+    assert all(event["type"] != "question" for event in events)
     assert events[-1]["type"] == "done"
 
 

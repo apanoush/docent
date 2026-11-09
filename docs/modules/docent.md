@@ -117,7 +117,7 @@ pub fn serve(request: HostRequest, writer: &mut impl Write) -> io::Result<()>;
 
 Profile validation covers TOML fields, numeric ranges, placeholder syntax, requirement consistency, and the conflict between `requires = ["context"]` and `context_mode = "none"`.
 
-`config::ViewerConfig` supplies the default viewer, browser executables, and targets for the terminal commands. `cli::ViewerArgs` resolves each value with the CLI flag first and the config second. `docent request` only honors an explicit `--viewer`, so the configured browser default never affects adapters that call it with `--stream`.
+`config::ViewerConfig` supplies the default viewer, browser executables, targets, and extra qutebrowser arguments for the terminal commands. `cli::ViewerArgs` resolves each value with the CLI flag first and the config second. `docent request` only honors an explicit `--viewer`, so the configured browser default never affects adapters that call it with `--stream`.
 
 ## Context windowing
 
@@ -147,11 +147,12 @@ Streaming clients parse SSE through `provider::stream::stream_sse`. The decoder 
 
 ## Tests
 
-Rust tests are split into four layers:
+Rust tests are split into five layers:
 
 - Unit tests in each module for parsing, validation, windowing, rendering, math delimiters and MathML fallbacks, request bodies, response parsing, SSE decoding, settings precedence, line and page ranges, PDF detection and extraction, tolerant phrase matching, prompt sequencing, terminal request construction, Markdown sanitization, cache keys and eviction, and viewer page/server behavior.
-- Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, the bare getting-started output, and viewer flag conflicts.
-- Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, selection errors, input errors, the `html` event, the qutebrowser and Firefox viewers with a fake browser, and cache reuse, bypass, refresh, invalidation, and uncached failures. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
-- Native host tests in `src/native_host.rs` with a fake `docent` shell script for framing, partial reads, oversized messages, invalid requests, spawn failures, line forwarding, exit codes, `exec`, and `css`.
+- Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, the bare getting-started output, viewer flag conflicts, and `docent extract` page handling.
+- Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, PDF page scoping, selection errors, input errors, the `html` event, MathML rendering, qutebrowser argument passing, the qutebrowser and Firefox viewers with a fake browser, and cache reuse, bypass, refresh, invalidation, and uncached failures. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
+- Native host unit tests in `src/native_host.rs` with a fake `docent` shell script for framing, partial reads, oversized messages, invalid requests, spawn failures, line forwarding, exit codes, `exec`, and `css`.
+- Native host integration tests in `tests/native_host.rs` that spawn the real `docent-native-host` binary and check framing, exit codes, and replies.
 
 The coverage gate is `cargo llvm-cov --workspace --all-targets --fail-under-lines 80`. Run `scripts/check.sh` for the full gate, including formatting, clippy, tests, coverage, the Neovim tests, the qutebrowser adapter tests, the zathura tests, and the Firefox tests. The script requires `cargo-llvm-cov`, Neovim, pytest, ruff, ty, and Node on `PATH`; `web-ext` is optional and only adds a manifest lint.

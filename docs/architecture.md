@@ -49,7 +49,7 @@ The CLI reads one JSON object from stdin:
 
 Every field is optional. Unknown fields are rejected. The document can be large, so stdin is preferable to command-line arguments or environment variables. Neovim's `vim.system` accepts a string for stdin, which removes the need for temporary files. See `:h vim.system()` in Neovim 0.10 or newer. The qutebrowser adapter uses `QProcess` and writes the same JSON to its stdin.
 
-The Neovim plugin sends UTF-8 byte offsets because that is what the buffer API exposes. The CLI trusts the offsets only when they match the selection exactly. Otherwise it falls back to the first exact occurrence. This keeps markers correct when a buffer was edited between capture and request. The first qutebrowser version omits offsets and relies on the same fallback.
+The Neovim plugin sends UTF-8 byte offsets because that is what the buffer API exposes. The CLI trusts the offsets only when they match the selection exactly. Otherwise it falls back to the first matching occurrence, trying an exact match before a whitespace-tolerant search. This keeps markers correct when a buffer was edited between capture and request. The first qutebrowser version omits offsets and relies on the same fallback.
 
 ## Terminal input adapter
 
@@ -145,7 +145,7 @@ Settings resolve in this order, highest first:
 
 Provider selection, base URL, API key environment variable, and timeout are global. Model, temperature, token limit, context mode, and languages can be overridden per profile. Keeping provider selection global avoids mixing credentials and wire formats in a single request.
 
-Viewer selection is separate from prompt settings. The `--viewer`, `--qutebrowser`, `--qutebrowser-target`, `--firefox`, and `--firefox-target` flags override the `[viewer]` table, which overrides the built-in terminal default. Profiles do not carry viewer settings. `docent request` ignores the configured viewer default and keeps the terminal unless `--viewer` is passed, so adapters that call `--stream` are never switched to a browser.
+Viewer selection is separate from prompt settings. The `--viewer`, `--qutebrowser`, `--qutebrowser-target`, `--qutebrowser-arg`, `--firefox`, and `--firefox-target` flags override the `[viewer]` table, which overrides the built-in terminal default. Profiles do not carry viewer settings. `docent request` ignores the configured viewer default and keeps the terminal unless `--viewer` is passed, so adapters that call `--stream` are never switched to a browser.
 
 ## Context assembly
 

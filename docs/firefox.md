@@ -33,13 +33,13 @@ The manifest holds the absolute path to `docent-native-host` and the add-on ID `
 Firefox finds the host through a registry key, so install the manifest by hand. From PowerShell:
 
 ```powershell
-$host = (Get-Command docent-native-host).Source
+$hostPath = (Get-Command docent-native-host).Source
 $manifest = "$env:APPDATA\Mozilla\NativeMessagingHosts\org.docent.host.json"
 New-Item -ItemType Directory -Force -Path (Split-Path $manifest) | Out-Null
 $json = @{
   name = "org.docent.host"
   description = "Native messaging host for the Docent Firefox adapter"
-  path = $host
+  path = $hostPath
   type = "stdio"
   allowed_extensions = @("{ae094259-bf49-44a7-a0f0-186c52340b02}")
 } | ConvertTo-Json
@@ -130,7 +130,7 @@ The extension runs one snippet in the active tab and returns:
 - `document` from `document.body.innerText`, the rendered page text.
 - `file` built from the page title and URL. Credentials, query parameters, and fragments are removed before the URL reaches the model.
 
-Offsets are omitted. DOM ranges and `innerText` use different coordinate spaces, so the CLI falls back to the first exact occurrence of the selection inside the document. This is exact for short pages and can pick the wrong occurrence on very long pages.
+Offsets are omitted. DOM ranges and `innerText` use different coordinate spaces, so the CLI falls back to the first matching occurrence of the selection inside the document, trying an exact match before a whitespace-tolerant search. This is exact for short pages and can pick the wrong occurrence on very long pages.
 
 `activeTab` grants access only after an explicit user action, so the extension does not request host permissions for every site. Reader view, view-source, the PDF viewer, and browser UI pages cannot be scripted and report an error instead.
 

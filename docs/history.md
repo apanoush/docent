@@ -23,7 +23,7 @@ The default database is `docent.db` in the platform data directory:
 |---|---|
 | Linux | `$XDG_DATA_HOME/docent/docent.db`, usually `~/.local/share/docent/docent.db` |
 | macOS | `~/Library/Application Support/docent/docent.db` |
-| Windows | `%APPDATA%\docent\docent.db` |
+| Windows | `%APPDATA%\docent\data\docent.db` |
 
 Override it with `history.database`:
 

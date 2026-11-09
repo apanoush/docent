@@ -23,7 +23,7 @@ pub struct NewRun {
     pub created_at_ms: i64,
     /// Provider call duration in milliseconds.
     pub duration_ms: i64,
-    /// Command that produced the run, for example `explain` or `run`.
+    /// Command that produced the run, for example `explain` or `request`.
     pub command: String,
     /// Profile name.
     pub profile: String,

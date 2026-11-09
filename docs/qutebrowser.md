@@ -13,8 +13,9 @@ The qutebrowser adapter captures the selected text and the surrounding page, cal
 The adapter is a Python module loaded from your qutebrowser `config.py`. It is not inside a packaged qutebrowser plugin directory, so add the outer `plugins/qutebrowser/` directory to `sys.path` and call `docent_qutebrowser.setup` with qutebrowser's `config` object:
 
 ```python
+import os
 import sys
-sys.path.insert(0, "~/path/to/docent/plugins/qutebrowser")
+sys.path.insert(0, os.path.expanduser("~/path/to/docent/plugins/qutebrowser"))
 import docent_qutebrowser
 
 docent_qutebrowser.setup(
@@ -80,7 +81,7 @@ The adapter runs one JavaScript snippet in the current tab and returns:
 - `document` from `document.body.innerText`, the rendered text of the page. This is the browser equivalent of the Neovim buffer. It includes page chrome such as navigation and ads, which is accepted noise.
 - `file` built from the page title and URL. Query parameters and fragments are removed before the URL reaches the model.
 
-The first version deliberately omits byte offsets. The CLI falls back to the first exact occurrence of the selection inside the document when offsets are absent. This is exact for short pages and can pick the wrong occurrence on very long pages. Exact offsets are deferred.
+The first version deliberately omits byte offsets. The CLI falls back to the first matching occurrence of the selection inside the document when offsets are absent, trying an exact match before a whitespace-tolerant search. This is exact for short pages and can pick the wrong occurrence on very long pages. Exact offsets are deferred.
 
 ## Answer tab
 
@@ -156,8 +157,8 @@ A profile that declares `requires = ["question"]` opens a text prompt before the
 
 ## Troubleshooting
 
-- `docent: could not start ...`: the binary is missing from qutebrowser's `PATH`. Use `cmd` with an absolute path.
-- `docent: missing API key`: neither `api_key` nor the environment variable named by `api_key_env` is set in the process that started qutebrowser.
+- `could not start ...`: the binary is missing from qutebrowser's `PATH`. Use `cmd` with an absolute path.
+- `missing API key`: neither `api_key` nor the environment variable named by `api_key_env` is set in the process that started qutebrowser.
 - `docent: no profiles found`: run `docent init`, then `:docent-refresh`.
 - `docent: select some text first`: select text with the mouse or enter caret mode before running the command.
 - `docent: could not read this page`: the page is not ready, JavaScript is disabled, or the tab changed while the capture was running. Retry after the page loads.
