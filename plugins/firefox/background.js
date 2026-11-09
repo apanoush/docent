@@ -1,6 +1,6 @@
 /** Background page: capture, native messaging, and answer-tab sessions. */
 
-import { configArgs, profilesArgs, runArgs, contextMode } from "./lib/args.js";
+import { configArgs, profilesArgs, requestArgs, contextMode } from "./lib/args.js";
 import { captureTab } from "./lib/capture.js";
 import { cssNative, execNative, runNative } from "./lib/native.js";
 import { hasRequirement, parseProfiles } from "./lib/profiles.js";
@@ -141,7 +141,7 @@ async function handleRun(message) {
   }
 
   const request = buildRequest(capture, question || null);
-  const args = runArgs(current, profile.name, {
+  const args = requestArgs(current, profile.name, {
     targetLanguage: message.targetLanguage,
     contextMode: message.contextMode,
   });

@@ -12,7 +12,7 @@ use directories::ProjectDirs;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::config::{ApiConfig, ApiKind, Config};
+use crate::config::{Config, ProviderConfig, WireFormat};
 use crate::error::DocentError;
 use crate::prompt::{EffectiveSettings, Prompt};
 
@@ -63,7 +63,7 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-/// One line of the NDJSON stream written by `docent run --stream`.
+/// One line of the NDJSON stream written by `docent request --stream`.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEvent {
@@ -74,7 +74,7 @@ pub enum StreamEvent {
     },
     /// The complete answer rendered as a safe HTML fragment.
     ///
-    /// Only emitted by `docent run --stream --html`, after the last delta and
+    /// Only emitted by `docent request --stream --html`, after the last delta and
     /// before the `done` event.
     Html {
         /// Rendered answer body.
@@ -122,9 +122,9 @@ pub fn complete(
         max_tokens: settings.max_tokens,
     };
 
-    match config.api.kind {
-        ApiKind::OpenAi => openai::complete(config, &input, &api_key),
-        ApiKind::Anthropic => anthropic::complete(config, &input, &api_key),
+    match config.provider.wire_format {
+        WireFormat::OpenAi => openai::complete(config, &input, &api_key),
+        WireFormat::Anthropic => anthropic::complete(config, &input, &api_key),
     }
 }
 
@@ -144,27 +144,30 @@ pub fn complete_streaming(
         max_tokens: settings.max_tokens,
     };
 
-    match config.api.kind {
-        ApiKind::OpenAi => openai::complete_streaming(config, &input, &api_key, on_delta),
-        ApiKind::Anthropic => anthropic::complete_streaming(config, &input, &api_key, on_delta),
+    match config.provider.wire_format {
+        WireFormat::OpenAi => openai::complete_streaming(config, &input, &api_key, on_delta),
+        WireFormat::Anthropic => anthropic::complete_streaming(config, &input, &api_key, on_delta),
     }
 }
 
 fn api_key(config: &Config) -> Result<String, DocentError> {
-    let env_value = if config.api.api_key_env.trim().is_empty() {
+    let env_value = if config.provider.api_key_env.trim().is_empty() {
         None
     } else {
-        std::env::var(&config.api.api_key_env).ok()
+        std::env::var(&config.provider.api_key_env).ok()
     };
-    resolve_api_key(&config.api, env_value)
+    resolve_api_key(&config.provider, env_value)
 }
 
 /// Picks the API key. A non-empty environment value wins over a literal key.
-fn resolve_api_key(api: &ApiConfig, env_value: Option<String>) -> Result<String, DocentError> {
+fn resolve_api_key(
+    provider: &ProviderConfig,
+    env_value: Option<String>,
+) -> Result<String, DocentError> {
     if let Some(value) = env_value.filter(|value| !value.trim().is_empty()) {
         return Ok(value);
     }
-    if let Some(value) = api
+    if let Some(value) = provider
         .api_key
         .as_deref()
         .map(str::trim)
@@ -173,12 +176,12 @@ fn resolve_api_key(api: &ApiConfig, env_value: Option<String>) -> Result<String,
         return Ok(value.to_string());
     }
 
-    let detail = if api.api_key_env.trim().is_empty() {
-        "set api.api_key in config.toml".to_string()
+    let detail = if provider.api_key_env.trim().is_empty() {
+        "set provider.api_key in config.toml".to_string()
     } else {
         format!(
-            "set api.api_key in config.toml or environment variable {}",
-            api.api_key_env
+            "set provider.api_key in config.toml or environment variable {}",
+            provider.api_key_env
         )
     };
     Err(DocentError::MissingApiKey { detail })
@@ -197,7 +200,7 @@ fn post_json(
 
     let agent = ureq::Agent::new_with_config(
         ureq::Agent::config_builder()
-            .timeout_global(Some(Duration::from_secs(config.api.timeout_secs)))
+            .timeout_global(Some(Duration::from_secs(config.provider.timeout_secs)))
             .http_status_as_error(false)
             .user_agent(format!("docent/{}", env!("CARGO_PKG_VERSION")))
             .build(),
@@ -210,7 +213,7 @@ fn post_json(
     for (name, value) in headers {
         request = request.header(*name, *value);
     }
-    if config.api.base_url.contains("opencode.ai") {
+    if config.provider.base_url.contains("opencode.ai") {
         if let Some(session) = opencode_session_id() {
             request = request.header("x-opencode-session", session);
         }
@@ -369,56 +372,56 @@ mod tests {
 
     #[test]
     fn environment_key_wins_over_the_literal_key() {
-        let api = ApiConfig {
+        let provider = ProviderConfig {
             api_key: Some("literal".to_string()),
-            ..ApiConfig::default()
+            ..ProviderConfig::default()
         };
 
-        let key = resolve_api_key(&api, Some("from-env".to_string())).unwrap();
+        let key = resolve_api_key(&provider, Some("from-env".to_string())).unwrap();
         assert_eq!(key, "from-env");
     }
 
     #[test]
     fn literal_key_is_used_when_the_environment_is_unset() {
-        let api = ApiConfig {
+        let provider = ProviderConfig {
             api_key: Some("literal".to_string()),
-            ..ApiConfig::default()
+            ..ProviderConfig::default()
         };
 
-        let key = resolve_api_key(&api, None).unwrap();
+        let key = resolve_api_key(&provider, None).unwrap();
         assert_eq!(key, "literal");
     }
 
     #[test]
     fn blank_environment_value_falls_back_to_the_literal_key() {
-        let api = ApiConfig {
+        let provider = ProviderConfig {
             api_key: Some("literal".to_string()),
-            ..ApiConfig::default()
+            ..ProviderConfig::default()
         };
 
-        let key = resolve_api_key(&api, Some("  ".to_string())).unwrap();
+        let key = resolve_api_key(&provider, Some("  ".to_string())).unwrap();
         assert_eq!(key, "literal");
     }
 
     #[test]
     fn missing_key_reports_both_sources() {
-        let api = ApiConfig::default();
+        let provider = ProviderConfig::default();
 
-        let error = resolve_api_key(&api, None).unwrap_err();
+        let error = resolve_api_key(&provider, None).unwrap_err();
         let message = error.to_string();
-        assert!(message.contains("api.api_key"));
+        assert!(message.contains("provider.api_key"));
         assert!(message.contains("OPENCODE_API_KEY"));
     }
 
     #[test]
     fn missing_key_without_an_env_name_reports_only_the_literal_source() {
-        let mut api = ApiConfig::default();
-        api.api_key_env.clear();
+        let mut provider = ProviderConfig::default();
+        provider.api_key_env.clear();
 
-        let error = resolve_api_key(&api, None).unwrap_err();
+        let error = resolve_api_key(&provider, None).unwrap_err();
         assert_eq!(
             error.to_string(),
-            "missing API key: set api.api_key in config.toml"
+            "missing API key: set provider.api_key in config.toml"
         );
     }
 

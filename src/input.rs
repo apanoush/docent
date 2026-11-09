@@ -272,7 +272,7 @@ pub fn resolve_request(
     if selection.is_none() && requires_selection {
         if !prompter.is_interactive() {
             return Err(DocentError::Input(
-                "no selection provided; use --lines, --line, --select, or --text".to_string(),
+                "no selection provided; use --lines, --line, --phrase, or --text".to_string(),
             ));
         }
         let value = prompt_required(
@@ -296,7 +296,7 @@ pub fn resolve_request(
         Some(SelectionArg::Phrase(phrase)) => {
             let Some(document) = document.as_ref() else {
                 return Err(DocentError::Input(
-                    "--select requires a document; pass FILE or pipe one on stdin".to_string(),
+                    "--phrase requires a document; pass FILE or pipe one on stdin".to_string(),
                 ));
             };
             let (start, end) = document.find(&phrase).ok_or_else(|| {

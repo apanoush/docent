@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { contextMode, profilesArgs, runArgs } from "../../plugins/firefox/lib/args.js";
+import { contextMode, profilesArgs, requestArgs } from "../../plugins/firefox/lib/args.js";
 
 const settings = {
   cmd: "docent",
@@ -25,8 +25,8 @@ test("passes the config directory before the subcommand", () => {
 });
 
 test("builds a run request", () => {
-  assert.deepEqual(runArgs(settings, "explain"), [
-    "run",
+  assert.deepEqual(requestArgs(settings, "explain"), [
+    "request",
     "--profile",
     "explain",
     "--stream",
@@ -38,12 +38,12 @@ test("builds a run request", () => {
 
 test("adds language and context overrides", () => {
   assert.deepEqual(
-    runArgs(settings, "translate", {
+    requestArgs(settings, "translate", {
       targetLanguage: "French",
       contextMode: "full",
     }),
     [
-      "run",
+      "request",
       "--profile",
       "translate",
       "--stream",
@@ -60,12 +60,12 @@ test("adds language and context overrides", () => {
 
 test("uses settings defaults", () => {
   assert.deepEqual(
-    runArgs(
+    requestArgs(
       { ...settings, targetLanguage: "German", contextMode: "none" },
       "translate",
     ),
     [
-      "run",
+      "request",
       "--profile",
       "translate",
       "--stream",
@@ -84,7 +84,7 @@ test("rejects an unknown context mode", () => {
   assert.equal(contextMode("everything"), "");
   assert.equal(contextMode("auto"), "auto");
   assert.deepEqual(
-    runArgs(settings, "explain", { contextMode: "everything" }),
-    ["run", "--profile", "explain", "--stream", "--html", "--source", "firefox"],
+    requestArgs(settings, "explain", { contextMode: "everything" }),
+    ["request", "--profile", "explain", "--stream", "--html", "--source", "firefox"],
   );
 });

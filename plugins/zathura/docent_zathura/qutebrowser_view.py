@@ -220,7 +220,7 @@ class _Viewer:
     def produce(self) -> None:
         args = [
             self.docent_cmd,
-            "run",
+            "request",
             "--profile",
             self.profile,
             "--stream",

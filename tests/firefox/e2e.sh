@@ -41,7 +41,7 @@ case "${1:-}" in
     config-path)
         printf '%s\n' "${E2E_CONFIG_DIR}"
         ;;
-    run)
+    request)
         cat >/dev/null
         printf '%s\n' '{"type":"delta","text":"Fake answer from the Firefox adapter."}'
         printf '%s\n' '{"type":"delta","text":"\n\n## RenderedHeading"}'

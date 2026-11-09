@@ -47,14 +47,14 @@ A custom plugin can pass any short name, for example `--source my-plugin`. Names
 
 ## Schema
 
-Schema version 2 has two tables. The `runs` table records provider calls:
+Schema version 3 has two tables. The `runs` table records provider calls:
 
 | Column | Type | Meaning |
 |---|---|---|
 | `id` | integer | Row identifier. |
 | `created_at` | integer | Unix epoch milliseconds when the provider call started. |
 | `duration_ms` | integer | Provider call duration in milliseconds. |
-| `command` | text | `explain`, `ask`, `translate`, `summarize`, `do`, or `run`. |
+| `command` | text | `explain`, `ask`, `translate`, `summarize`, `do`, or `request`. |
 | `profile` | text | Profile name. |
 | `source` | text | `cli`, `nvim`, `qutebrowser`, `firefox`, `zathura`, or a custom name. |
 | `output_mode` | text | `plain_stream`, `plain`, `json`, `ndjson`, `ndjson_html`, or `browser`. |
@@ -70,7 +70,7 @@ Schema version 2 has two tables. The `runs` table records provider calls:
 | `context_max_chars` | integer | Configured character budget. |
 | `context_chars` | integer | Character count of the assembled context. |
 | `context_truncated` | integer | `1` when part of the document was omitted. |
-| `provider` | text | `openai` or `anthropic`. |
+| `wire_format` | text | `openai` or `anthropic`. |
 | `base_url` | text | Provider base URL. |
 | `model` | text | Model reported by the provider, or the configured model on failure. |
 | `temperature` | real | Sampling temperature. |
@@ -101,7 +101,7 @@ The `cache` table stores reusable answers:
 | `output` | text | Stored answer. |
 | `docent_version` | text | Docent version that stored the entry. |
 
-The cache table has an index on `last_used_at` for eviction. A new database is created at version 2. A version 1 database is upgraded in place on the next run, and its `runs` rows are kept.
+The cache table has an index on `last_used_at` for eviction. A new database is created at version 3. Version 1 and 2 databases are upgraded in place on the next run, and their `runs` rows are kept.
 
 The raw document is not stored separately. The rendered `user_prompt` already contains the context window that the model received. `document_bytes` records the original size.
 
@@ -109,7 +109,7 @@ The raw document is not stored separately. The rendered `user_prompt` already co
 
 ## Answer cache
 
-The cache returns a stored answer instead of calling the provider when the rendered system and user messages, the provider, the base URL, the model, the temperature, and `max_tokens` all match. The rendered prompt already contains the selection, the context window, the question, and the languages, so changing any of those produces a miss.
+The cache returns a stored answer instead of calling the provider when the rendered system and user messages, the wire format, the base URL, the model, the temperature, and `max_tokens` all match. The rendered prompt already contains the selection, the context window, the question, and the languages, so changing any of those produces a miss.
 
 A hit is not written to `runs`, because it is not a provider call. Instead, the matching cache row increments `hits` and updates `last_used_at`:
 

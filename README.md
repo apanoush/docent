@@ -77,7 +77,7 @@ docent summarize paper.md --viewer firefox
 
 The page uses the same answer styles as the qutebrowser and Firefox adapters. Pass `--answer-css PATH` for extra overrides, or edit `<config dir>/answer.css`. See [the browser viewer guide](docs/viewer.md).
 
-Set `[viewer] default = "firefox"` in `config.toml` to stop passing `--viewer` on every command. The other `[viewer]` keys set the executable and target, and command-line flags still win per run. `docent run` keeps `terminal` as its default unless `--viewer` is passed, so the adapters are unaffected.
+Set `[viewer] default = "firefox"` in `config.toml` to stop passing `--viewer` on every command. The other `[viewer]` keys set the executable and target, and command-line flags still win per run. `docent request` keeps `terminal` as its default unless `--viewer` is passed, so the adapters are unaffected.
 
 `--viewer firefox` opens a standalone local answer page. It does not use the Docent Firefox extension; the extension remains the way to capture a page selection from inside Firefox.
 
@@ -86,10 +86,10 @@ When a run has no selection and the document is larger than `context.max_chars`,
 The JSON stdin interface used by Neovim, qutebrowser, Firefox, and zathura remains available:
 
 ```bash
-printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence using attention.","byte_start":2,"byte_end":13,"file":"notes.md"}' | docent run --profile explain
+printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence using attention.","byte_start":2,"byte_end":13,"file":"notes.md"}' | docent request --profile explain
 ```
 
-Inspect the exact prompt without calling the provider with `--print-prompt`, or stream newline-delimited events with `--stream`. Add `--html` with `--stream` to include the final answer as rendered HTML before the `done` event; the browser adapters use this. Run `docent --help` for the terminal commands and `docent run --help` for the machine interface.
+Inspect the exact prompt without calling the provider with `--print-prompt`, or stream newline-delimited events with `--stream`. Add `--html` with `--stream` to include the final answer as rendered HTML before the `done` event; the browser adapters use this. Run `docent --help` for the terminal commands and `docent request --help` for the machine interface.
 
 Every provider run is recorded in a local SQLite database by default, including the prompt, answer, model, parameters, token usage, and source. The database lives in the platform data directory, for example `~/.local/share/docent/docent.db` on Linux. Set `history.database` to move it, `history.enabled = false` to disable it, or pass `--no-history` for one run. See [run history](docs/history.md).
 

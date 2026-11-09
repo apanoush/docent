@@ -2,7 +2,7 @@
 //!
 //! Firefox extensions cannot start processes. The extension launches this
 //! binary through native messaging and sends one JSON request. For a run, the
-//! bridge starts `docent run --stream`, forwards each stdout line as one
+//! bridge starts `docent request --stream`, forwards each stdout line as one
 //! native message, and reports the exit code. For `exec` and `css`, it runs a
 //! short-lived command and returns its output.
 //!

@@ -111,7 +111,7 @@ pub(crate) fn complete_streaming(
 }
 
 fn endpoint(config: &Config) -> String {
-    let base = config.api.base_url.trim_end_matches('/');
+    let base = config.provider.base_url.trim_end_matches('/');
     if base.ends_with("/v1") {
         format!("{base}/messages")
     } else {
@@ -230,10 +230,10 @@ mod tests {
     #[test]
     fn endpoint_handles_both_base_url_styles() {
         let mut config = Config::default();
-        config.api.base_url = "https://api.anthropic.com".to_string();
+        config.provider.base_url = "https://api.anthropic.com".to_string();
         assert_eq!(endpoint(&config), "https://api.anthropic.com/v1/messages");
 
-        config.api.base_url = "https://api.anthropic.com/v1".to_string();
+        config.provider.base_url = "https://api.anthropic.com/v1".to_string();
         assert_eq!(endpoint(&config), "https://api.anthropic.com/v1/messages");
     }
 }

@@ -15,7 +15,7 @@ from docent_zathura.launch import (
 
 
 def test_builds_foot_arguments() -> None:
-    assert build_terminal_argv("foot", ["docent", "run"]) == [
+    assert build_terminal_argv("foot", ["docent", "request"]) == [
         "foot",
         "-a",
         "docent",
@@ -23,7 +23,7 @@ def test_builds_foot_arguments() -> None:
         "Docent",
         "-e",
         "docent",
-        "run",
+        "request",
     ]
 
 

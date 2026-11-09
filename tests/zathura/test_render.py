@@ -291,7 +291,7 @@ def test_docent_arguments_tag_the_source() -> None:
 
     assert args == [
         "docent",
-        "run",
+        "request",
         "--profile",
         "explain",
         "--stream",

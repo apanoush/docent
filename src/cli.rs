@@ -12,14 +12,16 @@ use crate::cache;
 use crate::config::{self, ContextMode, InitReport};
 use crate::context;
 use crate::error::DocentError;
-use crate::history;
+use crate::input::{self, LineRange, NoPrompter, SelectionArg, TerminalPrompter};
 use crate::markdown;
 use crate::profile::{Profile, ProfileInfo, ProfileStore};
 use crate::prompt::{self, EffectiveSettings};
 use crate::provider::{self, Completion};
 use crate::request::Request;
-use crate::source::{self, LineRange, NoPrompter, SelectionArg, TerminalPrompter};
-use crate::viewer::{Browser, FirefoxTarget, QutebrowserTarget, Viewer, ViewerKind, ViewerOptions};
+use crate::storage;
+use crate::viewer::{
+    AnswerTarget, Browser, FirefoxTarget, QutebrowserTarget, Viewer, ViewerOptions,
+};
 
 const AFTER_HELP: &str = "Examples:
   docent explain notes.md --lines 12:20
@@ -31,7 +33,7 @@ const AFTER_HELP: &str = "Examples:
   docent init
 
 Machine interface:
-  docent run --profile explain < request.json";
+  docent request --profile explain < request.json";
 
 /// Command line arguments.
 #[derive(Debug, Parser)]
@@ -103,8 +105,8 @@ pub enum Command {
     Summarize(HumanArgs),
     /// Run a custom profile.
     Do(DoArgs),
-    /// Run a JSON request from stdin (machine interface).
-    Run(RunArgs),
+    /// Read a JSON request from stdin (machine interface).
+    Request(RequestArgs),
     /// Print the resolved config directory.
     ConfigPath,
 }
@@ -174,7 +176,7 @@ pub struct CommonArgs {
 pub struct ViewerArgs {
     /// Where to show the answer.
     #[arg(long, value_enum)]
-    pub viewer: Option<ViewerKind>,
+    pub viewer: Option<AnswerTarget>,
 
     /// Qutebrowser executable or command name.
     #[arg(long)]
@@ -199,7 +201,7 @@ pub struct ViewerArgs {
 
 impl ViewerArgs {
     /// Viewer selected by the flag or the config default.
-    fn kind(&self, config: &config::Config) -> ViewerKind {
+    fn target(&self, config: &config::Config) -> AnswerTarget {
         self.viewer.unwrap_or(config.viewer.default)
     }
 
@@ -245,7 +247,7 @@ pub struct SelectionArgs {
 
     /// Find the selection by exact phrase.
     #[arg(long, value_name = "PHRASE")]
-    pub select: Option<String>,
+    pub phrase: Option<String>,
 }
 
 impl SelectionArgs {
@@ -257,14 +259,14 @@ impl SelectionArgs {
         } else if let Some(text) = self.text {
             Some(SelectionArg::Text(text))
         } else {
-            self.select.map(SelectionArg::Phrase)
+            self.phrase.map(SelectionArg::Phrase)
         }
     }
 }
 
-/// Arguments for `docent run`.
+/// Arguments for `docent request`.
 #[derive(Debug, Args)]
-pub struct RunArgs {
+pub struct RequestArgs {
     /// Profile to use.
     #[arg(long, default_value = "explain")]
     pub profile: String,
@@ -398,7 +400,7 @@ pub fn run() -> Result<(), DocentError> {
             )?;
         }
         Command::Do(args) => run_do(&config_dir, args, &source, record_history, cache_mode)?,
-        Command::Run(args) => {
+        Command::Request(args) => {
             run_request(&config_dir, args, &source, record_history, cache_mode)?;
         }
         Command::ConfigPath => println!("{}", config_dir.display()),
@@ -446,8 +448,8 @@ fn run_human(
     let label = human_label(file.as_deref(), &selection);
 
     let config = config::ensure_initialized(config_dir)?;
-    let viewer_kind = viewer.kind(&config);
-    if viewer_kind.is_browser() && no_stream {
+    let target = viewer.target(&config);
+    if target.is_browser() && no_stream {
         return Err(DocentError::Input(
             "browser viewers cannot be combined with --no-stream".to_string(),
         ));
@@ -456,11 +458,11 @@ fn run_human(
     let profile = ProfileStore::new(config::profiles_dir(config_dir)).load(profile_name)?;
     let settings = resolve_settings(&config, &profile, context_mode, target_language)?;
     let request = resolve_human_request(&profile, file.as_deref(), selection, question)?;
-    let output = if viewer_kind.is_browser() {
+    let output = if target.is_browser() {
         OutputMode::Browser(browser_options(
             &config,
             config_dir,
-            viewer_kind,
+            target,
             profile_name,
             label,
             &viewer,
@@ -541,7 +543,7 @@ fn human_label(file: Option<&Path>, selection: &SelectionArgs) -> String {
         format!("{name} (line {line})")
     } else if selection.text.is_some() {
         format!("{name} (selection)")
-    } else if let Some(phrase) = &selection.select {
+    } else if let Some(phrase) = &selection.phrase {
         format!("{name} (\"{phrase}\")")
     } else {
         name
@@ -552,25 +554,25 @@ fn human_label(file: Option<&Path>, selection: &SelectionArgs) -> String {
 fn browser_options(
     config: &config::Config,
     config_dir: &Path,
-    kind: ViewerKind,
+    target: AnswerTarget,
     profile: &str,
     header: String,
     args: &ViewerArgs,
 ) -> Result<ViewerOptions, DocentError> {
-    let browser = match kind {
-        ViewerKind::Qutebrowser => Browser::Qutebrowser {
+    let browser = match target {
+        AnswerTarget::Qutebrowser => Browser::Qutebrowser {
             command: config::expand_path(Path::new(args.qutebrowser(config)))?
                 .display()
                 .to_string(),
             target: args.qutebrowser_target(config),
         },
-        ViewerKind::Firefox => Browser::Firefox {
+        AnswerTarget::Firefox => Browser::Firefox {
             command: config::expand_path(Path::new(args.firefox(config)))?
                 .display()
                 .to_string(),
             target: args.firefox_target(config),
         },
-        ViewerKind::Terminal => {
+        AnswerTarget::Terminal => {
             unreachable!("the terminal viewer does not open a browser")
         }
     };
@@ -620,7 +622,7 @@ fn resolve_human_request(
     question: Option<String>,
 ) -> Result<Request, DocentError> {
     let stdin_is_terminal = std::io::stdin().is_terminal();
-    let options = source::RequestOptions {
+    let options = input::RequestOptions {
         file,
         selection: selection.into_arg(),
         question,
@@ -630,22 +632,22 @@ fn resolve_human_request(
     if stdin_is_terminal {
         let mut prompter = TerminalPrompter;
         let mut empty = std::io::empty();
-        source::resolve_request(options, &mut prompter, true, &mut empty)
+        input::resolve_request(options, &mut prompter, true, &mut empty)
     } else {
         let mut stdin = std::io::stdin().lock();
         let mut prompter = NoPrompter;
-        source::resolve_request(options, &mut prompter, false, &mut stdin)
+        input::resolve_request(options, &mut prompter, false, &mut stdin)
     }
 }
 
 fn run_request(
     config_dir: &Path,
-    args: RunArgs,
+    args: RequestArgs,
     source: &str,
     record_history: bool,
     cache_mode: cache::Mode,
 ) -> Result<(), DocentError> {
-    let RunArgs {
+    let RequestArgs {
         profile: profile_name,
         question,
         target_language,
@@ -657,8 +659,8 @@ fn run_request(
         header,
         viewer,
     } = args;
-    let browser_kind = viewer.viewer.filter(|kind| kind.is_browser());
-    if browser_kind.is_some() && (json || stream || print_prompt || html) {
+    let browser_target = viewer.viewer.filter(|target| target.is_browser());
+    if browser_target.is_some() && (json || stream || print_prompt || html) {
         return Err(DocentError::Input(
             "browser viewers cannot be combined with --stream, --json, --html, or --print-prompt"
                 .to_string(),
@@ -673,11 +675,11 @@ fn run_request(
     }
     let settings = resolve_settings(&config, &profile, context_mode, target_language)?;
 
-    let output = if let Some(kind) = browser_kind {
+    let output = if let Some(target) = browser_target {
         OutputMode::Browser(browser_options(
             &config,
             config_dir,
-            kind,
+            target,
             &profile_name,
             header.or(request.file.clone()).unwrap_or_default(),
             &viewer,
@@ -702,7 +704,7 @@ fn run_request(
         &profile,
         &settings,
         request,
-        "run",
+        "request",
         &profile_name,
         source,
         record_history,
@@ -754,7 +756,7 @@ fn execute(
         return Ok(());
     }
 
-    let created_at_ms = history::now_ms();
+    let created_at_ms = storage::now_ms();
     let started = Instant::now();
     let mut streamed = String::new();
     let cache_state =
@@ -824,7 +826,7 @@ fn execute(
             &outcome,
             &streamed,
         );
-        if let Err(error) = history::write(config, config_dir, &run) {
+        if let Err(error) = storage::write(config, config_dir, &run) {
             log::warn!("could not record run history: {error}");
         }
     }
@@ -972,7 +974,7 @@ fn build_history_run(
     duration_ms: i64,
     outcome: &Result<Completion, DocentError>,
     streamed: &str,
-) -> history::NewRun {
+) -> storage::NewRun {
     let (status, error) = match outcome {
         Ok(_) => ("success".to_string(), None),
         Err(DocentError::ViewerClosed) => ("cancelled".to_string(), None),
@@ -987,7 +989,7 @@ fn build_history_run(
         Err(_) => streamed.to_string(),
     };
 
-    history::NewRun {
+    storage::NewRun {
         created_at_ms,
         duration_ms,
         command: command.to_string(),
@@ -1009,12 +1011,12 @@ fn build_history_run(
         context_max_chars: config.context.max_chars as i64,
         context_chars: context.chars as i64,
         context_truncated: context.truncated,
-        provider: config.api.kind.as_str().to_string(),
-        base_url: config.api.base_url.clone(),
+        wire_format: config.provider.wire_format.as_str().to_string(),
+        base_url: config.provider.base_url.clone(),
         model: model.unwrap_or(&settings.model).to_string(),
         temperature: f64::from(settings.temperature),
         max_tokens: i64::from(settings.max_tokens),
-        timeout_secs: config.api.timeout_secs as i64,
+        timeout_secs: config.provider.timeout_secs as i64,
         response_language: settings.response_language.clone(),
         target_language: settings.target_language.clone(),
         system_prompt: rendered.system.clone(),

@@ -11,14 +11,14 @@ The crate has two binary targets and a library target. `src/main.rs` is the CLI:
 | `defaults` | `include_str!` copies of the shipped `config.toml`, `answer.css`, and profiles. |
 | `profile` | Profile schema, validation, placeholder parsing, discovery, and metadata for `docent profiles`. |
 | `request` | The JSON request type and selection range resolution. |
-| `source` | Terminal input adapters: file and stdin documents, line ranges, phrase and text selection, prompts, and request construction. |
+| `input` | Terminal input adapters: file and stdin documents, line ranges, phrase and text selection, prompts, and request construction. |
 | `context` | Context modes, windowing, line alignment, selection and truncation markers. |
 | `prompt` | Effective settings precedence and strict placeholder rendering. |
 | `provider` | Provider dispatch, shared HTTP code, error extraction, streaming types. |
 | `provider::openai` | OpenAI Chat Completions request and response handling. |
 | `provider::anthropic` | Anthropic Messages request and response handling. |
 | `provider::stream` | Incremental SSE decoding. |
-| `history` | SQLite run history, schema creation and migration, path resolution, and inserts. |
+| `storage` | SQLite storage for run history and the answer cache, schema creation and migration, path resolution, and inserts. |
 | `cache` | Exact-match answer cache keyed on the rendered prompt: key construction, lookup, store, hit counters, and eviction. |
 | `markdown` | Safe Markdown-to-HTML rendering shared by the CLI viewer and the `html` stream event. |
 | `viewer` | Qutebrowser and Firefox answer viewer: page shell, loopback SSE server, token, launch, and cancellation. |
@@ -34,18 +34,18 @@ cli::run
   config::ensure_initialized
   profile::ProfileStore::load
   prompt::EffectiveSettings::resolve
-  source::resolve_request -> request::Request
+  input::resolve_request -> request::Request
   cli::execute
     context::build -> context::ContextResult
     prompt::render -> prompt::Prompt
     cache::lookup or provider::complete/complete_streaming
     cache::store -> SQLite
-    history::write -> SQLite
+    storage::write -> SQLite
 ```
 
-`docent run` replaces `source::resolve_request` with `cli::read_request`, which parses the JSON document from stdin. Both paths converge on `cli::execute`.
+`docent request` replaces `input::resolve_request` with `cli::read_request`, which parses the JSON document from stdin. Both paths converge on `cli::execute`.
 
-`cli::execute` resolves a cache key after rendering and, unless the run used `--no-cache` or the cache is disabled, reuses a stored answer or stores the fresh one. A cache hit is delivered through the same delta callback as a provider stream and is not written to `runs`. Every provider call records one `history::NewRun` after it returns or fails, unless `--no-history` or `history.enabled = false` skips it. Streamed output is accumulated so a failed stream still records the partial answer. History and cache errors are logged and ignored.
+`cli::execute` resolves a cache key after rendering and, unless the run used `--no-cache` or the cache is disabled, reuses a stored answer or stores the fresh one. A cache hit is delivered through the same delta callback as a provider stream and is not written to `runs`. Every provider call records one `storage::NewRun` after it returns or fails, unless `--no-history` or `history.enabled = false` skips it. Streamed output is accumulated so a failed stream still records the partial answer. History and cache errors are logged and ignored.
 
 `--print-prompt` stops after `prompt::render` and serializes the system and user messages. Tests use this path to verify context and precedence without network access.
 
@@ -65,7 +65,7 @@ impl ProfileStore {
     pub fn discover(&self) -> Result<ProfileCatalog, DocentError>;
 }
 
-// source
+// input
 pub fn resolve_request(
     options: RequestOptions<'_>,
     prompter: &mut dyn Prompter,
@@ -86,7 +86,7 @@ pub fn render(profile: &Profile, request: &Request, context: &ContextResult, set
 pub fn complete(config: &Config, settings: &EffectiveSettings, prompt: &Prompt) -> Result<Completion, DocentError>;
 pub fn complete_streaming(config: &Config, settings: &EffectiveSettings, prompt: &Prompt, on_delta: &mut dyn FnMut(&str) -> Result<(), DocentError>) -> Result<Completion, DocentError>;
 
-// history
+// storage
 pub fn database_path(config_dir: &Path, history: &HistoryConfig) -> Result<PathBuf, DocentError>;
 pub fn write(config: &Config, config_dir: &Path, run: &NewRun) -> Result<(), DocentError>;
 
@@ -112,7 +112,7 @@ pub fn serve(request: HostRequest, writer: &mut impl Write) -> io::Result<()>;
 
 Profile validation covers TOML fields, numeric ranges, placeholder syntax, requirement consistency, and the conflict between `requires = ["context"]` and `context_mode = "none"`.
 
-`config::ViewerConfig` supplies the default viewer, browser executables, and targets for the terminal commands. `cli::ViewerArgs` resolves each value with the CLI flag first and the config second. `docent run` only honors an explicit `--viewer`, so the configured browser default never affects adapters that call it with `--stream`.
+`config::ViewerConfig` supplies the default viewer, browser executables, and targets for the terminal commands. `cli::ViewerArgs` resolves each value with the CLI flag first and the config second. `docent request` only honors an explicit `--viewer`, so the configured browser default never affects adapters that call it with `--stream`.
 
 ## Context windowing
 
@@ -120,11 +120,11 @@ Profile validation covers TOML fields, numeric ranges, placeholder syntax, requi
 
 ## Terminal input and output
 
-`source::Document` normalizes CRLF and stores a byte range for every line. Line selections are sliced from the first line start to the last line end, so they include newlines between lines but not the trailing newline after the final line. `--select` uses the first exact phrase occurrence and reports the count when it is ambiguous; `--text` resolves offsets only when the text occurs in the document.
+`input::Document` normalizes CRLF and stores a byte range for every line. Line selections are sliced from the first line start to the last line end, so they include newlines between lines but not the trailing newline after the final line. `--phrase` uses the first exact phrase occurrence and reports the count when it is ambiguous; `--text` resolves offsets only when the text occurs in the document.
 
-`source::resolve_request` reads a file or stdin, applies the profile's `requires` list, and prompts through the `Prompter` trait when stdin is a terminal. `TerminalPrompter` writes labels to stderr and reads one line from stdin. `NoPrompter` is used for piped input, so a document on stdin is never consumed as prompt answers.
+`input::resolve_request` reads a file or stdin, applies the profile's `requires` list, and prompts through the `Prompter` trait when stdin is a terminal. `TerminalPrompter` writes labels to stderr and reads one line from stdin. `NoPrompter` is used for piped input, so a document on stdin is never consumed as prompt answers.
 
-`cli::execute` selects one of seven output modes: plain streaming for terminal commands, plain buffered for `--no-stream`, JSON for `docent run --json`, NDJSON for `docent run --stream`, NDJSON with a rendered `html` event for `docent run --stream --html`, prompt JSON for `--print-prompt`, and the qutebrowser or Firefox viewer for `--viewer`. Before dispatch it checks the answer cache. A hit is replayed as one delta through the same callback, so all streaming modes and the browser viewer work unchanged, and buffered modes skip the provider call entirely. Plain streaming writes each fragment directly and flushes it, then adds a final newline if needed. The browser viewer runs the same provider stream, sends deltas over Server-Sent Events, and renders the finished answer with `markdown::render_answer`. When the context was truncated and the request has no resolvable selection, `cli::execute` logs a warning before rendering, so a whole-document run never silently covers only part of the document.
+`cli::execute` selects one of seven output modes: plain streaming for terminal commands, plain buffered for `--no-stream`, JSON for `docent request --json`, NDJSON for `docent request --stream`, NDJSON with a rendered `html` event for `docent request --stream --html`, prompt JSON for `--print-prompt`, and the qutebrowser or Firefox viewer for `--viewer`. Before dispatch it checks the answer cache. A hit is replayed as one delta through the same callback, so all streaming modes and the browser viewer work unchanged, and buffered modes skip the provider call entirely. Plain streaming writes each fragment directly and flushes it, then adds a final newline if needed. The browser viewer runs the same provider stream, sends deltas over Server-Sent Events, and renders the finished answer with `markdown::render_answer`. When the context was truncated and the request has no resolvable selection, `cli::execute` logs a warning before rendering, so a whole-document run never silently covers only part of the document.
 
 `markdown::render` enables tables and strikethrough, converts raw HTML to escaped text, drops images to alt text, restricts links to `http`, `https`, and `mailto`, wraps tables in `.table-wrap`, and adds `target="_blank"` to links. `viewer::Viewer` binds `127.0.0.1:0`, serves a tokenized page and event stream, waits 30 seconds for qutebrowser or Firefox to connect, and treats a closed page as cancellation. `DocentError::ViewerClosed` maps to a successful exit and a history status of `cancelled`.
 

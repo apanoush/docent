@@ -64,17 +64,17 @@ class Settings:
     custom_css: str | None
 
 
-def run_arguments(
+def request_arguments(
     settings: Settings,
     profile: str,
     target_language: str | None,
     context_mode: str | None,
 ) -> list[str]:
-    """Build the argv passed to ``docent run``."""
+    """Build the argv passed to ``docent request``."""
     args = list(settings.cmd[1:])
     if settings.config_dir:
         args.extend(["--config-dir", settings.config_dir])
-    args.extend(["run", "--profile", profile, "--stream", "--html"])
+    args.extend(["request", "--profile", profile, "--stream", "--html"])
     if target_language:
         args.extend(["--target-language", target_language])
     if context_mode:
@@ -124,7 +124,7 @@ class Session:
         if self.cancelled:
             return
 
-        args = run_arguments(
+        args = request_arguments(
             self.settings,
             self.profile,
             target_language,

@@ -5,10 +5,10 @@ Docent is a one-shot CLI with a terminal front end, an editor adapter, browser a
 ```text
 Terminal input          Neovim buffer        qutebrowser page      Firefox page
 FILE, stdin, --lines,   selection, document, selection, innerText, selection, innerText,
---select, --text        byte offsets, file   page URL and title   page URL and title
+--phrase, --text        byte offsets, file   page URL and title   page URL and title
         |                     |                    |                     |
         v                     v                    v                     v
-source adapter          JSON on stdin        JSON on stdin        native host -> JSON
+input adapter          JSON on stdin        JSON on stdin        native host -> JSON
 and prompts                   |                    |                     |
         |                     |                    |                     |
         +---------------------+--------------------+---------------------+
@@ -53,13 +53,13 @@ The Neovim plugin sends UTF-8 byte offsets because that is what the buffer API e
 
 ## Terminal input adapter
 
-The terminal commands (`explain`, `ask`, `translate`, `summarize`, `do`) build the same `Request` as the Neovim plugin. The `source` module handles the difference in input shapes:
+The terminal commands (`explain`, `ask`, `translate`, `summarize`, `do`) build the same `Request` as the Neovim plugin. The `input` module handles the difference in input shapes:
 
 - A file is read as the document. `-` means stdin.
 - With no file and piped stdin, the piped text becomes the document.
 - With no file and a terminal stdin, Docent prompts for a file.
 - Line ranges are 1-based and inclusive and are converted to byte offsets through a line index.
-- `--select` uses the first exact phrase occurrence and fails when the phrase is absent.
+- `--phrase` uses the first exact phrase occurrence and fails when the phrase is absent.
 - `--text` supplies a selection without line numbers. Offsets are resolved when the text occurs in the document.
 - CRLF is normalized to LF before the line index is built, so offsets and selections stay consistent.
 
@@ -69,7 +69,7 @@ Prompts use a small `Prompter` trait. The real implementation reads from stdin a
 
 The adapter is a Python module loaded from qutebrowser's `config.py`. It captures the page selection with `window.getSelection()` and the rendered page text with `document.body.innerText` through `tab.run_js_async`. The page URL has its query and fragment removed before it is used as the `file` label. A profile that declares `requires = ["question"]` opens a `QInputDialog` before the request starts.
 
-The adapter starts `docent run --profile NAME --stream --html --source qutebrowser` with `QProcess`, writes the request JSON to stdin, and parses stdout with the same NDJSON line parser as the Neovim plugin. The answer streams into a new tab, and the CLI's final `html` event replaces the raw text with the rendered Markdown. Closing the tab calls `terminate()` and then `kill()` if needed. The question travels in the JSON request rather than in argv so it does not appear in the process list.
+The adapter starts `docent request --profile NAME --stream --html --source qutebrowser` with `QProcess`, writes the request JSON to stdin, and parses stdout with the same NDJSON line parser as the Neovim plugin. The answer streams into a new tab, and the CLI's final `html` event replaces the raw text with the rendered Markdown. Closing the tab calls `terminate()` and then `kill()` if needed. The question travels in the JSON request rather than in argv so it does not appear in the process list.
 
 qutebrowser does not expose a stable third-party plugin API. The loader only walks built-in components, and `qutebrowser/api/__init__.py` says the extension API is not exposed to third-party extensions yet. The adapter therefore imports internal modules and must be retested on qutebrowser upgrades. It also requires JavaScript for selection capture and answer rendering. `window.getSelection()` sees the top frame only, so iframes, shadow DOM, and PDF viewers are not supported in the first version.
 
@@ -77,7 +77,7 @@ The first UI is a tab rather than a floating window. qutebrowser's application-w
 
 ## Firefox adapter
 
-Firefox extensions cannot start processes, so the adapter has two parts. `plugins/firefox/` is a Manifest V2 WebExtension, and `docent-native-host` is a small Rust binary that Firefox starts through native messaging. The extension captures the selection and `document.body.innerText` with `tabs.executeScript` after an `activeTab` grant, builds the same JSON request as the other adapters, and sends it through the host. The host starts `docent run --profile NAME --stream --html --source firefox`, forwards each stdout line as one native message, and reports the exit code with the captured stderr.
+Firefox extensions cannot start processes, so the adapter has two parts. `plugins/firefox/` is a Manifest V2 WebExtension, and `docent-native-host` is a small Rust binary that Firefox starts through native messaging. The extension captures the selection and `document.body.innerText` with `tabs.executeScript` after an `activeTab` grant, builds the same JSON request as the other adapters, and sends it through the host. The host starts `docent request --profile NAME --stream --html --source firefox`, forwards each stdout line as one native message, and reports the exit code with the captured stderr.
 
 Closing the answer tab disconnects the native port. Firefox sends `SIGTERM` to the host and its child, then `SIGKILL` after a grace period, so the request is cancelled without host-side signal handling. One host process handles one run. The profile catalog and the user stylesheet use `runtime.sendNativeMessage`, which starts a short-lived host per call.
 
@@ -95,17 +95,17 @@ map <C-e> exec "/path/to/docent-zathura explain $FILE $PAGE"
 
 `exec` expands `$FILE` and `$PAGE` and starts the helper directly, without a shell. The helper cannot receive the selection directly because `exec` has no `$SELECTION` placeholder. Zathura copies a mouse selection to the clipboard, so the helper reads it with `wl-paste`, `xclip`, or `xsel`. It checks both PRIMARY and CLIPBOARD and prefers the longest text that occurs in the extracted page, which keeps the default binding working with either `selection-clipboard` setting and stops a short stale token from winning. The workflow is mouse-first because zathura has no keyboard text selection.
 
-The helper extracts the current page plus one page on each side with `pdftotext`, builds the same JSON request as the other adapters, and writes it to a private temporary file. It resolves `docent` through `PATH` and then through common install locations such as `~/.local/bin` and `~/.cargo/bin`, because desktop-launched zathura often has a minimal `PATH`. It then starts a terminal window running `docent-zathura render REQUEST_FILE`. The render process reads and deletes the request file, runs `docent run --profile NAME --stream --source zathura`, prints the `delta` events, and waits for Enter before closing. This two-process split keeps the selection out of argv and gives the answer a window that stays open after the stream ends.
+The helper extracts the current page plus one page on each side with `pdftotext`, builds the same JSON request as the other adapters, and writes it to a private temporary file. It resolves `docent` through `PATH` and then through common install locations such as `~/.local/bin` and `~/.cargo/bin`, because desktop-launched zathura often has a minimal `PATH`. It then starts a terminal window running `docent-zathura render REQUEST_FILE`. The render process reads and deletes the request file, runs `docent request --profile NAME --stream --source zathura`, prints the `delta` events, and waits for Enter before closing. This two-process split keeps the selection out of argv and gives the answer a window that stays open after the stream ends.
 
 The answer is a terminal window rather than a zathura overlay. An overlay would require patching zathura's GTK/C core. The terminal window streams naturally, supports the CLI's existing output, and can be floated with a compositor rule. With `--viewer nvim`, the same request file is handed to the existing Neovim plugin, which streams into its Markdown float. That reuses the plugin's stream parser, cancellation, and buffer setup instead of duplicating them in the zathura adapter. With `--viewer qutebrowser`, the adapter starts a loopback HTTP server, opens a tokenized URL with `qutebrowser --target=TARGET`, streams raw text over Server-Sent Events, and forwards the CLI's final `html` event. The page also reuses the qutebrowser adapter's answer shell and `answer.css`, so the visual style matches the answer tab. The URL approach is required because qutebrowser's `--target` applies to URLs, not commands. The first version is PDF only; DjVu, PostScript, and comic-book files need different text extractors.
 
 ## CLI browser viewer
 
-The terminal commands and `docent run` can open a loopback answer page in qutebrowser or Firefox with `--viewer`. The server, page shell, CSS cascade, Markdown event, cancellation, and history handling are shared. Only the launch arguments differ: qutebrowser uses `--target=VALUE`, and Firefox uses `--new-tab`, `--new-window`, `--private-window`, or no flag for `auto`. The terminal commands read their default viewer, executable, and target from `[viewer]` in `config.toml`; `docent run` keeps the terminal default unless `--viewer` is passed, so adapters that call it with `--stream` are unaffected. `Viewer::open` waits up to 30 seconds for the page's event stream, then fails with a browser-specific message. Closing the page sets the cancellation flag and the provider request is aborted. The Firefox target does not use the Firefox extension; the extension remains a selection-capture client.
+The terminal commands and `docent request` can open a loopback answer page in qutebrowser or Firefox with `--viewer`. The server, page shell, CSS cascade, Markdown event, cancellation, and history handling are shared. Only the launch arguments differ: qutebrowser uses `--target=VALUE`, and Firefox uses `--new-tab`, `--new-window`, `--private-window`, or no flag for `auto`. The terminal commands read their default viewer, executable, and target from `[viewer]` in `config.toml`; `docent request` keeps the terminal default unless `--viewer` is passed, so adapters that call it with `--stream` are unaffected. `Viewer::open` waits up to 30 seconds for the page's event stream, then fails with a browser-specific message. Closing the page sets the cancellation flag and the provider request is aborted. The Firefox target does not use the Firefox extension; the extension remains a selection-capture client.
 
 ## Output modes
 
-Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. `--viewer qutebrowser` or `--viewer firefox` streams the answer into a loopback Server-Sent Events page instead of stdout and renders Markdown once at the end. The Neovim, qutebrowser, Firefox, and zathura integrations use `docent run --stream`, which emits newline-delimited JSON instead. `docent run --json` wraps the final answer in one JSON object, and `--stream --html` adds a rendered HTML event for browser front ends.
+Terminal commands stream plain text to stdout by default and flush after each fragment. `--no-stream` waits for the complete answer and prints it once. `--viewer qutebrowser` or `--viewer firefox` streams the answer into a loopback Server-Sent Events page instead of stdout and renders Markdown once at the end. The Neovim, qutebrowser, Firefox, and zathura integrations use `docent request --stream`, which emits newline-delimited JSON instead. `docent request --json` wraps the final answer in one JSON object, and `--stream --html` adds a rendered HTML event for browser front ends.
 
 The shared executor builds the context and prompt once, then selects the output mode or replays a cached answer. This keeps buffered, streamed, JSON, and prompt-preview paths on the same request and prompt code.
 
@@ -113,7 +113,7 @@ The shared executor builds the context and prompt once, then selects the output 
 
 When history is enabled, `cli::execute` records one row after the provider call returns or fails. The row stores the command, profile, source, structured request inputs, effective settings, the rendered system and user messages, the answer, token usage, duration, status, and error. Streamed runs record the partial answer when the stream fails. `--print-prompt` and failures before the provider call are not recorded.
 
-`history` opens the SQLite database once per run, enables WAL mode, applies a busy timeout, and creates the schema on first use. Schema changes are tracked with `PRAGMA user_version`. The database path comes from `history.database` or the platform data directory. A failed write is logged as a warning and never changes the command result.
+`storage` opens the SQLite database once per run, enables WAL mode, applies a busy timeout, and creates the schema on first use. Schema changes are tracked with `PRAGMA user_version`. The database path comes from `history.database` or the platform data directory. A failed write is logged as a warning and never changes the command result.
 
 The global `--source` flag, default `cli`, identifies the caller. The adapters pass `nvim`, `qutebrowser`, `firefox`, or `zathura`; custom plugins pass their own name. The source is only stored in history and does not affect request handling.
 
@@ -121,7 +121,7 @@ The database contains full prompts and answers, including document context, so i
 
 ## Answer cache
 
-The executor checks the answer cache after `prompt::render` and before the provider call. The key is a BLAKE3 hash over a version tag, `api.kind`, `api.base_url`, the model, the temperature bits, `max_tokens`, and the rendered system and user messages. The rendered prompt already contains the selection, context window, question, languages, and file label, so those inputs need no separate hashing. Byte offsets, command, profile, source, and output mode are excluded because they do not change the answer.
+The executor checks the answer cache after `prompt::render` and before the provider call. The key is a BLAKE3 hash over a version tag, `provider.wire_format`, `provider.base_url`, the model, the temperature bits, `max_tokens`, and the rendered system and user messages. The rendered prompt already contains the selection, context window, question, languages, and file label, so those inputs need no separate hashing. Byte offsets, command, profile, source, and output mode are excluded because they do not change the answer.
 
 A hit synthesizes a `Completion` with `cached: true` and no token usage, then delivers its text through the same `on_delta` callback as a provider stream. Every output mode therefore behaves the same way: plain streaming prints one fragment, NDJSON emits one `delta`, the `html` event is rendered locally from the stored Markdown, and the browser viewer streams it normally. A `done` event gains `"cached": true`; the adapters ignore the extra field.
 
@@ -142,7 +142,7 @@ Settings resolve in this order, highest first:
 
 Provider selection, base URL, API key environment variable, and timeout are global. Model, temperature, token limit, context mode, and languages can be overridden per profile. Keeping provider selection global avoids mixing credentials and wire formats in a single request.
 
-Viewer selection is separate from prompt settings. The `--viewer`, `--qutebrowser`, `--qutebrowser-target`, `--firefox`, and `--firefox-target` flags override the `[viewer]` table, which overrides the built-in terminal default. Profiles do not carry viewer settings. `docent run` ignores the configured viewer default and keeps the terminal unless `--viewer` is passed, so adapters that call `--stream` are never switched to a browser.
+Viewer selection is separate from prompt settings. The `--viewer`, `--qutebrowser`, `--qutebrowser-target`, `--firefox`, and `--firefox-target` flags override the `[viewer]` table, which overrides the built-in terminal default. Profiles do not carry viewer settings. `docent request` ignores the configured viewer default and keeps the terminal unless `--viewer` is passed, so adapters that call `--stream` are never switched to a browser.
 
 ## Context assembly
 
@@ -177,13 +177,13 @@ The OpenAI-compatible endpoint at `https://opencode.ai/inference/go/openai/v1` a
 
 Requests include `User-Agent: docent/<version>`. For OpenCode endpoints, Docent also sends a stable `x-opencode-session` value from the platform state directory, which OpenCode recommends for routing and prompt caching.
 
-API keys come from the environment variable named by `api.api_key_env`, or from the optional `api.api_key` field for users who accept a plaintext secret in `config.toml`. A set environment variable wins, `init` creates the file with mode `0600` on Unix, and keys are never included in error messages or `Debug` output. The CLI does not use a provider SDK because the two request shapes are small and a hand-written client keeps streaming, error mapping, and request inspection under direct control.
+API keys come from the environment variable named by `provider.api_key_env`, or from the optional `provider.api_key` field for users who accept a plaintext secret in `config.toml`. A set environment variable wins, `init` creates the file with mode `0600` on Unix, and keys are never included in error messages or `Debug` output. The CLI does not use a provider SDK because the two request shapes are small and a hand-written client keeps streaming, error mapping, and request inspection under direct control.
 
 There are no retries in 0.1.0. A failed request returns a clear error instead of risking duplicate charges. Retry and backoff are deferred.
 
 ## NDJSON streaming contract
 
-With `docent run --stream`, stdout contains one JSON object per line:
+With `docent request --stream`, stdout contains one JSON object per line:
 
 ```json
 {"type":"delta","text":"Hello"}

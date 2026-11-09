@@ -5,8 +5,8 @@
 # environment variable wins. api_key_env is safer for shared machines and
 # for config files kept in a dotfiles repository.
 
-[api]
-kind = "openai"                # openai | anthropic
+[provider]
+wire_format = "openai"          # openai | anthropic
 base_url = "https://opencode.ai/inference/go/openai/v1"
 model = "deepseek-v4.1-flash"
 api_key_env = "OPENCODE_API_KEY"
@@ -42,12 +42,12 @@ max_entries = 1000             # least recently used entries are evicted beyond 
 # ---------------------------------------------------------------------------
 # Provider examples
 #
-# To use another provider, replace the [api] block above with one of these.
-# Keep exactly one active [api] block.
+# To use another provider, replace the [provider] block above with one of these.
+# Keep exactly one active [provider] block.
 #
 # OpenAI direct:
-# [api]
-# kind = "openai"
+# [provider]
+# wire_format = "openai"
 # base_url = "https://api.openai.com/v1"
 # model = "your-model-id"
 # api_key_env = "OPENAI_API_KEY"
@@ -56,8 +56,8 @@ max_entries = 1000             # least recently used entries are evicted beyond 
 # temperature = 0.3
 #
 # Anthropic direct:
-# [api]
-# kind = "anthropic"
+# [provider]
+# wire_format = "anthropic"
 # base_url = "https://api.anthropic.com"
 # model = "your-model-id"
 # api_key_env = "ANTHROPIC_API_KEY"
@@ -66,15 +66,15 @@ max_entries = 1000             # least recently used entries are evicted beyond 
 # temperature = 0.3
 #
 # OpenCode Console (pay as you go):
-# [api]
-# kind = "openai"
+# [provider]
+# wire_format = "openai"
 # base_url = "https://opencode.ai/inference/openai/v1"
 # model = "deepseek-v4.1-flash"
 # api_key_env = "OPENCODE_API_KEY"
 #
 # Local OpenAI-compatible server:
-# [api]
-# kind = "openai"
+# [provider]
+# wire_format = "openai"
 # base_url = "http://localhost:11434/v1"
 # model = "your-model-id"
 # api_key_env = "LOCAL_API_KEY"

@@ -39,8 +39,8 @@ The default answer styles ship with the adapter, so the file only needs the rule
 The generated file points at OpenCode Go:
 
 ```toml
-[api]
-kind = "openai"
+[provider]
+wire_format = "openai"
 base_url = "https://opencode.ai/inference/go/openai/v1"
 model = "deepseek-v4.1-flash"
 api_key_env = "OPENCODE_API_KEY"
@@ -73,11 +73,11 @@ enabled = true
 max_entries = 1000
 ```
 
-### `[api]`
+### `[provider]`
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `kind` | `"openai"` or `"anthropic"` | `"openai"` | Wire format used for the request. |
+| `wire_format` | `"openai"` or `"anthropic"` | `"openai"` | Wire format used for the request. |
 | `base_url` | string | `"https://opencode.ai/inference/go/openai/v1"` | Provider root URL, without the endpoint path. |
 | `model` | string | `"deepseek-v4.1-flash"` | Model identifier sent to the provider. |
 | `api_key` | string | unset | Literal API key stored in the file. Prefer `api_key_env` when the file is shared. |
@@ -86,7 +86,7 @@ max_entries = 1000
 | `max_tokens` | integer | `1200` | Maximum output tokens. Must be greater than zero. |
 | `temperature` | float | `0.3` | Sampling temperature from 0.0 to 2.0. Anthropic requests must stay at or below 1.0. |
 
-For `kind = "openai"`, Docent posts to `<base_url>/chat/completions`. For `kind = "anthropic"`, Docent posts to `<base_url>/v1/messages`, or to `<base_url>/messages` when the base URL already ends in `/v1`.
+For `wire_format = "openai"`, Docent posts to `<base_url>/chat/completions`. For `wire_format = "anthropic"`, Docent posts to `<base_url>/v1/messages`, or to `<base_url>/messages` when the base URL already ends in `/v1`.
 
 Requests are sent with `User-Agent: docent/<version>`. When the base URL contains `opencode.ai`, Docent also sends a stable `x-opencode-session` value from the platform state directory, which OpenCode uses for routing and prompt caching.
 
@@ -99,8 +99,8 @@ Storing the key in `api_key` keeps a secret in a plaintext file. `docent init` c
 Every provider example below can replace `api_key_env = "..."` with a literal key:
 
 ```toml
-[api]
-kind = "openai"
+[provider]
+wire_format = "openai"
 base_url = "https://api.openai.com/v1"
 model = "your-model-id"
 api_key = "sk-..."
@@ -114,8 +114,8 @@ temperature = 0.3
 OpenAI direct:
 
 ```toml
-[api]
-kind = "openai"
+[provider]
+wire_format = "openai"
 base_url = "https://api.openai.com/v1"
 model = "your-model-id"
 api_key_env = "OPENAI_API_KEY"
@@ -127,8 +127,8 @@ temperature = 0.3
 Anthropic direct:
 
 ```toml
-[api]
-kind = "anthropic"
+[provider]
+wire_format = "anthropic"
 base_url = "https://api.anthropic.com"
 model = "your-model-id"
 api_key_env = "ANTHROPIC_API_KEY"
@@ -140,8 +140,8 @@ temperature = 0.3
 OpenCode Console, the pay-as-you-go endpoint:
 
 ```toml
-[api]
-kind = "openai"
+[provider]
+wire_format = "openai"
 base_url = "https://opencode.ai/inference/openai/v1"
 model = "deepseek-v4.1-flash"
 api_key_env = "OPENCODE_API_KEY"
@@ -150,8 +150,8 @@ api_key_env = "OPENCODE_API_KEY"
 Local OpenAI-compatible server, for example Ollama or LM Studio:
 
 ```toml
-[api]
-kind = "openai"
+[provider]
+wire_format = "openai"
 base_url = "http://localhost:11434/v1"
 model = "your-model-id"
 api_key_env = "LOCAL_API_KEY"
@@ -187,7 +187,7 @@ A local server that does not check keys still needs a key source. Set `api_key =
 
 A partial table is valid, so `[viewer]\ndefault = "firefox"` is enough. The other keys keep their built-in defaults. Command-line flags still win, for example `--viewer terminal` overrides the configured default for one run.
 
-The viewer default applies to the terminal-facing commands. `docent run` keeps `terminal` as its default because it is the machine interface used by the Neovim, qutebrowser, Firefox, and zathura adapters. Pass `--viewer` to `docent run` to open a browser page explicitly; the configured executable and target still apply.
+The viewer default applies to the terminal-facing commands. `docent request` keeps `terminal` as its default because it is the machine interface used by the Neovim, qutebrowser, Firefox, and zathura adapters. Pass `--viewer` to `docent request` to open a browser page explicitly; the configured executable and target still apply.
 
 ### `[history]`
 
@@ -211,7 +211,7 @@ See [run history](history.md) for the schema and example queries.
 | `enabled` | boolean | `true` | Reuse stored answers for identical requests. |
 | `max_entries` | integer | `1000` | Maximum number of cached answers. Least recently used entries are evicted beyond this. Must be greater than zero. |
 
-The cache reuses an answer when the rendered system and user messages, the provider, the base URL, the model, the temperature, and the maximum output token count all match. Because the rendered prompt contains the selection, the context window, the question, and the languages, changing any of those produces a miss. Byte offsets, the command name, the profile name, the source, and the output mode are not part of the key, so a stored answer can serve a different adapter or output mode.
+The cache reuses an answer when the rendered system and user messages, the wire format, the base URL, the model, the temperature, and the maximum output token count all match. Because the rendered prompt contains the selection, the context window, the question, and the languages, changing any of those produces a miss. Byte offsets, the command name, the profile name, the source, and the output mode are not part of the key, so a stored answer can serve a different adapter or output mode.
 
 Hits are fast and work without an API key, which makes previously seen content available offline. The first stored answer wins at a nonzero temperature; use `--refresh` to ask again and replace it, or `--no-cache` to skip both reading and writing. The two flags conflict with each other.
 
@@ -220,7 +220,7 @@ The cache lives in the same SQLite database as history and is disabled when hist
 
 ## Profiles
 
-A profile is one TOML file in `profiles/`. The filename without `.toml` is the profile name, so `profiles/explain.toml` is invoked as `docent run --profile explain`. Profile names may contain letters, digits, underscores, and hyphens.
+A profile is one TOML file in `profiles/`. The filename without `.toml` is the profile name, so `profiles/explain.toml` is invoked as `docent request --profile explain`. Profile names may contain letters, digits, underscores, and hyphens.
 
 ### Profile schema
 
@@ -319,7 +319,7 @@ The generated profiles use `"""` because their text contains no backslashes.
 ```bash
 docent explain notes.md --lines 12:20
 docent explain notes.md --line 12
-docent explain notes.md --select "transformer"
+docent explain notes.md --phrase "transformer"
 docent explain --text "a pasted passage" --file notes.md
 docent ask notes.md --lines 12:20 --question "Why does this work?"
 docent translate notes.md --lines 12:20 --to French
@@ -334,9 +334,9 @@ docent do my-profile notes.md --lines 12:20
 - With no `FILE` and piped stdin, the piped text is the document.
 - With no `FILE` and a terminal stdin, Docent prompts for a file. The exception is `--text`, which can supply a selection without any document.
 - `--lines START:END` is 1-based and inclusive. `--line N` is a single line.
-- `--select PHRASE` uses the first exact occurrence. A missing phrase is an input error.
+- `--phrase PHRASE` uses the first exact occurrence. A missing phrase is an input error.
 - `--text TEXT` supplies a pasted selection. If a file or piped stdin is present, that is the document, and offsets are resolved when the text occurs there.
-- Only one of `--lines`, `--line`, `--select`, and `--text` may be used.
+- Only one of `--lines`, `--line`, `--phrase`, and `--text` may be used.
 - `--context-mode` and `--target-language` (alias `--to`) work on every terminal command.
 - `--viewer qutebrowser` shows the answer in a qutebrowser window or tab instead of stdout. `--qutebrowser`, `--qutebrowser-target`, and `--answer-css` tune the viewer. See [the browser viewer](viewer.md).
 - `--viewer firefox` shows the answer in a Firefox window or tab instead. `--firefox`, `--firefox-target`, and `--answer-css` tune it.
@@ -348,11 +348,11 @@ When a run has no resolvable selection and the document is larger than `context.
 
 A bare `docent` prints a short getting-started message. `docent profiles` prints `name: description`; `docent profiles --json` remains the machine-readable form used by the Neovim, qutebrowser, and Firefox pickers.
 
-Terminal commands stream plain text by default. `--no-stream` waits for the complete answer and prints it once. `--viewer qutebrowser` or `--viewer firefox` streams the answer into a browser instead and cannot be combined with `--no-stream`. `--json` and `--stream` are reserved for `docent run`, where `--stream` means newline-delimited JSON events.
+Terminal commands stream plain text by default. `--no-stream` waits for the complete answer and prints it once. `--viewer qutebrowser` or `--viewer firefox` streams the answer into a browser instead and cannot be combined with `--no-stream`. `--json` and `--stream` are reserved for `docent request`, where `--stream` means newline-delimited JSON events.
 
 ## Machine interface
 
-`docent run` reads a JSON request from stdin:
+`docent request` reads a JSON request from stdin:
 
 ```json
 {
@@ -367,7 +367,7 @@ Terminal commands stream plain text by default. `--no-stream` waits for the comp
 
 All fields are optional, but most profiles need a selection. Unknown fields are rejected. `byte_start` and `byte_end` are UTF-8 byte offsets into `document`; they are used only when they match `selection` exactly, otherwise Docent falls back to the first exact occurrence of the selection.
 
-Output modes for `docent run`:
+Output modes for `docent request`:
 
 - Default: the answer as plain text.
 - `--json`: one JSON object with `text`, `model`, and `usage`.
@@ -381,7 +381,7 @@ Output modes for `docent run`:
 ## CLI reference
 
 ```text
-docent explain [FILE] [--lines START:END | --line N | --select PHRASE | --text TEXT]
+docent explain [FILE] [--lines START:END | --line N | --phrase PHRASE | --text TEXT]
                [--question TEXT] [--context-mode auto|full|none]
                [--target-language LANG | --to LANG] [--no-stream]
                [--viewer terminal|qutebrowser|firefox] [--qutebrowser PATH]
@@ -391,10 +391,10 @@ docent ask [FILE] ...
 docent translate [FILE] ...
 docent summarize [FILE] ...
 docent do PROFILE [FILE] ...
-docent run [--profile explain] [--question TEXT] [--target-language LANG]
-           [--context-mode auto|full|none] [--stream] [--html] [--json]
-           [--viewer terminal|qutebrowser|firefox] [--header TEXT]
-           [--print-prompt] [--config-dir PATH]
+docent request [--profile explain] [--question TEXT] [--target-language LANG]
+               [--context-mode auto|full|none] [--stream] [--html] [--json]
+               [--viewer terminal|qutebrowser|firefox] [--header TEXT]
+               [--print-prompt] [--config-dir PATH]
 docent profiles [--json]
 docent init [--force] [--config-dir PATH]
 docent config-path [--config-dir PATH]

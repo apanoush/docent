@@ -160,7 +160,7 @@ test("background flow", async (t) => {
     assert.equal(nativeMessages[0].type, "run");
     assert.deepEqual(nativeMessages[0].cmd, ["docent"]);
     assert.deepEqual(nativeMessages[0].args, [
-      "run",
+      "request",
       "--profile",
       "explain",
       "--stream",

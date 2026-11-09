@@ -6,8 +6,8 @@ use rusqlite::params;
 
 use crate::config::Config;
 use crate::error::DocentError;
-use crate::history;
 use crate::prompt::{EffectiveSettings, Prompt};
+use crate::storage;
 
 /// Version tag mixed into every cache key.
 ///
@@ -31,8 +31,8 @@ pub struct CachedAnswer {
 pub fn key(config: &Config, settings: &EffectiveSettings, prompt: &Prompt) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     hasher.update(&[KEY_VERSION]);
-    feed(&mut hasher, config.api.kind.as_str().as_bytes());
-    feed(&mut hasher, config.api.base_url.as_bytes());
+    feed(&mut hasher, config.provider.wire_format.as_str().as_bytes());
+    feed(&mut hasher, config.provider.base_url.as_bytes());
     feed(&mut hasher, settings.model.as_bytes());
     hasher.update(&settings.temperature.to_bits().to_le_bytes());
     hasher.update(&settings.max_tokens.to_le_bytes());
@@ -117,7 +117,7 @@ pub fn lookup(
         return Ok(None);
     }
 
-    let (connection, path) = history::open_database(config, config_dir)?;
+    let (connection, path) = storage::open_database(config, config_dir)?;
     let row = connection.query_row(SELECT_CACHE, params![key.as_slice()], |row| {
         Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?))
     });
@@ -129,7 +129,7 @@ pub fn lookup(
     };
 
     // A failed statistics update must not hide the answer.
-    if let Err(error) = connection.execute(TOUCH_CACHE, params![history::now_ms(), key.as_slice()])
+    if let Err(error) = connection.execute(TOUCH_CACHE, params![storage::now_ms(), key.as_slice()])
     {
         log::warn!("could not update cache statistics: {error}");
     }
@@ -149,8 +149,8 @@ pub fn store(
         return Ok(());
     }
 
-    let (mut connection, path) = history::open_database(config, config_dir)?;
-    let now = history::now_ms();
+    let (mut connection, path) = storage::open_database(config, config_dir)?;
+    let now = storage::now_ms();
     let max_entries = config.cache.max_entries.min(i64::MAX as usize) as i64;
 
     let transaction = connection
@@ -213,7 +213,7 @@ WHERE rowid NOT IN (
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ApiKind, ContextMode};
+    use crate::config::{ContextMode, WireFormat};
     use crate::prompt::EffectiveSettings;
 
     fn config(directory: &Path) -> Config {
@@ -257,11 +257,11 @@ mod tests {
         let base = key(&base_config, &settings(), &prompt());
 
         let mut other_config = base_config.clone();
-        other_config.api.kind = ApiKind::Anthropic;
+        other_config.provider.wire_format = WireFormat::Anthropic;
         assert_ne!(base, key(&other_config, &settings(), &prompt()));
 
         let mut other_config = base_config.clone();
-        other_config.api.base_url = "https://example.com/other".to_string();
+        other_config.provider.base_url = "https://example.com/other".to_string();
         assert_ne!(base, key(&other_config, &settings(), &prompt()));
 
         let mut other_settings = settings();

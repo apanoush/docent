@@ -100,7 +100,7 @@ pub(crate) fn complete_streaming(
 fn endpoint(config: &Config) -> String {
     format!(
         "{}/chat/completions",
-        config.api.base_url.trim_end_matches('/')
+        config.provider.base_url.trim_end_matches('/')
     )
 }
 

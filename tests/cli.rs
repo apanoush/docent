@@ -157,7 +157,7 @@ fn init_skips_existing_files_and_force_overwrites() {
     assert!(
         fs::read_to_string(dir.join("config.toml"))
             .unwrap()
-            .contains("[api]")
+            .contains("[provider]")
     );
 }
 
@@ -201,7 +201,7 @@ fn invalid_config_is_reported() {
         .unwrap();
     assert!(output.status.success());
 
-    fs::write(dir.join("config.toml"), "[api]\nunknown = true\n").unwrap();
+    fs::write(dir.join("config.toml"), "[provider]\nunknown = true\n").unwrap();
 
     let output = docent()
         .args(["--config-dir", dir.to_str().unwrap(), "profiles"])
@@ -302,7 +302,7 @@ fn viewer_config_default_rejects_no_stream() {
 }
 
 #[test]
-fn run_viewer_rejects_streaming_flags() {
+fn request_viewer_rejects_streaming_flags() {
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path().join("config");
 
@@ -311,7 +311,7 @@ fn run_viewer_rejects_streaming_flags() {
             .args([
                 "--config-dir",
                 dir.to_str().unwrap(),
-                "run",
+                "request",
                 "--viewer",
                 viewer,
                 "--stream",

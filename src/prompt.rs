@@ -1,6 +1,6 @@
 //! Effective settings and prompt rendering.
 
-use crate::config::{ApiKind, Config, ContextMode};
+use crate::config::{Config, ContextMode, WireFormat};
 use crate::context::ContextResult;
 use crate::error::DocentError;
 use crate::profile::{Profile, Requirement};
@@ -55,21 +55,21 @@ impl EffectiveSettings {
         let model = profile
             .model
             .clone()
-            .unwrap_or_else(|| config.api.model.clone());
+            .unwrap_or_else(|| config.provider.model.clone());
         if model.trim().is_empty() {
             return Err(DocentError::InvalidSettings(
                 "model must not be empty".to_string(),
             ));
         }
 
-        let temperature = profile.temperature.unwrap_or(config.api.temperature);
-        if config.api.kind == ApiKind::Anthropic && temperature > 1.0 {
+        let temperature = profile.temperature.unwrap_or(config.provider.temperature);
+        if config.provider.wire_format == WireFormat::Anthropic && temperature > 1.0 {
             return Err(DocentError::InvalidSettings(format!(
                 "temperature must be between 0.0 and 1.0 for Anthropic, got {temperature}"
             )));
         }
 
-        let max_tokens = profile.max_tokens.unwrap_or(config.api.max_tokens);
+        let max_tokens = profile.max_tokens.unwrap_or(config.provider.max_tokens);
         if max_tokens == 0 {
             return Err(DocentError::InvalidSettings(
                 "max_tokens must be greater than zero".to_string(),
@@ -308,8 +308,8 @@ mod tests {
     #[test]
     fn anthropic_rejects_temperature_above_one() {
         let mut config = config();
-        config.api.kind = ApiKind::Anthropic;
-        config.api.temperature = 1.5;
+        config.provider.wire_format = WireFormat::Anthropic;
+        config.provider.temperature = 1.5;
 
         let error =
             EffectiveSettings::resolve(&config, &profile(), &Overrides::default()).unwrap_err();

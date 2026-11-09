@@ -21,11 +21,11 @@ docent translate notes.md --line 12 --to French --viewer firefox
 docent summarize paper.md --viewer firefox --firefox-target tab
 ```
 
-The same flags work for `docent do` and `docent run`:
+The same flags work for `docent do` and `docent request`:
 
 ```bash
 printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence."}' |
-  docent run --profile explain --viewer firefox --header notes.md
+  docent request --profile explain --viewer firefox --header notes.md
 ```
 
 ## Default viewer
@@ -43,7 +43,7 @@ firefox_target = "window"
 
 A partial table is valid, so the `default` key alone is enough. Each key falls back to its built-in default when omitted. CLI flags win over the config for one run, for example `--viewer terminal`.
 
-The configured default applies to `explain`, `ask`, `translate`, `summarize`, and `do`. `docent run` keeps `terminal` as its default because the Neovim, qutebrowser, Firefox, and zathura adapters call it with `--stream`; pass `--viewer` explicitly to open a browser page from `docent run`. The configured executable and target still apply when you do.
+The configured default applies to `explain`, `ask`, `translate`, `summarize`, and `do`. `docent request` keeps `terminal` as its default because the Neovim, qutebrowser, Firefox, and zathura adapters call it with `--stream`; pass `--viewer` explicitly to open a browser page from `docent request`. The configured executable and target still apply when you do.
 
 ## Options
 
@@ -55,7 +55,7 @@ The configured default applies to `explain`, `ask`, `translate`, `summarize`, an
 | `--firefox PATH` | `viewer.firefox`, else `firefox` | Firefox executable or command name. |
 | `--firefox-target TARGET` | `viewer.firefox_target`, else `window` | `auto`, `tab`, `window`, or `private-window`. |
 | `--answer-css PATH` | none | Extra CSS appended after the built-in styles and `<config>/answer.css`. `--qutebrowser-css` is an alias. |
-| `--header TEXT` | request file | `docent run` only; text shown after the profile in the page header. |
+| `--header TEXT` | request file | `docent request` only; text shown after the profile in the page header. |
 
 `--qutebrowser-target` is passed to qutebrowser as `--target=TARGET`. Qutebrowser applies that value only when an instance is already running; otherwise it opens a window. Use `--qutebrowser-target tab` to reuse a running qutebrowser window, or `window` for a separate answer window. The `--qutebrowser` and `--qutebrowser-target` options apply only to `--viewer qutebrowser`.
 
@@ -77,7 +77,7 @@ The file created by `docent init` is a commented example, so it changes nothing 
 
 ## Rendering and protocol
 
-While the answer streams, the page shows plain text. When the stream finishes, the CLI renders the answer as Markdown and sends one `html` event. The same renderer serves `docent run --stream --html`, which is how the qutebrowser, Firefox, and zathura adapters render answers.
+While the answer streams, the page shows plain text. When the stream finishes, the CLI renders the answer as Markdown and sends one `html` event. The same renderer serves `docent request --stream --html`, which is how the qutebrowser, Firefox, and zathura adapters render answers.
 
 Raw HTML in a model answer is escaped, images stay alt text, and only `http`, `https`, and `mailto` links become clickable. Links open in a new tab. Tables, headings, lists, code fences, blockquotes, emphasis, and strikethrough are rendered.
 

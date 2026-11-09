@@ -21,7 +21,7 @@ const FINISH_TIMEOUT: Duration = Duration::from_secs(5);
 /// Where to show the answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum ViewerKind {
+pub enum AnswerTarget {
     /// Print the answer in the terminal.
     Terminal,
     /// Stream the answer into a qutebrowser window or tab.
@@ -30,7 +30,7 @@ pub enum ViewerKind {
     Firefox,
 }
 
-impl ViewerKind {
+impl AnswerTarget {
     /// True for the viewers that open a browser page.
     pub fn is_browser(self) -> bool {
         !matches!(self, Self::Terminal)

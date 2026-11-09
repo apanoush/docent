@@ -1,4 +1,4 @@
-//! Local SQLite history for provider runs.
+//! Local SQLite storage for provider runs and the answer cache.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,7 +11,7 @@ use crate::config::{Config, HistoryConfig};
 use crate::error::DocentError;
 
 /// Schema version understood by this build.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// Database filename used in the platform data directory.
 pub const DATABASE_FILE: &str = "docent.db";
@@ -56,7 +56,7 @@ pub struct NewRun {
     /// Whether the context omitted part of the document.
     pub context_truncated: bool,
     /// Provider wire format.
-    pub provider: String,
+    pub wire_format: String,
     /// Provider base URL.
     pub base_url: String,
     /// Model reported by the provider, or the configured model on failure.
@@ -98,8 +98,11 @@ pub fn now_ms() -> i64 {
 /// An explicit `history.database` wins. Its `~` and environment variables are
 /// expanded shell-style, and relative paths are resolved against the config
 /// directory. Otherwise the platform data directory is used.
-pub fn database_path(config_dir: &Path, history: &HistoryConfig) -> Result<PathBuf, DocentError> {
-    if let Some(path) = &history.database {
+pub fn database_path(
+    config_dir: &Path,
+    history_config: &HistoryConfig,
+) -> Result<PathBuf, DocentError> {
+    if let Some(path) = &history_config.database {
         let path = crate::config::expand_path(path)?;
         return Ok(if path.is_absolute() {
             path
@@ -189,11 +192,32 @@ fn ensure_schema(connection: &Connection, path: &Path) -> Result<(), DocentError
                     path: path.to_path_buf(),
                     source,
                 })?;
+            connection
+                .execute_batch(SCHEMA_V3)
+                .map_err(|source| DocentError::History {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
             set_schema_version(connection, path)
         }
         1 => {
             connection
                 .execute_batch(SCHEMA_V2)
+                .map_err(|source| DocentError::History {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+            connection
+                .execute_batch(SCHEMA_V3)
+                .map_err(|source| DocentError::History {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+            set_schema_version(connection, path)
+        }
+        2 => {
+            connection
+                .execute_batch(SCHEMA_V3)
                 .map_err(|source| DocentError::History {
                     path: path.to_path_buf(),
                     source,
@@ -241,7 +265,7 @@ fn insert(connection: &Connection, path: &Path, run: &NewRun) -> Result<(), Doce
                 run.context_max_chars,
                 run.context_chars,
                 i64::from(run.context_truncated),
-                run.provider,
+                run.wire_format,
                 run.base_url,
                 run.model,
                 run.temperature,
@@ -361,6 +385,10 @@ CREATE TABLE IF NOT EXISTS cache (
 CREATE INDEX IF NOT EXISTS idx_cache_last_used_at ON cache(last_used_at);
 "#;
 
+const SCHEMA_V3: &str = r#"
+ALTER TABLE runs RENAME COLUMN provider TO wire_format;
+"#;
+
 const INSERT_RUN: &str = r#"
 INSERT INTO runs (
     created_at,
@@ -381,7 +409,7 @@ INSERT INTO runs (
     context_max_chars,
     context_chars,
     context_truncated,
-    provider,
+    wire_format,
     base_url,
     model,
     temperature,
@@ -428,7 +456,7 @@ mod tests {
             context_max_chars: 32_000,
             context_chars: 80,
             context_truncated: false,
-            provider: "openai".to_string(),
+            wire_format: "openai".to_string(),
             base_url: "https://example.com/v1".to_string(),
             model: "test-model".to_string(),
             temperature: 0.3,
@@ -660,6 +688,65 @@ mod tests {
         count == 1
     }
 
+    fn column_exists(connection: &Connection, table: &str, column: &str) -> bool {
+        let count: i64 = connection
+            .query_row(
+                &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
+                [column],
+                |row| row.get(0),
+            )
+            .unwrap();
+        count == 1
+    }
+
+    /// Inserts one row using the pre-version-3 `provider` column.
+    fn insert_legacy_run(connection: &Connection, path: &Path) -> Result<(), DocentError> {
+        connection
+            .execute(
+                "INSERT INTO runs (
+                    created_at, duration_ms, command, profile, source, output_mode, status,
+                    selection, context_mode, context_max_chars, context_chars,
+                    context_truncated, provider, base_url, model, temperature,
+                    max_tokens, timeout_secs, response_language, target_language,
+                    system_prompt, user_prompt, output, docent_version
+                ) VALUES (
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                    ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24
+                )",
+                params![
+                    1_700_000_000_000i64,
+                    42i64,
+                    "explain",
+                    "explain",
+                    "cli",
+                    "plain_stream",
+                    "success",
+                    "beta",
+                    "auto",
+                    32_000i64,
+                    80i64,
+                    0i64,
+                    "openai",
+                    "https://example.com/v1",
+                    "test-model",
+                    0.3f64,
+                    1200i64,
+                    120i64,
+                    "auto",
+                    "English",
+                    "You are Docent.",
+                    "Document: alpha beta gamma",
+                    "An answer",
+                    "0.1.0",
+                ],
+            )
+            .map(|_| ())
+            .map_err(|source| DocentError::History {
+                path: path.to_path_buf(),
+                source,
+            })
+    }
+
     #[test]
     fn fresh_database_has_the_cache_table() {
         let temp = tempfile::tempdir().unwrap();
@@ -681,7 +768,7 @@ mod tests {
         let connection = Connection::open(&database).unwrap();
         connection.execute_batch(SCHEMA_V1).unwrap();
         connection.pragma_update(None, "user_version", 1).unwrap();
-        insert(&connection, &database, &sample_run()).unwrap();
+        insert_legacy_run(&connection, &database).unwrap();
         drop(connection);
 
         let config = config_with_database(&database);
@@ -691,11 +778,38 @@ mod tests {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         assert!(table_exists(&connection, "cache"));
+        assert!(column_exists(&connection, "runs", "wire_format"));
+        assert!(!column_exists(&connection, "runs", "provider"));
         let runs: i64 = connection
             .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
             .unwrap();
         assert_eq!(runs, 2);
+    }
+
+    #[test]
+    fn migrates_a_version_2_database_and_renames_provider_to_wire_format() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+
+        let connection = Connection::open(&database).unwrap();
+        connection.execute_batch(SCHEMA_V1).unwrap();
+        connection.execute_batch(SCHEMA_V2).unwrap();
+        connection.pragma_update(None, "user_version", 2).unwrap();
+        insert_legacy_run(&connection, &database).unwrap();
+        drop(connection);
+
+        let connection = open(&database).unwrap();
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 3);
+        assert!(column_exists(&connection, "runs", "wire_format"));
+        assert!(!column_exists(&connection, "runs", "provider"));
+        let runs: i64 = connection
+            .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(runs, 1);
     }
 }

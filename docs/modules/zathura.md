@@ -22,9 +22,9 @@ The adapter lives in `plugins/zathura/`, separate from the Rust crate. It has no
 The adapter uses two processes:
 
 1. The capture process is started by zathura's `exec`. It reads the clipboard, extracts the page window, writes a private request file, and launches a terminal. It exits immediately.
-2. The viewer process runs in the terminal. With the default terminal viewer it starts `docent run --profile NAME --stream --source zathura`, writes the request JSON to stdin, and prints `delta` text as it arrives. With `--viewer nvim`, Neovim reads and deletes the request file, loads `plugins/nvim`, and calls `docent.run` with the explicit request data.
+2. The viewer process runs in the terminal. With the default terminal viewer it starts `docent request --profile NAME --stream --source zathura`, writes the request JSON to stdin, and prints `delta` text as it arrives. With `--viewer nvim`, Neovim reads and deletes the request file, loads `plugins/nvim`, and calls `docent.run` with the explicit request data.
 
-The qutebrowser viewer skips the terminal and request file. The capture process starts a loopback HTTP server, launches qutebrowser with a tokenized URL, and runs `docent run --profile NAME --stream --source zathura` when the page opens the SSE connection. The request stays in memory and is written to the CLI's stdin.
+The qutebrowser viewer skips the terminal and request file. The capture process starts a loopback HTTP server, launches qutebrowser with a tokenized URL, and runs `docent request --profile NAME --stream --source zathura` when the page opens the SSE connection. The request stays in memory and is written to the CLI's stdin.
 
 For the terminal and Neovim viewers, the request file is created with `mkdtemp` under `XDG_RUNTIME_DIR` (or the system temporary directory), written with mode 0600, and removed by the viewer. This keeps the selection and document text out of argv and out of the process list.
 
@@ -42,7 +42,7 @@ The capture process uses the JSON stdin contract rather than `docent explain --t
 
 ## Rendering
 
-`render.py` reads the request file and starts `docent run --profile NAME --stream --source zathura` with optional `--target-language` and `--context-mode`. It parses one JSON object per line:
+`render.py` reads the request file and starts `docent request --profile NAME --stream --source zathura` with optional `--target-language` and `--context-mode`. It parses one JSON object per line:
 
 - `delta`: write `text` to stdout and flush.
 - `done`: stop reading and finish successfully.
@@ -50,7 +50,7 @@ The capture process uses the JSON stdin contract rather than `docent explain --t
 
 A separate thread drains stderr so a chatty CLI cannot block on a full pipe. The render process prints a header with the profile and file label, then the answer. After success it prints `Press Enter to close.` and reads one line when stdin is a TTY. Closing the terminal sends SIGHUP to the process, which terminates the child.
 
-`qutebrowser_view.py` uses `ThreadingHTTPServer` on `127.0.0.1:0` and a random token path. The page shell comes from the qutebrowser adapter's `docent.ui.build_shell` with a custom label, no `d close` hint, and an SSE script appended before `</body>`. The CSS is the same `answer.css`; `--qutebrowser-css` appends a user file after it. The server starts `docent run --profile NAME --stream --html --source zathura` only after the page connects, sends one JSON object per SSE `data:` line, and forwards the CLI's `html` event when the stream finishes. The page replaces the raw `<pre>` with the rendered HTML. A closed page sets a cancellation flag, terminates `docent`, and shuts down the server. The server never binds to a public interface.
+`qutebrowser_view.py` uses `ThreadingHTTPServer` on `127.0.0.1:0` and a random token path. The page shell comes from the qutebrowser adapter's `docent.ui.build_shell` with a custom label, no `d close` hint, and an SSE script appended before `</body>`. The CSS is the same `answer.css`; `--qutebrowser-css` appends a user file after it. The server starts `docent request --profile NAME --stream --html --source zathura` only after the page connects, sends one JSON object per SSE `data:` line, and forwards the CLI's `html` event when the stream finishes. The page replaces the raw `<pre>` with the rendered HTML. A closed page sets a cancellation flag, terminates `docent`, and shuts down the server. The server never binds to a public interface.
 
 ## Terminal launch
 

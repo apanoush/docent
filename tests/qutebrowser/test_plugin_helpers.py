@@ -688,11 +688,11 @@ def test_pick_command_runs_the_selected_profile(monkeypatch: Any) -> None:
     assert ran == ["ask"]
 
 
-def test_run_arguments_tags_the_source() -> None:
-    args = plugin.run_arguments(_settings(), "explain", "French", "full")
+def test_request_arguments_tags_the_source() -> None:
+    args = plugin.request_arguments(_settings(), "explain", "French", "full")
 
     assert args == [
-        "run",
+        "request",
         "--profile",
         "explain",
         "--stream",
@@ -706,16 +706,16 @@ def test_run_arguments_tags_the_source() -> None:
     ]
 
 
-def test_run_arguments_include_config_dir() -> None:
+def test_request_arguments_include_config_dir() -> None:
     settings = _settings()
     settings.config_dir = "/tmp/docent"
 
-    args = plugin.run_arguments(settings, "ask", None, None)
+    args = plugin.request_arguments(settings, "ask", None, None)
 
     assert args == [
         "--config-dir",
         "/tmp/docent",
-        "run",
+        "request",
         "--profile",
         "ask",
         "--stream",
@@ -941,7 +941,7 @@ def test_session_start_spawns_docent_and_writes_the_request(
     process = created[0]
     assert process.program == "docent"
     assert process.arguments == [
-        "run",
+        "request",
         "--profile",
         "explain",
         "--stream",

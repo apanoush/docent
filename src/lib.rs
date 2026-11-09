@@ -10,14 +10,14 @@ pub mod config;
 pub mod context;
 pub mod defaults;
 pub mod error;
-pub mod history;
+pub mod input;
 pub mod markdown;
 pub mod native_host;
 pub mod profile;
 pub mod prompt;
 pub mod provider;
 pub mod request;
-pub mod source;
+pub mod storage;
 pub mod viewer;
 
 pub use error::DocentError;

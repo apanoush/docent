@@ -161,7 +161,7 @@ end
 local function start_job(profile, request, opts)
   opts = opts or {}
 
-  local args = { "run", "--profile", profile, "--stream" }
+  local args = { "request", "--profile", profile, "--stream" }
   if request.question and trim(request.question) ~= "" then
     table.insert(args, "--question")
     table.insert(args, request.question)

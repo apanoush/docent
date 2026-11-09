@@ -8,10 +8,16 @@ use std::process::{Command, Output, Stdio};
 use common::{MockResponse, MockServer};
 use serde_json::Value;
 
-fn write_config(dir: &Path, kind: &str, base_url: &str, context_mode: &str, max_chars: usize) {
+fn write_config(
+    dir: &Path,
+    wire_format: &str,
+    base_url: &str,
+    context_mode: &str,
+    max_chars: usize,
+) {
     write_config_with_key(
         dir,
-        kind,
+        wire_format,
         base_url,
         context_mode,
         max_chars,
@@ -21,7 +27,7 @@ fn write_config(dir: &Path, kind: &str, base_url: &str, context_mode: &str, max_
 
 fn write_config_with_key(
     dir: &Path,
-    kind: &str,
+    wire_format: &str,
     base_url: &str,
     context_mode: &str,
     max_chars: usize,
@@ -34,8 +40,8 @@ fn write_config_with_key(
         .to_string()
         .replace('\\', "\\\\");
     let config = format!(
-        r#"[api]
-kind = "{kind}"
+        r#"[provider]
+wire_format = "{wire_format}"
 base_url = "{base_url}"
 model = "test-model"
 {key_line}
@@ -73,12 +79,17 @@ fn write_profile(dir: &Path, name: &str, contents: &str) {
     fs::write(dir.join("profiles").join(format!("{name}.toml")), contents).unwrap();
 }
 
-fn setup(dir: &Path, kind: &str, base_url: &str) {
-    setup_with_key(dir, kind, base_url, r#"api_key_env = "DOCENT_TEST_KEY""#);
+fn setup(dir: &Path, wire_format: &str, base_url: &str) {
+    setup_with_key(
+        dir,
+        wire_format,
+        base_url,
+        r#"api_key_env = "DOCENT_TEST_KEY""#,
+    );
 }
 
-fn setup_with_key(dir: &Path, kind: &str, base_url: &str, key_line: &str) {
-    write_config_with_key(dir, kind, base_url, "full", 32_000, key_line);
+fn setup_with_key(dir: &Path, wire_format: &str, base_url: &str, key_line: &str) {
+    write_config_with_key(dir, wire_format, base_url, "full", 32_000, key_line);
     write_profile(
         dir,
         "explain",
@@ -178,7 +189,7 @@ fn openai_request_and_json_output() {
     let input = r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10,"file":"notes.md"}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--json"],
+        &["request", "--profile", "explain", "--json"],
         input,
         Some("secret"),
     );
@@ -228,7 +239,7 @@ fn anthropic_request_and_plain_output() {
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         input,
         Some("secret"),
     );
@@ -275,7 +286,7 @@ fn literal_openai_key_is_sent_without_an_env_var() {
 
     let input =
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
-    let output = run(&dir, &["run", "--profile", "explain"], input, None);
+    let output = run(&dir, &["request", "--profile", "explain"], input, None);
     assert!(output.status.success(), "stderr: {}", stderr(&output));
 
     let requests = server.requests();
@@ -302,7 +313,7 @@ fn literal_anthropic_key_is_sent_without_an_env_var() {
 
     let input =
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
-    let output = run(&dir, &["run", "--profile", "explain"], input, None);
+    let output = run(&dir, &["request", "--profile", "explain"], input, None);
     assert!(output.status.success(), "stderr: {}", stderr(&output));
 
     let requests = server.requests();
@@ -319,7 +330,7 @@ fn print_prompt_does_not_call_the_provider() {
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--print-prompt"],
+        &["request", "--profile", "explain", "--print-prompt"],
         input,
         None,
     );
@@ -360,7 +371,7 @@ user_prompt = "{{selection}}\n{{context}}"
 
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--print-prompt"],
+        &["request", "--profile", "explain", "--print-prompt"],
         &input,
         None,
     );
@@ -454,7 +465,7 @@ user_prompt = "{{context}}"
     );
     let output = run(
         &dir,
-        &["run", "--profile", "summarize", "--print-prompt"],
+        &["request", "--profile", "summarize", "--print-prompt"],
         &input,
         None,
     );
@@ -481,7 +492,7 @@ fn ask_question_is_passed_through() {
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "ask", "--question", "Why?"],
+        &["request", "--profile", "ask", "--question", "Why?"],
         input,
         Some("secret"),
     );
@@ -502,7 +513,7 @@ fn missing_question_exits_with_input_error() {
 
     let output = run(
         &dir,
-        &["run", "--profile", "ask"],
+        &["request", "--profile", "ask"],
         r#"{"selection":"beta"}"#,
         None,
     );
@@ -518,7 +529,7 @@ fn missing_api_key_is_reported() {
 
     let input =
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
-    let output = run(&dir, &["run", "--profile", "explain"], input, None);
+    let output = run(&dir, &["request", "--profile", "explain"], input, None);
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("DOCENT_TEST_KEY"));
 }
@@ -537,7 +548,7 @@ fn http_error_is_reported() {
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         input,
         Some("secret"),
     );
@@ -558,7 +569,7 @@ fn malformed_provider_json_is_reported() {
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         input,
         Some("secret"),
     );
@@ -572,7 +583,7 @@ fn invalid_request_json_is_reported() {
     let dir = temp.path().join("config");
     setup(&dir, "openai", "http://127.0.0.1:1");
 
-    let output = run(&dir, &["run", "--profile", "explain"], "not json", None);
+    let output = run(&dir, &["request", "--profile", "explain"], "not json", None);
     assert_eq!(output.status.code(), Some(4));
     assert!(stderr(&output).contains("failed to parse request JSON"));
 }
@@ -583,7 +594,7 @@ fn empty_stdin_is_reported() {
     let dir = temp.path().join("config");
     setup(&dir, "openai", "http://127.0.0.1:1");
 
-    let output = run(&dir, &["run", "--profile", "explain"], "", None);
+    let output = run(&dir, &["request", "--profile", "explain"], "", None);
     assert_eq!(output.status.code(), Some(4));
     assert!(stderr(&output).contains("expected a JSON request"));
 }
@@ -596,7 +607,7 @@ fn unknown_request_fields_are_reported() {
 
     let output = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         r#"{"selection":"beta","extra":1}"#,
         None,
     );
@@ -621,7 +632,7 @@ fn openai_streaming_events() {
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--stream"],
+        &["request", "--profile", "explain", "--stream"],
         input,
         Some("secret"),
     );
@@ -663,7 +674,7 @@ fn html_streaming_event_renders_the_answer() {
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--stream", "--html"],
+        &["request", "--profile", "explain", "--stream", "--html"],
         input,
         Some("secret"),
     );
@@ -692,7 +703,7 @@ fn html_requires_a_stream() {
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--html"],
+        &["request", "--profile", "explain", "--html"],
         input,
         Some("secret"),
     );
@@ -968,7 +979,7 @@ firefox = "{}"
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
     let output = run_with_env(
         &dir,
-        &["run", "--profile", "explain", "--stream"],
+        &["request", "--profile", "explain", "--stream"],
         input,
         Some("secret"),
         &[("FAKE_BROWSER_OUTPUT", output_file.to_str().unwrap())],
@@ -1001,7 +1012,7 @@ fn anthropic_streaming_events() {
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--stream"],
+        &["request", "--profile", "explain", "--stream"],
         input,
         Some("secret"),
     );
@@ -1036,7 +1047,7 @@ fn streaming_http_error_emits_an_error_event() {
         r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--stream"],
+        &["request", "--profile", "explain", "--stream"],
         input,
         Some("secret"),
     );
@@ -1318,7 +1329,7 @@ fn explain_selects_a_phrase() {
         &[
             "explain",
             notes.to_str().unwrap(),
-            "--select",
+            "--phrase",
             "beta",
             "--no-stream",
         ],
@@ -1342,7 +1353,7 @@ fn missing_phrase_is_an_input_error() {
 
     let output = run(
         &dir,
-        &["explain", notes.to_str().unwrap(), "--select", "missing"],
+        &["explain", notes.to_str().unwrap(), "--phrase", "missing"],
         "",
         None,
     );
@@ -1450,7 +1461,7 @@ fn run_history_records_a_successful_run() {
     let input = r#"{"selection":"beta","document":"alpha beta gamma","byte_start":6,"byte_end":10,"file":"notes.md"}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--json"],
+        &["request", "--profile", "explain", "--json"],
         input,
         Some("secret"),
     );
@@ -1482,7 +1493,7 @@ fn run_history_records_a_successful_run() {
     assert_eq!(
         row,
         HistoryRow {
-            command: "run".to_string(),
+            command: "request".to_string(),
             profile: "explain".to_string(),
             source: "cli".to_string(),
             output_mode: "json".to_string(),
@@ -1510,7 +1521,7 @@ fn run_history_records_the_source_flag() {
     let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--source", "my-plugin"],
+        &["request", "--profile", "explain", "--source", "my-plugin"],
         input,
         Some("secret"),
     );
@@ -1536,7 +1547,7 @@ fn run_history_records_provider_errors() {
     let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         input,
         Some("secret"),
     );
@@ -1571,7 +1582,7 @@ fn run_history_records_streaming_output() {
     let output = run(
         &dir,
         &[
-            "run",
+            "request",
             "--profile",
             "explain",
             "--stream",
@@ -1629,7 +1640,7 @@ fn run_history_records_partial_stream_output_on_error() {
     let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--stream"],
+        &["request", "--profile", "explain", "--stream"],
         input,
         Some("secret"),
     );
@@ -1655,7 +1666,7 @@ fn print_prompt_does_not_write_history() {
     let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--print-prompt"],
+        &["request", "--profile", "explain", "--print-prompt"],
         input,
         None,
     );
@@ -1676,7 +1687,7 @@ fn no_history_skips_the_database() {
     let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain", "--no-history"],
+        &["request", "--profile", "explain", "--no-history"],
         input,
         Some("secret"),
     );
@@ -1701,7 +1712,7 @@ fn disabled_history_skips_the_database() {
     let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         input,
         Some("secret"),
     );
@@ -1723,7 +1734,7 @@ fn history_failures_do_not_fail_the_run() {
     let input = r#"{"selection":"beta","document":"alpha beta gamma"}"#;
     let output = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         input,
         Some("secret"),
     );
@@ -1761,7 +1772,7 @@ fn cache_reuses_a_successful_answer() {
 
     let first = run(
         &dir,
-        &["run", "--profile", "explain", "--json"],
+        &["request", "--profile", "explain", "--json"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
@@ -1769,7 +1780,7 @@ fn cache_reuses_a_successful_answer() {
 
     let second = run(
         &dir,
-        &["run", "--profile", "explain", "--json"],
+        &["request", "--profile", "explain", "--json"],
         EXPLAIN_INPUT,
         None,
     );
@@ -1809,14 +1820,14 @@ fn no_cache_bypasses_reads_and_writes() {
 
     let first = run(
         &dir,
-        &["run", "--profile", "explain", "--no-cache"],
+        &["request", "--profile", "explain", "--no-cache"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
     assert!(first.status.success(), "stderr: {}", stderr(&first));
     let second = run(
         &dir,
-        &["run", "--profile", "explain", "--no-cache"],
+        &["request", "--profile", "explain", "--no-cache"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
@@ -1841,19 +1852,24 @@ fn refresh_replaces_a_stored_answer() {
 
     let first = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
     assert!(first.status.success(), "stderr: {}", stderr(&first));
     let refreshed = run(
         &dir,
-        &["run", "--profile", "explain", "--refresh"],
+        &["request", "--profile", "explain", "--refresh"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
     assert!(refreshed.status.success(), "stderr: {}", stderr(&refreshed));
-    let third = run(&dir, &["run", "--profile", "explain"], EXPLAIN_INPUT, None);
+    let third = run(
+        &dir,
+        &["request", "--profile", "explain"],
+        EXPLAIN_INPUT,
+        None,
+    );
     assert!(third.status.success(), "stderr: {}", stderr(&third));
 
     assert_eq!(server.requests().len(), 2);
@@ -1874,14 +1890,14 @@ fn disabled_cache_calls_the_provider_every_time() {
 
     let first = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
     assert!(first.status.success(), "stderr: {}", stderr(&first));
     let second = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
@@ -1905,7 +1921,7 @@ fn no_history_disables_the_cache() {
     for _ in 0..2 {
         let output = run(
             &dir,
-            &["run", "--profile", "explain", "--no-history"],
+            &["request", "--profile", "explain", "--no-history"],
             EXPLAIN_INPUT,
             Some("secret"),
         );
@@ -1929,14 +1945,14 @@ fn errors_are_not_cached() {
 
     let failed = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
     assert_eq!(failed.status.code(), Some(3));
     let recovered = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
@@ -2020,7 +2036,7 @@ fn ndjson_replays_a_cached_answer() {
 
     let first = run(
         &dir,
-        &["run", "--profile", "explain", "--stream"],
+        &["request", "--profile", "explain", "--stream"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
@@ -2028,7 +2044,7 @@ fn ndjson_replays_a_cached_answer() {
 
     let second = run(
         &dir,
-        &["run", "--profile", "explain", "--stream"],
+        &["request", "--profile", "explain", "--stream"],
         EXPLAIN_INPUT,
         None,
     );
@@ -2060,14 +2076,14 @@ fn changing_the_document_invalidates_the_cache() {
 
     let first = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
     assert!(first.status.success(), "stderr: {}", stderr(&first));
     let second = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         r#"{"selection":"beta","document":"alpha beta gamma delta","byte_start":6,"byte_end":10,"file":"notes.md"}"#,
         Some("secret"),
     );
@@ -2090,7 +2106,7 @@ fn changing_a_parameter_invalidates_the_cache() {
 
     let first = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         EXPLAIN_INPUT,
         Some("secret"),
     );
@@ -2106,7 +2122,7 @@ fn changing_a_parameter_invalidates_the_cache() {
 
     let second = run(
         &dir,
-        &["run", "--profile", "explain"],
+        &["request", "--profile", "explain"],
         EXPLAIN_INPUT,
         Some("secret"),
     );

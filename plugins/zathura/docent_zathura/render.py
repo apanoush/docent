@@ -54,8 +54,8 @@ def docent_arguments(
     target_language: str | None,
     context_mode: str | None,
 ) -> list[str]:
-    """Build the argv passed to ``docent run``."""
-    args = [docent_cmd, "run", "--profile", profile, "--stream"]
+    """Build the argv passed to ``docent request``."""
+    args = [docent_cmd, "request", "--profile", profile, "--stream"]
     if target_language:
         args.extend(["--target-language", target_language])
     if context_mode:

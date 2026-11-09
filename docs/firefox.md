@@ -152,7 +152,7 @@ The extension declares the `websiteContent` and `browsingActivity` data collecti
 - `select some text first`: select text with the mouse before running a profile that requires a selection.
 - `no profiles found`: run `docent init`, then press **Refresh** in the popup.
 - `This extension does not have permission to use native application org.docent.host`: the add-on ID in the extension manifest and `allowed_extensions` in the host manifest do not match.
-- No answer appears: check that the request works in a terminal with `docent run --profile explain --print-prompt`, then check the provider settings in `config.toml`.
+- No answer appears: check that the request works in a terminal with `docent request --profile explain --print-prompt`, then check the provider settings in `config.toml`.
 - Changes to the adapter do not appear: reload the temporary add-on from `about:debugging`.
 
 ## Limitations

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::defaults;
 use crate::error::DocentError;
-use crate::viewer::{FirefoxTarget, QutebrowserTarget, ViewerKind};
+use crate::viewer::{AnswerTarget, FirefoxTarget, QutebrowserTarget};
 
 /// Environment variable that overrides the config directory.
 pub const CONFIG_DIR_ENV: &str = "DOCENT_CONFIG_DIR";
@@ -24,7 +24,7 @@ const PROFILES_DIR: &str = "profiles";
 pub struct Config {
     /// Provider settings.
     #[serde(default)]
-    pub api: ApiConfig,
+    pub provider: ProviderConfig,
     /// Context window settings.
     #[serde(default)]
     pub context: ContextConfig,
@@ -45,7 +45,7 @@ pub struct Config {
 /// Wire format used to talk to the provider.
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum ApiKind {
+pub enum WireFormat {
     /// OpenAI Chat Completions, also used by OpenAI-compatible gateways.
     #[default]
     OpenAi,
@@ -53,7 +53,7 @@ pub enum ApiKind {
     Anthropic,
 }
 
-impl ApiKind {
+impl WireFormat {
     /// Stable identifier used in the history database.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -66,9 +66,9 @@ impl ApiKind {
 /// Provider settings.
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct ApiConfig {
+pub struct ProviderConfig {
     /// Wire format.
-    pub kind: ApiKind,
+    pub wire_format: WireFormat,
     /// Base URL, without the endpoint path.
     pub base_url: String,
     /// Model identifier.
@@ -87,11 +87,11 @@ pub struct ApiConfig {
     pub temperature: f32,
 }
 
-impl std::fmt::Debug for ApiConfig {
+impl std::fmt::Debug for ProviderConfig {
     /// Prints every field except the key itself.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ApiConfig")
-            .field("kind", &self.kind)
+        f.debug_struct("ProviderConfig")
+            .field("wire_format", &self.wire_format)
             .field("base_url", &self.base_url)
             .field("model", &self.model)
             .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
@@ -103,10 +103,10 @@ impl std::fmt::Debug for ApiConfig {
     }
 }
 
-impl Default for ApiConfig {
+impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
-            kind: ApiKind::OpenAi,
+            wire_format: WireFormat::OpenAi,
             base_url: "https://opencode.ai/inference/go/openai/v1".to_string(),
             model: "deepseek-v4.1-flash".to_string(),
             api_key: None,
@@ -188,7 +188,7 @@ impl Default for ResponseConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct ViewerConfig {
     /// Default viewer for the terminal commands.
-    pub default: ViewerKind,
+    pub default: AnswerTarget,
     /// Qutebrowser executable or command name.
     pub qutebrowser: String,
     /// Qutebrowser `--target` value.
@@ -202,7 +202,7 @@ pub struct ViewerConfig {
 impl Default for ViewerConfig {
     fn default() -> Self {
         Self {
-            default: ViewerKind::Terminal,
+            default: AnswerTarget::Terminal,
             qutebrowser: "qutebrowser".to_string(),
             qutebrowser_target: QutebrowserTarget::Window,
             firefox: "firefox".to_string(),
@@ -266,29 +266,33 @@ impl Config {
     pub fn validate(&self, path: &Path) -> Result<(), DocentError> {
         let mut errors = Vec::new();
 
-        if self.api.base_url.trim().is_empty() {
-            errors.push("api.base_url must not be empty".to_string());
-        } else if !self.api.base_url.starts_with("http://")
-            && !self.api.base_url.starts_with("https://")
+        if self.provider.base_url.trim().is_empty() {
+            errors.push("provider.base_url must not be empty".to_string());
+        } else if !self.provider.base_url.starts_with("http://")
+            && !self.provider.base_url.starts_with("https://")
         {
-            errors.push("api.base_url must start with http:// or https://".to_string());
+            errors.push("provider.base_url must start with http:// or https://".to_string());
         }
-        if self.api.model.trim().is_empty() {
-            errors.push("api.model must not be empty".to_string());
+        if self.provider.model.trim().is_empty() {
+            errors.push("provider.model must not be empty".to_string());
         }
-        if api_key_is_empty(self.api.api_key.as_deref()) && self.api.api_key_env.trim().is_empty() {
-            errors.push("api.api_key and api.api_key_env must not both be empty".to_string());
+        if api_key_is_empty(self.provider.api_key.as_deref())
+            && self.provider.api_key_env.trim().is_empty()
+        {
+            errors.push(
+                "provider.api_key and provider.api_key_env must not both be empty".to_string(),
+            );
         }
-        if self.api.timeout_secs == 0 {
-            errors.push("api.timeout_secs must be greater than zero".to_string());
+        if self.provider.timeout_secs == 0 {
+            errors.push("provider.timeout_secs must be greater than zero".to_string());
         }
-        if self.api.max_tokens == 0 {
-            errors.push("api.max_tokens must be greater than zero".to_string());
+        if self.provider.max_tokens == 0 {
+            errors.push("provider.max_tokens must be greater than zero".to_string());
         }
-        if !(0.0..=2.0).contains(&self.api.temperature) {
+        if !(0.0..=2.0).contains(&self.provider.temperature) {
             errors.push(format!(
-                "api.temperature must be between 0.0 and 2.0, got {}",
-                self.api.temperature
+                "provider.temperature must be between 0.0 and 2.0, got {}",
+                self.provider.temperature
             ));
         }
         if self.context.max_chars == 0 {
@@ -412,7 +416,7 @@ pub fn load_config(config_dir: &Path) -> Result<Config, DocentError> {
 fn warn_if_key_is_exposed(path: &Path, config: &Config) {
     use std::os::unix::fs::PermissionsExt;
 
-    if api_key_is_empty(config.api.api_key.as_deref()) {
+    if api_key_is_empty(config.provider.api_key.as_deref()) {
         return;
     }
     if let Ok(metadata) = fs::metadata(path) {
@@ -550,9 +554,9 @@ mod tests {
         let config: Config = toml::from_str(defaults::CONFIG).unwrap();
         config.validate(Path::new("config.toml")).unwrap();
 
-        assert_eq!(config.api.kind, ApiKind::OpenAi);
+        assert_eq!(config.provider.wire_format, WireFormat::OpenAi);
         assert_eq!(config.context.mode, ContextMode::Auto);
-        assert_eq!(config.api.model, "deepseek-v4.1-flash");
+        assert_eq!(config.provider.model, "deepseek-v4.1-flash");
         assert!(config.history.enabled);
         assert!(config.history.database.is_none());
         assert_eq!(config.viewer, ViewerConfig::default());
@@ -563,7 +567,7 @@ mod tests {
         let config = Config::default();
         config.validate(Path::new("config.toml")).unwrap();
 
-        assert_eq!(config.viewer.default, ViewerKind::Terminal);
+        assert_eq!(config.viewer.default, AnswerTarget::Terminal);
         assert_eq!(config.viewer.qutebrowser, "qutebrowser");
         assert_eq!(config.viewer.qutebrowser_target, QutebrowserTarget::Window);
         assert_eq!(config.viewer.firefox, "firefox");
@@ -581,7 +585,7 @@ default = "firefox"
         .unwrap();
         config.validate(Path::new("config.toml")).unwrap();
 
-        assert_eq!(config.viewer.default, ViewerKind::Firefox);
+        assert_eq!(config.viewer.default, AnswerTarget::Firefox);
         assert_eq!(config.viewer.firefox, "firefox");
         assert_eq!(config.viewer.qutebrowser_target, QutebrowserTarget::Window);
     }
@@ -601,7 +605,7 @@ firefox_target = "private-window"
         .unwrap();
         config.validate(Path::new("config.toml")).unwrap();
 
-        assert_eq!(config.viewer.default, ViewerKind::Qutebrowser);
+        assert_eq!(config.viewer.default, AnswerTarget::Qutebrowser);
         assert_eq!(config.viewer.qutebrowser, "/usr/bin/qutebrowser");
         assert_eq!(config.viewer.qutebrowser_target, QutebrowserTarget::TabBg);
         assert_eq!(config.viewer.firefox, "firefox-esr");
@@ -708,8 +712,8 @@ database = "~/docent.db"
     fn config_accepts_a_literal_api_key_without_an_env_name() {
         let config: Config = toml::from_str(
             r#"
-[api]
-kind = "openai"
+[provider]
+wire_format = "openai"
 base_url = "https://example.com"
 model = "test-model"
 api_key = "secret"
@@ -721,8 +725,8 @@ temperature = 0.1
         .unwrap();
         config.validate(Path::new("config.toml")).unwrap();
 
-        assert_eq!(config.api.api_key.as_deref(), Some("secret"));
-        assert!(config.api.api_key_env.is_empty());
+        assert_eq!(config.provider.api_key.as_deref(), Some("secret"));
+        assert!(config.provider.api_key_env.is_empty());
     }
 
     #[test]
@@ -730,26 +734,26 @@ temperature = 0.1
         let config = Config::default();
         config.validate(Path::new("config.toml")).unwrap();
 
-        assert!(config.api.api_key.is_none());
-        assert_eq!(config.api.api_key_env, "OPENCODE_API_KEY");
+        assert!(config.provider.api_key.is_none());
+        assert_eq!(config.provider.api_key_env, "OPENCODE_API_KEY");
     }
 
     #[test]
     fn config_rejects_both_missing_key_sources() {
         let mut config = Config::default();
-        config.api.api_key = None;
-        config.api.api_key_env.clear();
+        config.provider.api_key = None;
+        config.provider.api_key_env.clear();
 
         let error = config.validate(Path::new("config.toml")).unwrap_err();
         let message = error.to_string();
-        assert!(message.contains("api.api_key"));
-        assert!(message.contains("api.api_key_env"));
+        assert!(message.contains("provider.api_key"));
+        assert!(message.contains("provider.api_key_env"));
     }
 
     #[test]
     fn debug_output_redacts_the_api_key() {
         let mut config = Config::default();
-        config.api.api_key = Some("super-secret-value".to_string());
+        config.provider.api_key = Some("super-secret-value".to_string());
 
         let debug = format!("{:?}", config);
         assert!(!debug.contains("super-secret-value"));
@@ -775,7 +779,7 @@ temperature = 0.1
 
     #[test]
     fn unknown_config_fields_are_rejected() {
-        let error = toml::from_str::<Config>("[api]\nunknown = 1\n").unwrap_err();
+        let error = toml::from_str::<Config>("[provider]\nunknown = 1\n").unwrap_err();
         assert!(error.to_string().contains("unknown"));
     }
 
@@ -828,8 +832,8 @@ temperature = 0.1
     #[test]
     fn config_rejects_invalid_values() {
         let mut config = Config::default();
-        config.api.max_tokens = 0;
-        config.api.base_url = "ftp://example.com".to_string();
+        config.provider.max_tokens = 0;
+        config.provider.base_url = "ftp://example.com".to_string();
         let error = config.validate(Path::new("config.toml")).unwrap_err();
         let message = error.to_string();
         assert!(message.contains("max_tokens"));
@@ -859,7 +863,7 @@ temperature = 0.1
         assert!(
             fs::read_to_string(config_file(&dir))
                 .unwrap()
-                .contains("[api]")
+                .contains("[provider]")
         );
     }
 
@@ -933,20 +937,20 @@ temperature = 0.1
 
         let cases = [
             Case {
-                expected: "api.base_url must not be empty",
-                mutate: |config| config.api.base_url.clear(),
+                expected: "provider.base_url must not be empty",
+                mutate: |config| config.provider.base_url.clear(),
             },
             Case {
-                expected: "api.model must not be empty",
-                mutate: |config| config.api.model.clear(),
+                expected: "provider.model must not be empty",
+                mutate: |config| config.provider.model.clear(),
             },
             Case {
-                expected: "api.timeout_secs must be greater than zero",
-                mutate: |config| config.api.timeout_secs = 0,
+                expected: "provider.timeout_secs must be greater than zero",
+                mutate: |config| config.provider.timeout_secs = 0,
             },
             Case {
-                expected: "api.temperature must be between 0.0 and 2.0",
-                mutate: |config| config.api.temperature = 2.5,
+                expected: "provider.temperature must be between 0.0 and 2.0",
+                mutate: |config| config.provider.temperature = 2.5,
             },
             Case {
                 expected: "context.max_chars must be greater than zero",

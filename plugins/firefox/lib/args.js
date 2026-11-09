@@ -21,9 +21,9 @@ export function profilesArgs(settings) {
   return configArgs(settings).concat(["profiles", "--json"]);
 }
 
-/** Arguments for `docent run`. */
-export function runArgs(settings, profile, overrides = {}) {
-  const args = ["run", "--profile", profile, "--stream", "--html"];
+/** Arguments for `docent request`. */
+export function requestArgs(settings, profile, overrides = {}) {
+  const args = ["request", "--profile", profile, "--stream", "--html"];
   const targetLanguage = overrides.targetLanguage ?? settings.targetLanguage;
   const mode = contextMode(overrides.contextMode ?? settings.contextMode);
   if (targetLanguage) {

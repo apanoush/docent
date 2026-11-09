@@ -143,4 +143,4 @@ The plugin does not parse `config.toml`; all configuration and profile loading h
 - `missing API key`: neither `api_key` nor the environment variable named by `api_key_env` is set. Neovim passes its environment to `vim.system`.
 - `no profiles found`: run `docent init`, then `:DocentProfiles`.
 - `unknown profile`: the profile file is missing or invalid. Run `docent profiles` in a terminal to see the error.
-- No output appears: check `docent run --profile explain --print-prompt` with the same request, then check the provider settings in `config.toml`.
+- No output appears: check `docent request --profile explain --print-prompt` with the same request, then check the provider settings in `config.toml`.
