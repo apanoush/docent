@@ -27,6 +27,11 @@ htmlcov/
 .ruff_cache/
 .ty/
 
+# browser extension build artifacts
+dist/
+web-ext-artifacts/
+*.xpi
+
 tests/manual*/
 
 todo.md

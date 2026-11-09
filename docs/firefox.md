@@ -7,7 +7,7 @@ The Firefox adapter captures the selected text and the surrounding page, calls t
 - Firefox 140 or newer. Firefox 140 introduced the data collection permissions key that the manifest declares.
 - The `docent` and `docent-native-host` binaries. `cargo install --path .` installs both.
 - The native messaging host manifest installed with `scripts/firefox-host-install.sh`.
-- Node 18 or newer for the adapter tests. The extension itself has no build step and no third-party JavaScript.
+- Node 18 or newer for the adapter tests and for packaging with `web-ext`.
 
 ## Install
 
@@ -26,9 +26,36 @@ Load the extension for development:
 2. Choose **Load Temporary Add-on**.
 3. Select `plugins/firefox/manifest.json`.
 
-A temporary add-on disappears when Firefox restarts. For a permanent install, sign the extension through addons.mozilla.org and install the signed XPI. Release and beta Firefox only install signed add-ons.
+A temporary add-on disappears when Firefox restarts. Release and beta Firefox only install signed add-ons, so a permanent install needs a signed XPI. See [Permanent install and sharing](#permanent-install-and-sharing).
 
 If Firefox is a Snap or Flatpak build, its native messaging directory is inside the sandbox. Pass `--manifest-dir` with the path that build uses, or use the unsandboxed package.
+
+## Permanent install and sharing
+
+Sign the extension through addons.mozilla.org and install the signed XPI. An unlisted add-on can be shared directly without appearing in the public store.
+
+Build the package:
+
+```bash
+mkdir -p dist
+npx web-ext build --source-dir plugins/firefox --artifacts-dir dist --overwrite-dest
+```
+
+Sign it with an API key and secret from the AMO Developer Hub:
+
+```bash
+export WEB_EXT_API_KEY=...
+export WEB_EXT_API_SECRET=...
+npx web-ext sign --source-dir plugins/firefox --artifacts-dir dist --channel=unlisted
+```
+
+Keep the signed file as `dist/docent-<version>.xpi`. Renaming the file does not affect the signature. Do not remove `META-INF/`; Firefox rejects the add-on without it.
+
+Install it on another machine with `about:addons` → gear icon → **Install Add-on From File...**, then install the native host manifest and the `docent` and `docent-native-host` binaries on that machine as well. The extension ID stays `docent@reading-assistant`, so keep `allowed_extensions` in the host manifest unchanged.
+
+The XPI contains no author name or email. The manifest has no `author` field, and the signature certificate names Mozilla's signing service and the add-on ID. An author name shown on the AMO page is listing metadata on AMO, not part of the file.
+
+Bump `"version"` in `plugins/firefox/manifest.json` for every new build and sign it again. Personal installs update by installing the new signed XPI. Add `browser_specific_settings.gecko.update_url` and host an `updates.json` only if you want Firefox to update automatically.
 
 ## Usage
 
