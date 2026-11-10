@@ -84,7 +84,7 @@ max_entries = 1000
 | `api_key` | string | unset | Literal API key stored in the file. Prefer `api_key_env` when the file is shared. |
 | `api_key_env` | string | `"OPENCODE_API_KEY"` | Environment variable that holds the API key. A non-empty value wins over `api_key`. |
 | `timeout_secs` | integer | `120` | Whole-request timeout in seconds. Must be greater than zero. |
-| `max_tokens` | integer | `1200` | Maximum output tokens. Must be greater than zero. |
+| `max_tokens` | integer | `1200` | Maximum output tokens, counted by the provider. Must be greater than zero. When the answer stops at this limit, Docent logs a warning and records `output_truncated = 1` in history. Raise it for long answers, including answers that end in a table or list. |
 | `temperature` | float | `0.3` | Sampling temperature from 0.0 to 2.0. Anthropic requests must stay at or below 1.0. |
 
 For `wire_format = "openai"`, Docent posts to `<base_url>/chat/completions`. For `wire_format = "anthropic"`, Docent posts to `<base_url>/v1/messages`, or to `<base_url>/messages` when the base URL already ends in `/v1`.
@@ -235,7 +235,7 @@ A profile is one TOML file in `profiles/`. The filename without `.toml` is the p
 | `context_mode` | `"auto"`, `"full"`, or `"none"` | no | Per-profile context mode override. |
 | `model` | string | no | Per-profile model override. |
 | `temperature` | float | no | Per-profile temperature override. |
-| `max_tokens` | integer | no | Per-profile output token limit override. |
+| `max_tokens` | integer | no | Per-profile output token limit override. An answer that stops at the limit logs a warning. |
 | `response_language` | string | no | Per-profile response language override. |
 | `target_language` | string | no | Per-profile translation target override. |
 

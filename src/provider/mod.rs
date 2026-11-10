@@ -56,11 +56,22 @@ pub struct Completion {
     /// True when the answer came from the local cache instead of the provider.
     #[serde(default, skip_serializing_if = "is_false")]
     pub cached: bool,
+    /// True when the provider stopped at `max_tokens`, so the answer is cut.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub truncated: bool,
 }
 
 /// Returns true for the default `false`, so serialized output stays unchanged.
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+/// Returns true when a provider stop reason means the output hit `max_tokens`.
+///
+/// OpenAI reports `length` and Anthropic reports `max_tokens` for the same
+/// condition. Every other reason means the model finished on its own.
+pub(crate) fn hit_output_limit(reason: &str) -> bool {
+    matches!(reason, "length" | "max_tokens")
 }
 
 /// One line of the NDJSON stream written by `docent request --stream`.
@@ -422,6 +433,38 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "missing API key: set provider.api_key in config.toml"
+        );
+    }
+
+    #[test]
+    fn recognises_output_limit_stop_reasons() {
+        assert!(hit_output_limit("length"));
+        assert!(hit_output_limit("max_tokens"));
+        assert!(!hit_output_limit("stop"));
+        assert!(!hit_output_limit("end_turn"));
+        assert!(!hit_output_limit(""));
+    }
+
+    #[test]
+    fn serialized_completions_omit_truncated_unless_set() {
+        let mut completion = Completion {
+            text: "hi".to_string(),
+            model: None,
+            usage: None,
+            cached: false,
+            truncated: false,
+        };
+        assert!(
+            !serde_json::to_string(&completion)
+                .unwrap()
+                .contains("truncated")
+        );
+
+        completion.truncated = true;
+        assert!(
+            serde_json::to_string(&completion)
+                .unwrap()
+                .contains(r#""truncated":true"#)
         );
     }
 

@@ -4,7 +4,8 @@ use serde_json::{Value, json};
 
 use super::stream::stream_sse;
 use super::{
-    ChatInput, Completion, Usage, provider_error_message, send_json, send_stream, truncate,
+    ChatInput, Completion, Usage, hit_output_limit, provider_error_message, send_json, send_stream,
+    truncate,
 };
 use crate::config::Config;
 use crate::error::DocentError;
@@ -43,6 +44,7 @@ pub(crate) fn complete_streaming(
     let mut text = String::new();
     let mut model = None;
     let mut usage = None;
+    let mut finish_reason = None;
     let mut finished = false;
 
     {
@@ -74,6 +76,12 @@ pub(crate) fn complete_streaming(
             if let Some(value_usage) = parse_usage(&value) {
                 usage = Some(value_usage);
             }
+            if let Some(reason) = value
+                .pointer("/choices/0/finish_reason")
+                .and_then(Value::as_str)
+            {
+                finish_reason = Some(reason.to_string());
+            }
             if let Some(content) = value.pointer("/choices/0/delta/content") {
                 let delta = content_text(content);
                 if !delta.is_empty() {
@@ -94,6 +102,7 @@ pub(crate) fn complete_streaming(
         model,
         usage,
         cached: false,
+        truncated: finish_reason.as_deref().is_some_and(hit_output_limit),
     })
 }
 
@@ -145,6 +154,10 @@ fn parse_response(value: &Value) -> Result<Completion, DocentError> {
             .map(str::to_string),
         usage: parse_usage(value),
         cached: false,
+        truncated: value
+            .pointer("/choices/0/finish_reason")
+            .and_then(Value::as_str)
+            .is_some_and(hit_output_limit),
     })
 }
 
@@ -239,5 +252,23 @@ mod tests {
         let value = json!({"choices": [{"message": {"content": "   "}}]});
         let error = parse_response(&value).unwrap_err();
         assert!(matches!(error, DocentError::EmptyResponse));
+    }
+
+    #[test]
+    fn marks_an_answer_that_hit_the_output_limit() {
+        let value = json!({
+            "choices": [{"finish_reason": "length", "message": {"content": "cut"}}]
+        });
+        let completion = parse_response(&value).unwrap();
+        assert!(completion.truncated);
+    }
+
+    #[test]
+    fn does_not_mark_a_finished_answer() {
+        let value = json!({
+            "choices": [{"finish_reason": "stop", "message": {"content": "done"}}]
+        });
+        let completion = parse_response(&value).unwrap();
+        assert!(!completion.truncated);
     }
 }

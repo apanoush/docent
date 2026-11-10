@@ -2383,3 +2383,176 @@ fn changing_a_parameter_invalidates_the_cache() {
     assert_eq!(server.requests().len(), 2);
     assert_eq!(String::from_utf8_lossy(&second.stdout), "second\n");
 }
+
+#[test]
+fn openai_buffered_answer_at_the_output_limit_warns() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"model":"test-model","choices":[{"finish_reason":"length","message":{"content":"cut"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let output = run(
+        &dir,
+        &["request", "--profile", "explain", "--json"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stderr(&output).contains("stopped at max_tokens"));
+    assert!(stderr(&output).contains("64"));
+
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["truncated"], true);
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let truncated: i64 = connection
+        .query_row("SELECT output_truncated FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(truncated, 1);
+}
+
+#[test]
+fn openai_streaming_answer_at_the_output_limit_warns() {
+    let body = concat!(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"cut\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let output = run(
+        &dir,
+        &["request", "--profile", "explain", "--stream"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stderr(&output).contains("stopped at max_tokens"));
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let truncated: i64 = connection
+        .query_row("SELECT output_truncated FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(truncated, 1);
+}
+
+#[test]
+fn anthropic_buffered_answer_at_the_output_limit_warns() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"model":"test-model","stop_reason":"max_tokens","content":[{"type":"text","text":"cut"}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "anthropic", &server.base_url());
+
+    let output = run(
+        &dir,
+        &["request", "--profile", "explain", "--json"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stderr(&output).contains("stopped at max_tokens"));
+
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["truncated"], true);
+}
+
+#[test]
+fn anthropic_streaming_answer_at_the_output_limit_warns() {
+    let body = concat!(
+        "event: content_block_delta\n",
+        "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"cut\"}}\n\n",
+        "event: message_delta\n",
+        "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"},\"usage\":{\"output_tokens\":64}}\n\n",
+        "event: message_stop\n",
+        "data: {\"type\":\"message_stop\"}\n\n"
+    );
+    let server = MockServer::start(MockResponse::sse(200, body));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "anthropic", &server.base_url());
+
+    let output = run(
+        &dir,
+        &["request", "--profile", "explain", "--stream"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stderr(&output).contains("stopped at max_tokens"));
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let truncated: i64 = connection
+        .query_row("SELECT output_truncated FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(truncated, 1);
+}
+
+#[test]
+fn complete_answer_does_not_warn_about_the_output_limit() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"model":"test-model","choices":[{"finish_reason":"stop","message":{"content":"done"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+
+    let output = run(
+        &dir,
+        &["request", "--profile", "explain", "--json"],
+        EXPLAIN_INPUT,
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(!stderr(&output).contains("max_tokens"));
+
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(value.get("truncated").is_none());
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let truncated: i64 = connection
+        .query_row("SELECT output_truncated FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(truncated, 0);
+}
+
+#[test]
+fn a_truncated_answer_is_not_cached() {
+    let cut = r#"{"model":"test-model","choices":[{"finish_reason":"length","message":{"content":"cut"}}]}"#;
+    let server = MockServer::start_many(vec![
+        MockResponse::json(200, cut),
+        MockResponse::json(200, cut),
+    ]);
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    enable_cache(&dir);
+
+    for _ in 0..2 {
+        let output = run(
+            &dir,
+            &["request", "--profile", "explain"],
+            EXPLAIN_INPUT,
+            Some("secret"),
+        );
+        assert!(output.status.success(), "stderr: {}", stderr(&output));
+        assert!(stderr(&output).contains("stopped at max_tokens"));
+    }
+
+    assert_eq!(server.requests().len(), 2);
+
+    let connection = rusqlite::Connection::open(history_database(&dir)).unwrap();
+    let cached: i64 = connection
+        .query_row("SELECT COUNT(*) FROM cache", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(cached, 0);
+}

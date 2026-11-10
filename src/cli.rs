@@ -939,6 +939,15 @@ fn execute(
     let duration_ms = started.elapsed().as_millis().min(i64::MAX as u128) as i64;
     let from_cache = matches!(&outcome, Ok(completion) if completion.cached);
 
+    if let Ok(completion) = &outcome
+        && completion.truncated
+    {
+        log::warn!(
+            "answer stopped at max_tokens = {} tokens, so it is incomplete; raise provider.max_tokens in config.toml or max_tokens in the profile",
+            settings.max_tokens
+        );
+    }
+
     // A cache hit is not a provider call, so `runs` stays a record of provider
     // calls. The cache table counts uses instead.
     if record_history && !from_cache {
@@ -1020,6 +1029,7 @@ fn cached_answer(
             model: answer.model,
             usage: None,
             cached: true,
+            truncated: false,
         }),
         Ok(None) => None,
         Err(error) => {
@@ -1037,6 +1047,10 @@ fn remember(
     answer: &Completion,
 ) {
     if !cache_state.write {
+        return;
+    }
+    // A cut answer would be replayed without a provider call, so it is not kept.
+    if answer.truncated {
         return;
     }
     let Some(key) = cache_state.key.as_ref() else {
@@ -1153,6 +1167,7 @@ fn build_history_run(
         system_prompt: rendered.system.clone(),
         user_prompt: rendered.user.clone(),
         output,
+        output_truncated: matches!(outcome, Ok(completion) if completion.truncated),
         input_tokens: usage
             .and_then(|usage| usage.input_tokens)
             .map(|value| value as i64),

@@ -116,7 +116,7 @@ The shared executor builds the context and prompt once, then selects the output 
 
 ## Run history
 
-When history is enabled, `cli::execute` records one row after the provider call returns or fails. The row stores the command, profile, source, structured request inputs, effective settings, the rendered system and user messages, the answer, token usage, duration, status, and error. Streamed runs record the partial answer when the stream fails. `--print-prompt` and failures before the provider call are not recorded.
+When history is enabled, `cli::execute` records one row after the provider call returns or fails. The row stores the command, profile, source, structured request inputs, effective settings, the rendered system and user messages, the answer, token usage, duration, status, and error. Streamed runs record the partial answer when the stream fails, and `output_truncated` marks an answer the provider stopped at `max_tokens`. `--print-prompt` and failures before the provider call are not recorded.
 
 `storage` opens the SQLite database once per run, enables WAL mode, applies a busy timeout, and creates the schema on first use. Schema changes are tracked with `PRAGMA user_version`. The database path comes from `history.database` or the platform data directory. A failed write is logged as a warning and never changes the command result.
 
@@ -130,7 +130,7 @@ The executor checks the answer cache after `prompt::render` and before the provi
 
 A hit synthesizes a `Completion` with `cached: true` and no token usage, then delivers its text through the same `on_delta` callback as a provider stream. Every output mode therefore behaves the same way: plain streaming prints one fragment, NDJSON emits one `delta`, the `html` event is rendered locally from the stored Markdown, and the browser viewer streams it normally. A `done` event gains `"cached": true`; the adapters ignore the extra field.
 
-A successful provider answer is stored unless the run used `--no-cache` or the cache is disabled. Failures, cancelled runs, and empty outputs are never stored. A hit is not written to `runs`, because it is not a provider call; the cache row increments `hits` and updates `last_used_at` instead. Entries are evicted least recently used beyond `cache.max_entries`.
+A successful provider answer is stored unless the run used `--no-cache` or the cache is disabled. Failures, cancelled runs, empty outputs, and answers the provider stopped at `max_tokens` are never stored. A hit is not written to `runs`, because it is not a provider call; the cache row increments `hits` and updates `last_used_at` instead. Entries are evicted least recently used beyond `cache.max_entries`.
 
 The cache lives in the same SQLite database as run history and shares its schema version. It is active only when `history.enabled` is true, the run did not pass `--no-history`, and `cache.enabled` is true. `--no-cache` skips reads and writes; `--refresh` skips reads but replaces the stored answer. Like history, cache reads and writes are fail-open and never change the command result.
 
@@ -183,6 +183,8 @@ The OpenAI-compatible endpoint at `https://opencode.ai/inference/go/openai/v1` a
 Requests include `User-Agent: docent/<version>`. For OpenCode endpoints, Docent also sends a stable `x-opencode-session` value from the platform state directory, which OpenCode recommends for routing and prompt caching.
 
 API keys come from the environment variable named by `provider.api_key_env`, or from the optional `provider.api_key` field for users who accept a plaintext secret in `config.toml`. A set environment variable wins, `init` creates the file with mode `0600` on Unix, and keys are never included in error messages or `Debug` output. The CLI does not use a provider SDK because the two request shapes are small and a hand-written client keeps streaming, error mapping, and request inspection under direct control.
+
+Both clients read the provider's stop reason, OpenAI `choices[].finish_reason` and Anthropic `stop_reason`, and set `Completion.truncated` when it reports `length` or `max_tokens`. The CLI logs a warning in that case, records `output_truncated = 1`, and skips the answer cache, so a cut answer is never mistaken for a complete one. Both the buffered and streaming paths report it.
 
 There are no retries. A failed request returns a clear error instead of risking duplicate charges. Retry and backoff are deferred.
 

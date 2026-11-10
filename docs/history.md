@@ -47,7 +47,7 @@ A custom plugin can pass any short name, for example `--source my-plugin`. Names
 
 ## Schema
 
-Schema version 3 has two tables. The `runs` table records provider calls:
+Schema version 4 has two tables. The `runs` table records provider calls:
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -81,6 +81,7 @@ Schema version 3 has two tables. The `runs` table records provider calls:
 | `system_prompt` | text | Rendered system message. |
 | `user_prompt` | text | Rendered user message, including document context. |
 | `output` | text | Full answer, or the partial answer from a failed stream. |
+| `output_truncated` | integer | `1` when the provider stopped the answer at `max_tokens`. |
 | `input_tokens` | integer | Input tokens reported by the provider. |
 | `output_tokens` | integer | Output tokens reported by the provider. |
 | `docent_version` | text | Docent version that produced the row. |
@@ -101,7 +102,7 @@ The `cache` table stores reusable answers:
 | `output` | text | Stored answer. |
 | `docent_version` | text | Docent version that stored the entry. |
 
-The cache table has an index on `last_used_at` for eviction. A new database is created at version 3. Version 1 and 2 databases are upgraded in place on the next run, and their `runs` rows are kept.
+The cache table has an index on `last_used_at` for eviction. A new database is created at version 4. Version 1, 2, and 3 databases are upgraded in place on the next run, and their `runs` rows are kept.
 
 The raw document is not stored separately. The rendered `user_prompt` already contains the context window that the model received. `document_bytes` records the original size.
 
@@ -110,6 +111,8 @@ The raw document is not stored separately. The rendered `user_prompt` already co
 ## Answer cache
 
 The cache returns a stored answer instead of calling the provider when the rendered system and user messages, the wire format, the base URL, the model, the temperature, and `max_tokens` all match. The rendered prompt already contains the selection, the context window, the question, and the languages, so changing any of those produces a miss.
+
+An answer that stopped at `max_tokens` is not stored. Replaying it from the cache would hide the fact that the provider cut it, so the next run calls the provider again.
 
 A hit is not written to `runs`, because it is not a provider call. Instead, the matching cache row increments `hits` and updates `last_used_at`:
 

@@ -11,7 +11,7 @@ use crate::config::{Config, HistoryConfig};
 use crate::error::DocentError;
 
 /// Schema version understood by this build.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 /// Database filename used in the platform data directory.
 pub const DATABASE_FILE: &str = "docent.db";
@@ -77,6 +77,8 @@ pub struct NewRun {
     pub user_prompt: String,
     /// Full answer on success, partial answer on a failed stream.
     pub output: String,
+    /// Whether the answer stopped at `max_tokens`.
+    pub output_truncated: bool,
     /// Input tokens reported by the provider.
     pub input_tokens: Option<i64>,
     /// Output tokens reported by the provider.
@@ -178,68 +180,30 @@ fn ensure_schema(connection: &Connection, path: &Path) -> Result<(), DocentError
             source,
         })?;
 
-    match version {
-        0 => {
-            connection
-                .execute_batch(SCHEMA_V1)
-                .map_err(|source| DocentError::History {
-                    path: path.to_path_buf(),
-                    source,
-                })?;
-            connection
-                .execute_batch(SCHEMA_V2)
-                .map_err(|source| DocentError::History {
-                    path: path.to_path_buf(),
-                    source,
-                })?;
-            connection
-                .execute_batch(SCHEMA_V3)
-                .map_err(|source| DocentError::History {
-                    path: path.to_path_buf(),
-                    source,
-                })?;
-            set_schema_version(connection, path)
-        }
-        1 => {
-            connection
-                .execute_batch(SCHEMA_V2)
-                .map_err(|source| DocentError::History {
-                    path: path.to_path_buf(),
-                    source,
-                })?;
-            connection
-                .execute_batch(SCHEMA_V3)
-                .map_err(|source| DocentError::History {
-                    path: path.to_path_buf(),
-                    source,
-                })?;
-            set_schema_version(connection, path)
-        }
-        2 => {
-            connection
-                .execute_batch(SCHEMA_V3)
-                .map_err(|source| DocentError::History {
-                    path: path.to_path_buf(),
-                    source,
-                })?;
-            set_schema_version(connection, path)
-        }
-        SCHEMA_VERSION => Ok(()),
-        version => Err(DocentError::HistorySchema {
+    if version > SCHEMA_VERSION {
+        return Err(DocentError::HistorySchema {
             path: path.to_path_buf(),
             version,
             supported: SCHEMA_VERSION,
-        }),
+        });
     }
-}
 
-fn set_schema_version(connection: &Connection, path: &Path) -> Result<(), DocentError> {
-    connection
-        .pragma_update(None, "user_version", SCHEMA_VERSION)
-        .map_err(|source| DocentError::History {
-            path: path.to_path_buf(),
-            source,
-        })
+    for (target, migration) in MIGRATIONS.iter().filter(|(target, _)| *target > version) {
+        connection
+            .execute_batch(migration)
+            .map_err(|source| DocentError::History {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        connection
+            .pragma_update(None, "user_version", *target)
+            .map_err(|source| DocentError::History {
+                path: path.to_path_buf(),
+                source,
+            })?;
+    }
+
+    Ok(())
 }
 
 fn insert(connection: &Connection, path: &Path, run: &NewRun) -> Result<(), DocentError> {
@@ -276,6 +240,7 @@ fn insert(connection: &Connection, path: &Path, run: &NewRun) -> Result<(), Doce
                 run.system_prompt,
                 run.user_prompt,
                 run.output,
+                i64::from(run.output_truncated),
                 run.input_tokens,
                 run.output_tokens,
                 run.docent_version,
@@ -391,6 +356,18 @@ const SCHEMA_V3: &str = r#"
 ALTER TABLE runs RENAME COLUMN provider TO wire_format;
 "#;
 
+const SCHEMA_V4: &str = r#"
+ALTER TABLE runs ADD COLUMN output_truncated INTEGER NOT NULL DEFAULT 0;
+"#;
+
+/// Migrations in the order they are applied, keyed by the version they produce.
+const MIGRATIONS: &[(i64, &str)] = &[
+    (1, SCHEMA_V1),
+    (2, SCHEMA_V2),
+    (3, SCHEMA_V3),
+    (4, SCHEMA_V4),
+];
+
 const INSERT_RUN: &str = r#"
 INSERT INTO runs (
     created_at,
@@ -422,13 +399,14 @@ INSERT INTO runs (
     system_prompt,
     user_prompt,
     output,
+    output_truncated,
     input_tokens,
     output_tokens,
     docent_version
 ) VALUES (
     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
     ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
-    ?31, ?32
+    ?31, ?32, ?33
 )
 "#;
 
@@ -469,6 +447,7 @@ mod tests {
             system_prompt: "You are Docent.".to_string(),
             user_prompt: "Document: alpha beta gamma".to_string(),
             output: "An answer".to_string(),
+            output_truncated: false,
             input_tokens: Some(3),
             output_tokens: Some(4),
             docent_version: "0.1.0".to_string(),
@@ -780,9 +759,10 @@ mod tests {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, SCHEMA_VERSION);
         assert!(table_exists(&connection, "cache"));
         assert!(column_exists(&connection, "runs", "wire_format"));
+        assert!(column_exists(&connection, "runs", "output_truncated"));
         assert!(!column_exists(&connection, "runs", "provider"));
         let runs: i64 = connection
             .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
@@ -806,12 +786,69 @@ mod tests {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, SCHEMA_VERSION);
         assert!(column_exists(&connection, "runs", "wire_format"));
         assert!(!column_exists(&connection, "runs", "provider"));
         let runs: i64 = connection
             .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
             .unwrap();
         assert_eq!(runs, 1);
+    }
+
+    #[test]
+    fn migrates_a_version_3_database_and_adds_output_truncated() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+
+        let connection = Connection::open(&database).unwrap();
+        connection.execute_batch(SCHEMA_V1).unwrap();
+        connection.execute_batch(SCHEMA_V2).unwrap();
+        connection.execute_batch(SCHEMA_V3).unwrap();
+        connection
+            .execute(
+                "INSERT INTO runs (
+                    created_at, duration_ms, command, profile, source, output_mode,
+                    status, selection, context_mode, context_max_chars, context_chars,
+                    context_truncated, wire_format, base_url, model, temperature,
+                    max_tokens, timeout_secs, response_language, target_language,
+                    system_prompt, user_prompt, output, docent_version
+                ) VALUES (
+                    1, 1, 'request', 'explain', 'cli', 'json', 'success', 'beta',
+                    'auto', 1, 1, 0, 'openai', 'https://example.com/v1', 'm',
+                    0.0, 1, 1, 'auto', 'English', 's', 'u', 'o', '0.1.0'
+                )",
+                [],
+            )
+            .unwrap();
+        connection.pragma_update(None, "user_version", 3).unwrap();
+        drop(connection);
+
+        let connection = open(&database).unwrap();
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        assert!(column_exists(&connection, "runs", "output_truncated"));
+        let kept: i64 = connection
+            .query_row("SELECT output_truncated FROM runs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(kept, 0);
+    }
+
+    #[test]
+    fn records_a_truncated_answer() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("history.db");
+        let config = config_with_database(&database);
+        let mut run = sample_run();
+        run.output_truncated = true;
+
+        write(&config, temp.path(), &run).unwrap();
+
+        let connection = open(&database).unwrap();
+        let truncated: i64 = connection
+            .query_row("SELECT output_truncated FROM runs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(truncated, 1);
     }
 }

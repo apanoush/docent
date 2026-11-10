@@ -4,7 +4,8 @@ use serde_json::{Value, json};
 
 use super::stream::stream_sse;
 use super::{
-    ChatInput, Completion, Usage, provider_error_message, send_json, send_stream, truncate,
+    ChatInput, Completion, Usage, hit_output_limit, provider_error_message, send_json, send_stream,
+    truncate,
 };
 use crate::config::Config;
 use crate::error::DocentError;
@@ -50,6 +51,7 @@ pub(crate) fn complete_streaming(
     let mut model = None;
     let mut input_tokens = None;
     let mut output_tokens = None;
+    let mut stop_reason = None;
 
     {
         let mut reader = response.body_mut().as_reader();
@@ -85,6 +87,11 @@ pub(crate) fn complete_streaming(
                     if let Some(usage) = value.get("usage") {
                         output_tokens = usage.get("output_tokens").and_then(Value::as_u64);
                     }
+                    if let Some(reason) =
+                        value.pointer("/delta/stop_reason").and_then(Value::as_str)
+                    {
+                        stop_reason = Some(reason.to_string());
+                    }
                 }
                 Some("error") => {
                     return Err(DocentError::ProviderTransport {
@@ -107,6 +114,7 @@ pub(crate) fn complete_streaming(
         model,
         usage: Usage::new(input_tokens, output_tokens),
         cached: false,
+        truncated: stop_reason.as_deref().is_some_and(hit_output_limit),
     })
 }
 
@@ -155,6 +163,10 @@ fn parse_response(value: &Value) -> Result<Completion, DocentError> {
             .map(str::to_string),
         usage: parse_usage(value),
         cached: false,
+        truncated: value
+            .get("stop_reason")
+            .and_then(Value::as_str)
+            .is_some_and(hit_output_limit),
     })
 }
 
@@ -225,6 +237,26 @@ mod tests {
     fn rejects_empty_content() {
         let error = parse_response(&json!({"content": []})).unwrap_err();
         assert!(matches!(error, DocentError::EmptyResponse));
+    }
+
+    #[test]
+    fn marks_an_answer_that_hit_the_output_limit() {
+        let value = json!({
+            "stop_reason": "max_tokens",
+            "content": [{"type": "text", "text": "cut"}]
+        });
+        let completion = parse_response(&value).unwrap();
+        assert!(completion.truncated);
+    }
+
+    #[test]
+    fn does_not_mark_a_finished_answer() {
+        let value = json!({
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": "done"}]
+        });
+        let completion = parse_response(&value).unwrap();
+        assert!(!completion.truncated);
     }
 
     #[test]
