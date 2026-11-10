@@ -296,7 +296,9 @@ fn create_parent(path: &Path) -> Result<(), DocentError> {
         return Ok(());
     }
 
+    #[cfg(unix)]
     let existed = parent.exists();
+
     fs::create_dir_all(parent).map_err(|source| DocentError::CreateDir {
         path: parent.to_path_buf(),
         source,

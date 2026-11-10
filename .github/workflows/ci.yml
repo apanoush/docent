@@ -1,0 +1,49 @@
+# Lint and test the crate on every push and pull request.
+#
+# This is separate from release.yml, which cargo-dist generates and which only
+# builds release artifacts. Running clippy on Windows as well as Linux keeps
+# cfg-gated code honest: a binding whose only use sits behind #[cfg(unix)] is
+# otherwise flagged only by the Windows build.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      # The runner images ship a current stable toolchain (>= 1.85, as required
+      # by the edition 2024 crate).
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Check formatting
+        if: runner.os == 'Linux'
+        run: cargo fmt --all -- --check
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Test
+        run: cargo test
