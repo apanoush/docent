@@ -12,7 +12,7 @@ Most lookup tools treat a word or phrase in isolation; Docent reads it in place,
 - **Context-aware prompts.** A selection is sent with its surrounding document, so the answer follows the sense the document uses.
 - **Terminal commands and inputs.** `explain`, `ask`, `translate`, `summarize`, and custom profiles accept a file, stdin, or pasted text plus a line, page, or phrase selection.
 - **PDF input.** Built-in extraction with page ranges and a fallback for broken font encodings, with no external tools. Scanned pages without a text layer are rejected.
-- **Profiles.** Four shipped profiles and your own TOML files, with placeholders, model, and generation parameters. See [configuration](docs/config.md).
+- **Profiles.** Four shipped profiles plus your own TOML files, with per-profile prompts, model, temperature, token limit, context mode, and answer language. See [configuration](docs/config.md).
 - **Streaming answers.** Plain text in the terminal, newline-delimited JSON events for adapters, or Server-Sent Events for a browser page.
 - **Browser answer pages.** Markdown rendered once by the CLI, MathML for TeX math, and answer styles you can override. See [the browser viewer guide](docs/viewer.md).
 - **Local history and cache.** Runs are recorded in SQLite, and identical rendered prompts return the stored answer without calling the provider. See [run history](docs/history.md).
