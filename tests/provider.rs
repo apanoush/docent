@@ -479,6 +479,38 @@ user_prompt = "{{context}}"
 }
 
 #[test]
+fn truncated_document_with_a_selection_warns() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    write_config(&dir, "openai", "http://127.0.0.1:1", "auto", 20);
+    write_profile(
+        &dir,
+        "summarize",
+        r#"requires = ["context"]
+user_prompt = "{{context}}"
+"#,
+    );
+
+    let document = "first line\nsecond line\nthird line\nfourth line";
+    let input = format!(
+        r#"{{"selection":"second line","byte_start":11,"byte_end":22,"document":{}}}"#,
+        serde_json::to_string(document).unwrap()
+    );
+    let output = run(
+        &dir,
+        &["request", "--profile", "summarize", "--print-prompt"],
+        &input,
+        None,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stderr(&output).contains("truncated"));
+    assert!(stderr(&output).contains("context.max_chars"));
+
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["context_truncated"], true);
+}
+
+#[test]
 fn ask_question_is_passed_through() {
     let server = MockServer::start(MockResponse::json(
         200,

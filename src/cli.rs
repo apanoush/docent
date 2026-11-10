@@ -865,9 +865,9 @@ fn execute(
             max_chars: config.context.max_chars,
         },
     );
-    if context.truncated && request.selection_range().is_none() {
+    if context.truncated {
         log::warn!(
-            "document context truncated to {} characters (context.max_chars = {}), so the answer covers only part of the document; use --context-mode full, raise context.max_chars, or narrow the input with --lines or --pages",
+            "document context truncated to {} characters (context.max_chars = {}), so only part of the document reaches the model; use --context-mode full, raise context.max_chars, or narrow the input with --lines or --pages",
             context.chars,
             config.context.max_chars
         );

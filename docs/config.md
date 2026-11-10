@@ -352,7 +352,7 @@ docent do my-profile notes.md --lines 12:20
 
 Piped stdin is always the document, never prompt input. Prompts only appear when stdin is a terminal and a required input is missing. A profile that requires a question prompts for one; a profile that requires a selection prompts for a line range or pasted text.
 
-When a run has no resolvable selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. `--context-mode full` sends the whole document, raising `context.max_chars` widens the window, and `--lines` or `--pages` narrow the subject.
+When the document is larger than `context.max_chars` in `auto` mode, Docent sends only part of it and warns on stderr. With a selection the window is centered on it; without one, Docent sends the beginning. `--context-mode full` sends the whole document, raising `context.max_chars` widens the window, and `--lines` or `--pages` narrow the subject.
 
 A bare `docent` prints a short getting-started message. `docent profiles` prints `name: description`; `docent profiles --json` remains the machine-readable form used by the Neovim, qutebrowser, and Firefox pickers.
 
