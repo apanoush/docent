@@ -12,12 +12,12 @@ Most lookup tools treat a word or phrase in isolation; Docent reads it in place,
 
 - **Context-aware prompts.** A selection is sent with its surrounding document, so the answer follows the sense the document uses.
 - **Terminal commands and inputs.** `explain`, `ask`, `translate`, `summarize`, and custom profiles accept a file, stdin, or pasted text plus a line, page, or phrase selection.
-- **PDF input.** Built-in extraction with page ranges and a fallback for broken font encodings, with no external tools. Scanned pages without a text layer are rejected.
+- **PDF and EPUB input.** Built-in extraction with page or section ranges and a fallback for broken font encodings, with no external tools. Scanned PDF pages and image-only EPUBs are rejected.
 - **Profiles.** Four shipped profiles plus your own TOML files, with per-profile prompts, model, temperature, token limit, context mode, and answer language. See [configuration](docs/config.md).
 - **Streaming answers.** Plain text in the terminal, newline-delimited JSON events for adapters, or Server-Sent Events for a browser page.
 - **Browser answer pages.** Markdown rendered once by the CLI, MathML for TeX math, and answer styles you can override. See [the browser viewer guide](docs/viewer.md).
 - **Local history and cache.** Runs are recorded in SQLite, and identical rendered prompts return the stored answer without calling the provider. See [run history](docs/history.md).
-- **Machine interface.** JSON on stdin for editors and browsers, plus `--print-prompt` to inspect the exact prompt and `docent extract` to see PDF text before it is sent. See [configuration](docs/config.md#machine-interface).
+- **Machine interface.** JSON on stdin for editors and browsers, plus `--print-prompt` to inspect the exact prompt and `docent extract` to see PDF or EPUB text before it is sent. See [configuration](docs/config.md#machine-interface).
 
 ## Install
 
@@ -62,6 +62,12 @@ docent summarize paper.md
 docent summarize paper.pdf --pages 1:4
 ```
 
+Explain a section of an EPUB:
+
+```bash
+docent explain book.epub --page 2
+```
+
 Pipe a document and select a line:
 
 ```bash
@@ -97,7 +103,7 @@ The adapter in `plugins/zathura/` reads the selection from the clipboard, extrac
 
 ## Status
 
-Early development, version 0.1.2. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, Firefox adapter, and zathura adapter work. PDF input is text-extraction only; layout reconstruction, OCR, and password-protected PDFs are not supported. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
+Early development, version 0.1.2. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, Firefox adapter, and zathura adapter work. PDF and EPUB input are text-extraction only; EPUB page numbers are reading-order spine sections. Layout reconstruction, OCR, DRM-protected EPUBs, and password-protected PDFs are not supported. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
 
 ## Documentation
 

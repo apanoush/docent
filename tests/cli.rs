@@ -4,7 +4,7 @@ use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use common::{sample_pdf, sample_pdf_with_nul_text, sample_pdf_with_unmapped_glyph};
+use common::{sample_epub, sample_pdf, sample_pdf_with_nul_text, sample_pdf_with_unmapped_glyph};
 use serde_json::Value;
 
 fn docent() -> Command {
@@ -496,8 +496,68 @@ fn extract_rejects_pages_for_a_text_file() {
     let output = run_extract(&[notes.to_str().unwrap(), "--pages", "1"], b"");
     assert_eq!(output.status.code(), Some(4));
     assert!(
-        stderr(&output).contains("--pages requires a PDF"),
+        stderr(&output).contains("--page and --pages require a PDF or EPUB"),
         "{}",
         stderr(&output)
     );
+}
+
+#[test]
+fn extract_prints_selected_epub_sections() {
+    let temp = tempfile::tempdir().unwrap();
+    let book = temp.path().join("book.epub");
+    fs::write(
+        &book,
+        sample_epub(&["<p>alpha section</p>", "<p>beta section</p>"]),
+    )
+    .unwrap();
+
+    let output = run_extract(&[book.to_str().unwrap(), "--pages", "2:2"], b"");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("beta section"), "{text}");
+    assert!(!text.contains("alpha section"), "{text}");
+}
+
+#[test]
+fn extract_clamps_the_end_epub_section() {
+    let temp = tempfile::tempdir().unwrap();
+    let book = temp.path().join("book.epub");
+    fs::write(
+        &book,
+        sample_epub(&["<p>alpha section</p>", "<p>beta section</p>"]),
+    )
+    .unwrap();
+
+    let output = run_extract(&[book.to_str().unwrap(), "--pages", "2:99"], b"");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("beta section"), "{text}");
+    assert!(!text.contains("alpha section"), "{text}");
+}
+
+#[test]
+fn extract_reads_an_epub_from_stdin() {
+    let epub = sample_epub(&["<p>from stdin</p>"]);
+
+    let output = run_extract(&["-", "--page", "1"], &epub);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("from stdin"), "{text}");
+}
+
+#[test]
+fn extract_rejects_a_start_epub_section_past_the_end() {
+    let temp = tempfile::tempdir().unwrap();
+    let book = temp.path().join("book.epub");
+    fs::write(&book, sample_epub(&["<p>alpha section</p>"])).unwrap();
+
+    let output = run_extract(&[book.to_str().unwrap(), "--pages", "2:3"], b"");
+    assert_eq!(output.status.code(), Some(4));
+    let error = stderr(&output);
+    assert!(error.contains("out of bounds"), "{error}");
+    assert!(error.contains("1 sections"), "{error}");
 }

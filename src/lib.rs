@@ -14,6 +14,7 @@ pub mod cli;
 pub mod config;
 pub mod context;
 pub mod defaults;
+pub mod epub;
 pub mod error;
 pub mod input;
 pub mod markdown;

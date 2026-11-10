@@ -11,8 +11,9 @@ The crate has two binary targets and a library target. `src/main.rs` is the CLI:
 | `defaults` | `include_str!` copies of the shipped `config.toml`, `answer.css`, and profiles. |
 | `profile` | Profile schema, validation, placeholder parsing, discovery, and metadata for `docent profiles`. |
 | `request` | The JSON request type and selection range resolution. |
-| `input` | Terminal input adapters: file and stdin documents, line and page ranges, phrase and text selection, prompts, and request construction. |
+| `input` | Terminal input adapters: file and stdin documents, line, page, and EPUB section ranges, phrase and text selection, prompts, and request construction. |
 | `pdf` | PDF magic-byte detection, page-range text extraction with `pdf-extract`, and a `pdf-inspector` fallback for broken font encodings. |
+| `epub` | EPUB detection, ZIP size preflight, linear spine-section selection with `rbook`, XHTML-to-text conversion with `html2text`, encryption checks, and archive limits. |
 | `context` | Context modes, windowing, line alignment, selection and truncation markers. |
 | `prompt` | Effective settings precedence and strict placeholder rendering. |
 | `provider` | Provider dispatch, shared HTTP code, error extraction, streaming types. |
@@ -78,6 +79,10 @@ pub fn resolve_request(
 pub fn is_pdf(bytes: &[u8]) -> bool;
 pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, String>;
 
+// epub
+pub fn is_zip(bytes: &[u8]) -> bool;
+pub fn extract(bytes: Vec<u8>, pages: Option<PageRange>) -> Result<ExtractedText, String>;
+
 // context
 pub fn build(request: &Request, options: ContextOptions) -> ContextResult;
 
@@ -127,9 +132,11 @@ Profile validation covers TOML fields, numeric ranges, placeholder syntax, requi
 
 `input::Document` normalizes CRLF and stores a byte range for every line. Line selections are sliced from the first line start to the last line end, so they include newlines between lines but not the trailing newline after the final line. `--phrase` uses the first matching occurrence and reports the count when it is ambiguous; `--text` resolves offsets when the text occurs in the document.
 
-Files and stdin are read as bytes. Inputs starting with `%PDF-` go through `pdf::extract`, which parses the document once and decodes only the requested `--page`/`--pages` range, or every page when no range is given. Page sets of four or more are decoded across worker threads; on a single-core machine the whole-document path keeps the library's single-pass decoder. When the extracted text contains NUL, control characters, or replacement characters, the same pages are decoded again with `pdf-inspector` and the cleaner result wins; the final text is sanitized for private-use, bidi, and remaining control characters. `pdf::extract` clamps the end of a page range to the last page; the human commands still reject a range that ends past the document, while `docent extract` uses the clamped text. PDF extraction failures, out-of-range starts, `--pages` on a non-PDF, and PDFs without a text layer become input errors with a specific message. Other inputs must be UTF-8 text.
+Files and stdin are read as bytes. Inputs starting with `%PDF-` go through `pdf::extract`, which parses the document once and decodes only the requested `--page`/`--pages` range, or every page when no range is given. Page sets of four or more are decoded across worker threads; on a single-core machine the whole-document path keeps the library's single-pass decoder. When the extracted text contains NUL, control characters, or replacement characters, the same pages are decoded again with `pdf-inspector` and the cleaner result wins; the final text is sanitized for private-use, bidi, and remaining control characters. `pdf::extract` clamps the end of a page range to the last page; the human commands still reject a range that ends past the document, while `docent extract` uses the clamped text. PDF extraction failures, out-of-range starts, `--pages` on a non-PDF or non-EPUB, and PDFs without a text layer become input errors with a specific message.
 
-`docent extract FILE [--page N | --pages START:END]` prints the document text to stdout. It is the machine interface to the same reader and is used by the zathura adapter for page windows; it is also useful for checking extraction by hand.
+ZIP inputs with `META-INF/container.xml` go through `epub::extract`. The archive is preflighted with `zip` for per-entry and total uncompressed size limits, then parsed with `rbook`. Text comes from the linear spine in reading order; non-linear entries are skipped, and each XHTML document is converted with `html2text`. Reflowable EPUBs have no fixed pages, so `--page` and `--pages` select 1-based spine sections. `epub::extract` clamps the end section like the PDF reader; the human commands reject an end past the document. Encrypted `EncryptedData` entries are rejected, while the IDPF and Adobe font-obfuscation algorithms are allowed. Malformed archives, non-EPUB ZIPs, empty spines, image-only documents, and unreadable resources become input errors. Other inputs must be UTF-8 text.
+
+`docent extract FILE [--page N | --pages START:END]` prints the document text to stdout. It is the machine interface to the same reader and is used by the zathura adapter for PDF page windows; it is also useful for checking PDF and EPUB extraction by hand.
 
 `Document::find` tries an exact match first, then falls back to a tolerant search that collapses whitespace runs and joins hyphenated line breaks. Offsets map back to the original text, so a passage copied out of a wrapped PDF still centers the context window. When a tolerant match succeeds for `--text` or `--phrase`, the request uses the document slice as the selection so the stored offsets remain valid.
 
@@ -149,9 +156,9 @@ Streaming clients parse SSE through `provider::stream::stream_sse`. The decoder 
 
 Rust tests are split into five layers:
 
-- Unit tests in each module for parsing, validation, windowing, rendering, math delimiters and MathML fallbacks, request bodies, response parsing, SSE decoding, settings precedence, line and page ranges, PDF detection and extraction, tolerant phrase matching, prompt sequencing, terminal request construction, Markdown sanitization, cache keys and eviction, and viewer page/server behavior.
-- Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, the bare getting-started output, viewer flag conflicts, and `docent extract` page handling.
-- Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, PDF page scoping, selection errors, input errors, the `html` event, MathML rendering, qutebrowser argument passing, the qutebrowser and Firefox viewers with a fake browser, and cache reuse, bypass, refresh, invalidation, and uncached failures. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
+- Unit tests in each module for parsing, validation, windowing, rendering, math delimiters and MathML fallbacks, request bodies, response parsing, SSE decoding, settings precedence, line and page ranges, PDF and EPUB detection and extraction, tolerant phrase matching, prompt sequencing, terminal request construction, Markdown sanitization, cache keys and eviction, and viewer page/server behavior.
+- Integration tests in `tests/cli.rs` for `init`, `config-path`, `profiles`, the bare getting-started output, viewer flag conflicts, and `docent extract` page and EPUB section handling.
+- Integration tests in `tests/provider.rs` for OpenAI and Anthropic requests, streaming, HTTP errors, malformed responses, terminal commands, file and stdin input, PDF page and EPUB section scoping, selection errors, input errors, the `html` event, MathML rendering, qutebrowser argument passing, the qutebrowser and Firefox viewers with a fake browser, and cache reuse, bypass, refresh, invalidation, and uncached failures. They use a local `TcpListener` mock server in `tests/common/mod.rs`, so no test reaches the network.
 - Native host unit tests in `src/native_host.rs` with a fake `docent` shell script for framing, partial reads, oversized messages, invalid requests, spawn failures, line forwarding, exit codes, `exec`, and `css`.
 - Native host integration tests in `tests/native_host.rs` that spawn the real `docent-native-host` binary and check framing, exit codes, and replies.
 

@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
-use common::{MockResponse, MockServer, sample_pdf};
+use common::{MockResponse, MockServer, sample_epub, sample_pdf};
 use serde_json::Value;
 
 fn write_config(
@@ -1193,6 +1193,12 @@ fn write_pdf(directory: &Path, pages: &[&str]) -> std::path::PathBuf {
     path
 }
 
+fn write_epub(directory: &Path, sections: &[&str]) -> std::path::PathBuf {
+    let path = directory.join("book.epub");
+    fs::write(&path, sample_epub(sections)).unwrap();
+    path
+}
+
 #[test]
 fn explain_file_lines_streams_plain_text() {
     let server = MockServer::start(MockResponse::sse(
@@ -1519,6 +1525,45 @@ fn summarize_reads_selected_pdf_pages() {
 }
 
 #[test]
+fn summarize_reads_selected_epub_sections() {
+    let server = MockServer::start(MockResponse::json(
+        200,
+        r#"{"choices":[{"message":{"content":"epub answer"}}]}"#,
+    ));
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("config");
+    setup(&dir, "openai", &server.base_url());
+    let book = write_epub(
+        temp.path(),
+        &[
+            "<p>alpha section</p>",
+            "<p>beta section</p>",
+            "<p>gamma section</p>",
+        ],
+    );
+
+    let output = run(
+        &dir,
+        &[
+            "summarize",
+            book.to_str().unwrap(),
+            "--pages",
+            "2:3",
+            "--no-stream",
+        ],
+        "",
+        Some("secret"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let body = server.requests()[0].json();
+    let user = body["messages"][1]["content"].as_str().unwrap();
+    assert!(user.contains("beta section"), "{user}");
+    assert!(user.contains("gamma section"), "{user}");
+    assert!(!user.contains("alpha section"), "{user}");
+}
+
+#[test]
 fn ask_finds_wrapped_text_in_a_file() {
     let server = MockServer::start(MockResponse::json(
         200,
@@ -1565,7 +1610,7 @@ fn pages_on_a_text_file_is_an_input_error() {
         None,
     );
     assert_eq!(output.status.code(), Some(4));
-    assert!(stderr(&output).contains("--pages requires a PDF"));
+    assert!(stderr(&output).contains("--page and --pages require a PDF or EPUB"));
 }
 
 #[test]

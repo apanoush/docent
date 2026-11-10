@@ -1,11 +1,14 @@
 #![allow(dead_code)]
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Cursor, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
 /// Canned HTTP response served by [`MockServer`].
 #[derive(Clone, Debug)]
@@ -123,6 +126,69 @@ pub fn sample_pdf_with_nul_text() -> Vec<u8> {
     ];
 
     assemble_pdf(&objects)
+}
+
+/// Creates a minimal EPUB 3 with one XHTML section per body string.
+pub fn sample_epub(sections: &[&str]) -> Vec<u8> {
+    let manifest = sections
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            format!(
+                r#"<item id="c{}" href="text/ch{}.xhtml" media-type="application/xhtml+xml"/>"#,
+                index + 1,
+                index + 1
+            )
+        })
+        .collect::<String>();
+    let spine = sections
+        .iter()
+        .enumerate()
+        .map(|(index, _)| format!(r#"<itemref idref="c{}"/>"#, index + 1))
+        .collect::<String>();
+    let package = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="id">urn:uuid:test</dc:identifier>
+    <dc:title>Sample Book</dc:title>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>{manifest}</manifest>
+  <spine>{spine}</spine>
+</package>"#
+    );
+
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .start_file(
+            "mimetype",
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )
+        .unwrap();
+    writer.write_all(b"application/epub+zip").unwrap();
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    let container = r#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#;
+    writer
+        .start_file("META-INF/container.xml", options)
+        .unwrap();
+    writer.write_all(container.as_bytes()).unwrap();
+    writer.start_file("OEBPS/content.opf", options).unwrap();
+    writer.write_all(package.as_bytes()).unwrap();
+    for (index, body) in sections.iter().enumerate() {
+        writer
+            .start_file(format!("OEBPS/text/ch{}.xhtml", index + 1), options)
+            .unwrap();
+        writer
+            .write_all(format!("<html><body>{body}</body></html>").as_bytes())
+            .unwrap();
+    }
+    writer.finish().unwrap().into_inner()
 }
 
 fn text_stream(text: &str) -> String {

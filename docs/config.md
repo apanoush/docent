@@ -335,16 +335,16 @@ docent do my-profile notes.md --lines 12:20
 
 ### Input rules
 
-- `FILE` is the document used for context and for line, phrase, or page selection. Use `-` for stdin.
+- `FILE` is the document used for context and for selecting lines, phrases, PDF pages, or EPUB sections. Use `-` for stdin.
 - With no `FILE` and piped stdin, the piped text is the document.
 - With no `FILE` and a terminal stdin, Docent prompts for a file. `--text` can supply a selection without a document when the profile does not require context.
 - `--lines START:END` is 1-based and inclusive. `--line N` is a single line.
-- `--page N` and `--pages START:END` are 1-based, inclusive, and PDF-only. They scope the document before `--lines`, `--phrase`, or `--text` apply, and may be combined with those selection options.
-- Inputs whose bytes start with `%PDF-` are decoded with the built-in extractor; other inputs must be UTF-8 text. PDFs without a text layer are rejected.
+- `--page N` and `--pages START:END` are 1-based, inclusive, and select PDF pages or EPUB spine sections. Reflowable EPUBs have no fixed pages; an EPUB page is a 1-based reading-order spine section. They scope the document before `--lines`, `--phrase`, or `--text` apply, and may be combined with those selection options.
+- Inputs whose bytes start with `%PDF-` are decoded with the built-in PDF extractor. ZIP archives containing `META-INF/container.xml` are decoded as EPUB. Other inputs must be UTF-8 text. PDFs without a text layer and EPUBs without extractable text are rejected; DRM-protected EPUBs are rejected.
 - `--phrase PHRASE` uses the first matching occurrence, trying an exact match before a whitespace-tolerant one. A missing phrase is an input error.
 - `--text TEXT` supplies a pasted selection. If a file or piped stdin is present, that is the document, and offsets are resolved with the same exact-then-tolerant search when the text occurs there.
 - Only one of `--lines`, `--line`, `--phrase`, and `--text` may be used.
-- `docent extract FILE [--page N | --pages START:END]` prints the extracted document text, which is useful for checking PDF input.
+- `docent extract FILE [--page N | --pages START:END]` prints the extracted document text, which is useful for checking PDF and EPUB input.
 - `--context-mode` and `--target-language` (alias `--to`) work on every terminal command.
 - `--viewer qutebrowser` shows the answer in a qutebrowser window or tab instead of stdout. `--qutebrowser`, `--qutebrowser-target`, `--qutebrowser-arg`, and `--answer-css` tune the viewer. See [the browser viewer](viewer.md).
 - `--viewer firefox` shows the answer in a Firefox window or tab instead. `--firefox`, `--firefox-target`, and `--answer-css` tune it.

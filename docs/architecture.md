@@ -5,7 +5,8 @@ Docent is a one-shot CLI with a terminal front end, an editor adapter, browser a
 ```text
 Terminal input          Neovim buffer        qutebrowser page      Firefox page
 FILE, stdin, --lines,   selection, document, selection, innerText, selection, innerText,
---phrase, --text        byte offsets, file   page URL and title   page URL and title
+--pages, --phrase,      byte offsets, file   page URL and title   page URL and title
+--text
         |                     |                    |                     |
         v                     v                    v                     v
 input adapter          JSON on stdin        JSON on stdin        native host -> JSON
@@ -59,7 +60,8 @@ The terminal commands (`explain`, `ask`, `translate`, `summarize`, `do`) build t
 - With no file and piped stdin, the piped text becomes the document.
 - With no file and a terminal stdin, Docent prompts for a file.
 - Inputs whose bytes start with `%PDF-` are decoded with `pdf-extract`; `--page` and `--pages` select 1-based pages before the text is joined. Text with NUL, control, or replacement characters is decoded again with `pdf-inspector`, and the cleaner result wins.
-- `docent extract` exposes the same reader as a machine command for adapters and shell use, and clamps an end page beyond the document instead of rejecting it.
+- ZIP inputs with `META-INF/container.xml` are decoded as EPUB with `rbook`. Text is read from the linear spine in reading order and converted with `html2text`; `--page` and `--pages` select 1-based spine sections because reflowable EPUBs have no fixed pages. The archive is preflighted with `zip` for entry and total size limits. Encrypted content is rejected, while font obfuscation is allowed.
+- `docent extract` exposes the same reader as a machine command for adapters and shell use, and clamps an end page or section beyond the document instead of rejecting it.
 - Line ranges are 1-based and inclusive and are converted to byte offsets through a line index.
 - `--phrase` uses the first phrase occurrence and fails when the phrase is absent.
 - `--text` supplies a selection without line numbers. Offsets are resolved when the text occurs in the document.
@@ -214,7 +216,7 @@ The stream ends with `done` or an error. A stream that ends without either is tr
 | `0` | Success. |
 | `2` | Configuration or usage error: bad TOML, missing API key variable, invalid settings, missing profile. |
 | `3` | Provider or network error: HTTP error, timeout, malformed response, empty response. |
-| `4` | Invalid input: malformed request JSON, missing required selection or question, unreadable document, empty document, phrase not found, line or page range out of bounds, unreadable PDF, PDF without a text layer. |
+| `4` | Invalid input: malformed request JSON, missing required selection or question, unreadable document, empty document, phrase not found, line, page, or section range out of bounds, unreadable PDF or EPUB, PDF without a text layer, EPUB without extractable text, DRM-protected EPUB. |
 
 Diagnostics and prompt labels go to stderr. The answer goes to stdout. A CLI invocation that is piped into another program can therefore keep the two separate.
 
@@ -239,21 +241,24 @@ These names are easy to confuse. Use them consistently.
 | `docent` | The product, the CLI binary, and the library crate. |
 | `provider` | The service connection, configured under `[provider]`: OpenAI, Anthropic, OpenRouter, or a local server. |
 | `wire_format` | The request shape, `openai` or `anthropic`. It is not the provider itself. |
-| `input` | The terminal input adapters in `src/input.rs`: files, stdin, line ranges, phrases, pasted text, and PDF page ranges. |
+| `input` | The terminal input adapters in `src/input.rs`: files, stdin, line ranges, phrases, pasted text, and PDF page or EPUB section ranges. |
 | `pdf` | The PDF text extractor in `src/pdf.rs`: magic-byte detection and page-range decoding. |
+| `epub` | The EPUB text extractor in `src/epub.rs`: ZIP detection, spine-section selection, XHTML-to-text conversion, and archive limits. |
 | `source` | The caller recorded in history (`cli`, `nvim`, `qutebrowser`, `firefox`, `zathura`), set by `--source`. It is not the input adapter. |
 | `storage` | The SQLite store in `src/storage.rs` for run history and the answer cache. |
 | `run history` | The user-facing record of provider calls, configured by `[history]` and `--no-history`. |
 | `history` | Reserved for the run-history feature and for future conversation history. The module is `storage`. |
 | `answer target` | Where the answer goes: terminal, qutebrowser, or Firefox. The CLI flag and config table keep the name `viewer`, and the Rust `Viewer` type is the browser page process. |
 | `answer` | The model's returned text. `output` is the history and cache column, and `Completion.text` is the provider response field. |
-| `header` | The file or page part shown in the answer page status line. `label` is the whole status line. |
+| `header` | The file or page or section part shown in the answer page status line. `label` is the whole status line. |
 
 ## Alternatives considered
 
 - **Markdown profiles with a separate metadata block** would be pleasant for prose, but splits one profile across two files or requires a custom front-matter parser. Typed TOML keeps metadata and prompt together and reuses the same parser as `config.toml`.
 - **`reqwest` with Tokio** would support advanced HTTP features, but the CLI is a one-shot process and the editor and browser adapters already provide asynchrony. Blocking `ureq` with rustls keeps the dependency graph small and avoids an OpenSSL system dependency.
 - **Provider SDKs** would reduce wire-format code, but they add large dependency trees and their streaming types differ. Two small clients are easier to test and to keep compatible with OpenAI-style gateways.
+- **Using calibre or `ebook-convert` for EPUB** would avoid an in-process reader, but it adds an external runtime dependency and process surface to the core input path. `rbook` and `html2text` keep `cargo install` self-contained.
+- **Synthetic EPUB pages or printed page-list numbers** would resemble PDF page numbers, but synthetic pages split paragraphs arbitrarily and page-lists are absent from most reflowable EPUBs. Reading-order spine sections are deterministic for every EPUB; printed page support is deferred.
 - **Raw text streaming** would be simpler for the Lua side, but chunk boundaries can split UTF-8 sequences and multi-byte characters. NDJSON gives the plugin complete, decodable units.
 - **Temporary files for the request** would avoid stdin handling, but they add cleanup, permissions, and race concerns. `vim.system` already supports stdin strings.
 - **A generic command provider** would unlock subscription-only tools, but its output contracts, permissions, and process lifecycle vary too much for the first release.

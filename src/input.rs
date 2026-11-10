@@ -5,6 +5,7 @@ use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use crate::epub;
 use crate::error::DocentError;
 use crate::pdf;
 use crate::profile::Requirement;
@@ -50,12 +51,12 @@ impl std::fmt::Display for LineRange {
     }
 }
 
-/// A 1-based, inclusive page range for PDF documents.
+/// A 1-based, inclusive page range for PDF pages or EPUB spine sections.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageRange {
-    /// First page.
+    /// First page or section.
     pub start: usize,
-    /// Last page.
+    /// Last page or section.
     pub end: usize,
 }
 
@@ -605,15 +606,31 @@ fn document_from_bytes(
         return Ok(Document::from_text(name, extracted.text));
     }
 
+    if epub::is_zip(&bytes) {
+        let extracted = epub::extract(bytes, pages).map_err(|message| {
+            DocentError::Input(format!("failed to read EPUB {name}: {message}"))
+        })?;
+        if let Some(range) = pages
+            && !clamp_pages
+            && range.end > extracted.sections
+        {
+            return Err(DocentError::Input(format!(
+                "failed to read EPUB {name}: page range {range} is out of bounds; the EPUB has {} sections",
+                extracted.sections
+            )));
+        }
+        return Ok(Document::from_text(name, extracted.text));
+    }
+
     if pages.is_some() {
         return Err(DocentError::Input(format!(
-            "--pages requires a PDF; {name} is not a PDF"
+            "--page and --pages require a PDF or EPUB; {name} is neither"
         )));
     }
 
     let text = String::from_utf8(bytes).map_err(|_| {
         DocentError::Input(format!(
-            "{name} is not UTF-8 text; supported inputs are plain text and PDF"
+            "{name} is not UTF-8 text; supported inputs are plain text, PDF, and EPUB"
         ))
     })?;
     Ok(Document::from_text(name, text))
@@ -987,7 +1004,119 @@ mod tests {
     }
 
     #[test]
-    fn rejects_pages_for_non_pdf_documents() {
+    fn reads_epub_documents() {
+        let epub =
+            crate::epub::tests::sample_epub(&["<p>alpha section</p>", "<p>beta section</p>"]);
+        let (_directory, path) = temp_byte_file("book.epub", &epub);
+        let mut stdin = Cursor::new(Vec::new());
+        let request = resolve_request(
+            options(
+                Some(&path),
+                Some(SelectionArg::Text("beta section".to_string())),
+                None,
+                &[Requirement::Selection],
+            ),
+            &mut NoPrompter,
+            false,
+            &mut stdin,
+        )
+        .unwrap();
+
+        let document = request.document.unwrap();
+        assert!(document.contains("alpha section"), "{document:?}");
+        assert!(document.contains("beta section"), "{document:?}");
+        assert_eq!(request.file.as_deref(), path.to_str());
+        assert!(request.byte_start.is_some());
+        assert!(request.byte_end.is_some());
+    }
+
+    #[test]
+    fn reads_epub_documents_from_stdin() {
+        let epub = crate::epub::tests::sample_epub(&["<p>alpha section</p>"]);
+        let mut stdin = Cursor::new(epub);
+        let request = resolve_request(
+            options(
+                None,
+                Some(SelectionArg::Text("alpha section".to_string())),
+                None,
+                &[Requirement::Selection],
+            ),
+            &mut NoPrompter,
+            false,
+            &mut stdin,
+        )
+        .unwrap();
+
+        assert_eq!(request.file.as_deref(), Some("(stdin)"));
+        assert!(request.document.unwrap().contains("alpha section"));
+    }
+
+    #[test]
+    fn scopes_epub_documents_to_sections() {
+        let epub = crate::epub::tests::sample_epub(&[
+            "<p>alpha section</p>",
+            "<p>beta section</p>",
+            "<p>gamma section</p>",
+        ]);
+        let (_directory, path) = temp_byte_file("book.epub", &epub);
+        let mut stdin = Cursor::new(Vec::new());
+        let mut options = options(Some(&path), None, None, &[Requirement::Context]);
+        options.pages = Some(PageRange { start: 2, end: 3 });
+        let request = resolve_request(options, &mut NoPrompter, false, &mut stdin).unwrap();
+
+        let document = request.document.unwrap();
+        assert!(!document.contains("alpha section"), "{document:?}");
+        assert!(document.contains("beta section"), "{document:?}");
+        assert!(document.contains("gamma section"), "{document:?}");
+    }
+
+    #[test]
+    fn reports_an_epub_section_range_past_the_end() {
+        let epub = crate::epub::tests::sample_epub(&["<p>alpha section</p>"]);
+        let (_directory, path) = temp_byte_file("book.epub", &epub);
+        let mut stdin = Cursor::new(Vec::new());
+        let mut options = options(Some(&path), None, None, &[Requirement::Context]);
+        options.pages = Some(PageRange::single(2));
+        let error = resolve_request(options, &mut NoPrompter, false, &mut stdin).unwrap_err();
+
+        assert!(error.to_string().contains("out of bounds"), "{error}");
+        assert!(error.to_string().contains("1 sections"), "{error}");
+    }
+
+    #[test]
+    fn clamps_epub_section_ranges_for_extract() {
+        let epub =
+            crate::epub::tests::sample_epub(&["<p>alpha section</p>", "<p>beta section</p>"]);
+        let (_directory, path) = temp_byte_file("book.epub", &epub);
+        let mut stdin = Cursor::new(Vec::new());
+        let mut options = options(Some(&path), None, None, &[Requirement::Context]);
+        options.clamp_pages = true;
+        options.pages = Some(PageRange { start: 2, end: 9 });
+        let request = resolve_request(options, &mut NoPrompter, false, &mut stdin).unwrap();
+
+        let document = request.document.unwrap();
+        assert!(!document.contains("alpha section"), "{document:?}");
+        assert!(document.contains("beta section"), "{document:?}");
+    }
+
+    #[test]
+    fn rejects_epubs_without_extractable_text() {
+        let epub = crate::epub::tests::sample_epub(&[r#"<img src="cover.jpg"/>"#]);
+        let (_directory, path) = temp_byte_file("book.epub", &epub);
+        let mut stdin = Cursor::new(Vec::new());
+        let error = resolve_request(
+            options(Some(&path), None, None, &[Requirement::Context]),
+            &mut NoPrompter,
+            false,
+            &mut stdin,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("no extractable text"), "{error}");
+    }
+
+    #[test]
+    fn rejects_pages_for_non_pdf_or_epub_documents() {
         let (_directory, path) = temp_file("notes.md", "alpha");
         let mut stdin = Cursor::new(Vec::new());
         let mut options = options(Some(&path), None, None, &[Requirement::Context]);
@@ -995,7 +1124,9 @@ mod tests {
         let error = resolve_request(options, &mut NoPrompter, false, &mut stdin).unwrap_err();
 
         assert!(
-            error.to_string().contains("--pages requires a PDF"),
+            error
+                .to_string()
+                .contains("--page and --pages require a PDF or EPUB"),
             "{error}"
         );
     }
@@ -1029,7 +1160,10 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("is not UTF-8 text"), "{error}");
-        assert!(error.to_string().contains("plain text and PDF"), "{error}");
+        assert!(
+            error.to_string().contains("plain text, PDF, and EPUB"),
+            "{error}"
+        );
     }
 
     #[test]

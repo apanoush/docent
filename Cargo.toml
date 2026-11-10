@@ -23,11 +23,14 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 directories = "6.0.0"
 env_logger = "0.11.11"
 getrandom = "0.4.3"
+html2text = "0.17.4"
 log = "0.4.35"
 pdf-extract = "0.12.1"
 pdf-inspector = "~1.25"
 pulldown-cmark = { version = "0.13.6", default-features = false, features = ["html"] }
 pulldown-latex = "0.8.0"
+quick-xml = "0.42.0"
+rbook = { version = "0.7.12", default-features = false }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -35,6 +38,7 @@ shellexpand = "3.1.2"
 thiserror = "2.0.21"
 toml = "1.2.0"
 ureq = "3.5.1"
+zip = { version = "9.5.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"

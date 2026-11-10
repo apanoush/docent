@@ -107,7 +107,7 @@ pub enum Command {
     Summarize(HumanArgs),
     /// Run a custom profile.
     Do(DoArgs),
-    /// Print a document's text, decoding PDFs.
+    /// Print a document's text, decoding PDFs and EPUBs.
     Extract(ExtractArgs),
     /// Read a JSON request from stdin (machine interface).
     Request(RequestArgs),
@@ -126,7 +126,7 @@ pub struct HumanArgs {
     #[command(flatten)]
     pub selection: SelectionArgs,
 
-    /// Page options for PDF documents.
+    /// Page options for PDF and EPUB documents.
     #[command(flatten)]
     pub pages: PageArgs,
 
@@ -150,7 +150,7 @@ pub struct DoArgs {
     #[command(flatten)]
     pub selection: SelectionArgs,
 
-    /// Page options for PDF documents.
+    /// Page options for PDF and EPUB documents.
     #[command(flatten)]
     pub pages: PageArgs,
 
@@ -294,15 +294,15 @@ impl SelectionArgs {
     }
 }
 
-/// Page range options for PDF documents.
+/// Page or section options for PDF and EPUB documents.
 #[derive(Debug, Args)]
 #[group(id = "page_scope", multiple = false)]
 pub struct PageArgs {
-    /// Page range, 1-based and inclusive, for example 5:7 (PDF only).
+    /// Page range, 1-based and inclusive, for example 5:7. For EPUB, selects reading-order spine sections.
     #[arg(long, value_parser = parse_page_range, value_name = "START:END")]
     pub pages: Option<PageRange>,
 
-    /// Single page number (PDF only).
+    /// Single page number. For EPUB, selects one reading-order spine section.
     #[arg(long, value_parser = parse_page_number_value, value_name = "N")]
     pub page: Option<usize>,
 }
@@ -320,7 +320,7 @@ pub struct ExtractArgs {
     #[arg(value_name = "FILE")]
     pub file: PathBuf,
 
-    /// Page options for PDF documents.
+    /// Page options for PDF and EPUB documents.
     #[command(flatten)]
     pub pages: PageArgs,
 }
@@ -610,10 +610,11 @@ fn human_label(file: Option<&Path>, selection: &SelectionArgs, pages: Option<Pag
         .unwrap_or_else(|| "(stdin)".to_string());
     let mut parts = Vec::new();
     if let Some(pages) = pages {
+        let (single, plural) = page_unit(file);
         let label = if pages.start == pages.end {
-            "page"
+            single
         } else {
-            "pages"
+            plural
         };
         parts.push(format!("{label} {pages}"));
     }
@@ -631,6 +632,19 @@ fn human_label(file: Option<&Path>, selection: &SelectionArgs, pages: Option<Pag
         name
     } else {
         format!("{name} ({})", parts.join(", "))
+    }
+}
+
+/// EPUB has no fixed pages, so its ranges are labeled as spine sections.
+fn page_unit(file: Option<&Path>) -> (&'static str, &'static str) {
+    let is_epub = file
+        .and_then(|path| path.extension())
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("epub"));
+    if is_epub {
+        ("section", "sections")
+    } else {
+        ("page", "pages")
     }
 }
 
@@ -1525,5 +1539,19 @@ mod tests {
             parse_page_number_value("abc").unwrap_err(),
             "'abc' is not a page number"
         );
+    }
+
+    #[test]
+    fn labels_epub_ranges_as_sections() {
+        assert_eq!(
+            page_unit(Some(Path::new("book.epub"))),
+            ("section", "sections")
+        );
+        assert_eq!(
+            page_unit(Some(Path::new("BOOK.EPUB"))),
+            ("section", "sections")
+        );
+        assert_eq!(page_unit(Some(Path::new("paper.pdf"))), ("page", "pages"));
+        assert_eq!(page_unit(None), ("page", "pages"));
     }
 }
