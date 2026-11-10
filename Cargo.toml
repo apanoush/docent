@@ -1,6 +1,6 @@
 [package]
 name = "docent"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.88"
 description = "A context-aware reading companion for the terminal, Neovim, and the browser"

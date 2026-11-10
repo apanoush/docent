@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 __all__ = ["profile_list", "refresh", "setup", "stylesheet"]
 
 

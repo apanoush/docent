@@ -105,7 +105,7 @@ The adapter in `plugins/zathura/` reads the selection from the clipboard, extrac
 
 ## Status
 
-Early development, version 0.1.2. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, Firefox adapter, and zathura adapter work. PDF and EPUB input are text-extraction only; EPUB page numbers are reading-order spine sections. Layout reconstruction, OCR, DRM-protected EPUBs, and password-protected PDFs are not supported. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
+Early development, version 0.2.0. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, Firefox adapter, and zathura adapter work. PDF and EPUB input are text-extraction only; EPUB page numbers are reading-order spine sections. Layout reconstruction, OCR, DRM-protected EPUBs, and password-protected PDFs are not supported. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
 
 ## Documentation
 

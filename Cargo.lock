@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "docent"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "clap",
