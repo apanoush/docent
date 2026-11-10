@@ -175,7 +175,7 @@ The extension is for capturing a page selection. To show a terminal answer in Fi
 Add a binding to `~/.config/zathura/zathurarc`:
 
 ```zathurarc
-map <C-e> exec "/home/you/path/to/docent/plugins/zathura/docent-zathura explain $FILE $PAGE"
+map <C-e> exec '/home/you/path/to/docent/plugins/zathura/docent-zathura explain "$FILE" "$PAGE"'
 ```
 
 Select text with the mouse and press `<C-e>`. The answer streams into a terminal window. Add `--viewer nvim` inside the quotes to stream into the Neovim plugin's Markdown float, or `--viewer qutebrowser` to open a qutebrowser window or tab with rendered Markdown. `ask` and `translate` work the same way. The terminal, Neovim, and qutebrowser viewers prompt for the question. See [the zathura guide](docs/zathura.md).

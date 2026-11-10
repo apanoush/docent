@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Bind it in zathurarc, for example: "
-            'map <C-e> exec "/path/to/docent-zathura explain $FILE $PAGE"'
+            'map <C-e> exec \'/path/to/docent-zathura explain "$FILE" "$PAGE"\''
         ),
     )
     subcommands = parser.add_subparsers(dest="command", required=True)

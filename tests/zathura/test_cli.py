@@ -52,6 +52,12 @@ def _payload(captured: dict[str, Any]) -> dict[str, Any]:
         shutil.rmtree(request_file.parent, ignore_errors=True)
 
 
+def test_help_quotes_file_and_page_placeholders() -> None:
+    help_text = cli.build_parser().format_help()
+
+    assert 'explain "$FILE" "$PAGE"' in help_text
+
+
 def test_parser_accepts_explain_options() -> None:
     args = cli.build_parser().parse_args(
         ["explain", "paper.pdf", "3", "--clipboard", "--context-pages", "2"]

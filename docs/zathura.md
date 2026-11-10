@@ -17,24 +17,24 @@ The zathura adapter reads the selected text from the system clipboard, extracts 
 Add bindings to `~/.config/zathura/zathurarc`:
 
 ```zathurarc
-map <C-e> exec "/home/you/path/to/docent/plugins/zathura/docent-zathura explain $FILE $PAGE"
-map <C-a> exec "/home/you/path/to/docent/plugins/zathura/docent-zathura ask $FILE $PAGE"
-map <C-t> exec "/home/you/path/to/docent/plugins/zathura/docent-zathura translate $FILE $PAGE"
-map <C-s> exec "/home/you/path/to/docent/plugins/zathura/docent-zathura summarize $FILE $PAGE"
+map <C-e> exec '/home/you/path/to/docent/plugins/zathura/docent-zathura explain "$FILE" "$PAGE"'
+map <C-a> exec '/home/you/path/to/docent/plugins/zathura/docent-zathura ask "$FILE" "$PAGE"'
+map <C-t> exec '/home/you/path/to/docent/plugins/zathura/docent-zathura translate "$FILE" "$PAGE"'
+map <C-s> exec '/home/you/path/to/docent/plugins/zathura/docent-zathura summarize "$FILE" "$PAGE"'
 ```
 
-Quote the whole `exec` command. Zathura's `map` command stores only one argument after the shortcut function, so an unquoted command drops the subcommand and the `$FILE` and `$PAGE` arguments.
+Quote the whole `exec` command. Zathura's `map` command stores only one argument after the shortcut function, so an unquoted command drops the subcommand and the `$FILE` and `$PAGE` arguments. Use single quotes for the outer command and double quotes around the placeholders: zathura splits the command again when the binding runs, so a file path with spaces would otherwise become several arguments.
 
 To stream into Neovim instead of the terminal, add `--viewer nvim` inside the quotes:
 
 ```zathurarc
-map <C-e> exec "/home/you/path/to/docent/plugins/zathura/docent-zathura explain $FILE $PAGE --viewer nvim"
+map <C-e> exec '/home/you/path/to/docent/plugins/zathura/docent-zathura explain "$FILE" "$PAGE" --viewer nvim'
 ```
 
 To open the answer in qutebrowser, use `--viewer qutebrowser`:
 
 ```zathurarc
-map <C-e> exec "/home/you/path/to/docent/plugins/zathura/docent-zathura explain $FILE $PAGE --viewer qutebrowser"
+map <C-e> exec '/home/you/path/to/docent/plugins/zathura/docent-zathura explain "$FILE" "$PAGE" --viewer qutebrowser'
 ```
 
 Use absolute paths. Zathura launched from a desktop entry may not inherit your shell `PATH` or the API-key environment variable. The adapter searches `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, and `/usr/bin` for `docent`; export the key in the session that starts zathura, as the [qutebrowser guide](qutebrowser.md) describes.
@@ -80,7 +80,7 @@ Options:
 | `--question TEXT` | none | Question for `ask` or `do`. The viewer prompts when omitted for `ask`. |
 | `--target-language LANG`, `--to LANG` | profile or config | Translation target for `translate`. |
 
-Quote values that contain spaces inside the quoted `exec` command. Zathura's `exec` splits unquoted words into separate arguments.
+Quote values that contain spaces inside the quoted `exec` command, including `$FILE` and `$PAGE`. Zathura's `exec` splits unquoted words into separate arguments.
 
 ## What gets captured
 
@@ -102,7 +102,7 @@ With `--viewer qutebrowser`, the helper starts a small HTTP server bound to `127
 The page uses the same answer shell and `answer.css` as the qutebrowser adapter, so the visual style matches. It does not read qutebrowser's status-bar palette because it runs outside qutebrowser. Use `--qutebrowser-css PATH` to append your own CSS after the answer styles, for example:
 
 ```zathurarc
-map <C-e> exec "/home/you/path/to/docent/plugins/zathura/docent-zathura explain $FILE $PAGE --viewer qutebrowser --qutebrowser-css /home/you/.config/docent/answer.css"
+map <C-e> exec '/home/you/path/to/docent/plugins/zathura/docent-zathura explain "$FILE" "$PAGE" --viewer qutebrowser --qutebrowser-css /home/you/.config/docent/answer.css'
 ```
 
 Warnings the CLI logs after a successful run stay visible in every viewer: the terminal viewer prints `warning: ...` lines after the answer, the Neovim viewer reports them with `vim.notify`, and the qutebrowser viewer appends a warning block styled by `.docent-warning`.
