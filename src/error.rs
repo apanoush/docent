@@ -23,7 +23,7 @@ pub enum DocentError {
     },
 
     #[error(
-        "history database {path} uses schema version {version}, but this build supports {supported}"
+        "history database {path} has schema version {version}, but this build expects {supported}; delete or rename the file (for example: mv {path} {path}.old) and docent will create a new one"
     )]
     HistorySchema {
         /// Database with the incompatible schema.

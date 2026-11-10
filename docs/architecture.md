@@ -118,7 +118,7 @@ The shared executor builds the context and prompt once, then selects the output 
 
 When history is enabled, `cli::execute` records one row after the provider call returns or fails. The row stores the command, profile, source, structured request inputs, effective settings, the rendered system and user messages, the answer, token usage, duration, status, and error. Streamed runs record the partial answer when the stream fails, and `output_truncated` marks an answer the provider stopped at `max_tokens`. `--print-prompt` and failures before the provider call are not recorded.
 
-`storage` opens the SQLite database once per run, enables WAL mode, applies a busy timeout, and creates the schema on first use. Schema changes are tracked with `PRAGMA user_version`. The database path comes from `history.database` or the platform data directory. A failed write is logged as a warning and never changes the command result.
+`storage` opens the SQLite database once per run, enables WAL mode, applies a busy timeout, and creates the schema on first use. The schema version is tracked with `PRAGMA user_version`; a file from any other version is rejected rather than migrated, because Docent has no released database history to preserve. The database path comes from `history.database` or the platform data directory. A failed write or a rejected file is logged as a warning and never changes the command result.
 
 The global `--source` flag, default `cli`, identifies the caller. The adapters pass `nvim`, `qutebrowser`, `firefox`, or `zathura`; custom plugins pass their own name. The source is only stored in history and does not affect request handling.
 

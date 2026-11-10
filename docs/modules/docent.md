@@ -20,7 +20,7 @@ The crate has two binary targets and a library target. `src/main.rs` is the CLI:
 | `provider::openai` | OpenAI Chat Completions request and response handling. |
 | `provider::anthropic` | Anthropic Messages request and response handling. |
 | `provider::stream` | Incremental SSE decoding. |
-| `storage` | SQLite storage for run history and the answer cache, schema creation and migration, path resolution, and inserts. |
+| `storage` | SQLite storage for run history and the answer cache, schema creation, path resolution, and inserts. |
 | `cache` | Exact-match answer cache keyed on the rendered prompt: key construction, lookup, store, hit counters, and eviction. |
 | `markdown` | Safe Markdown-to-HTML rendering and TeX-to-MathML math, shared by the CLI viewer and the `html` stream event. |
 | `viewer` | Qutebrowser and Firefox answer viewer: page shell, loopback SSE server, token, launch, and cancellation. |

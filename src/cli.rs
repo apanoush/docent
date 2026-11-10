@@ -26,7 +26,7 @@ use crate::viewer::{
 const AFTER_HELP: &str = "Examples:
   docent explain notes.md --lines 12:20
   docent ask notes.md --lines 12:20 --question \"Why does this work?\"
-  docent translate notes.md --lines 12:20 --to French
+  docent translate notes.md --lines 12:20 --target-language French
   docent summarize paper.md
   docent summarize paper.pdf --pages 1:4
   docent explain notes.md --lines 12:20 --viewer qutebrowser
@@ -175,7 +175,7 @@ pub struct CommonArgs {
     pub context_mode: Option<ContextMode>,
 
     /// Translation target language.
-    #[arg(long, visible_alias = "to", value_name = "LANG")]
+    #[arg(long, value_name = "LANG")]
     pub target_language: Option<String>,
 
     /// Answer viewer options.
@@ -216,7 +216,7 @@ pub struct ViewerArgs {
     pub firefox_target: Option<FirefoxTarget>,
 
     /// CSS file appended after the answer styles.
-    #[arg(long, visible_alias = "qutebrowser-css", value_name = "PATH")]
+    #[arg(long, value_name = "PATH")]
     pub answer_css: Option<PathBuf>,
 }
 
@@ -335,7 +335,7 @@ pub struct RequestArgs {
     #[arg(long)]
     pub question: Option<String>,
     /// Translation target language.
-    #[arg(long, visible_alias = "to")]
+    #[arg(long, value_name = "LANG")]
     pub target_language: Option<String>,
     /// Context mode override.
     #[arg(long, value_enum)]
@@ -477,7 +477,7 @@ fn print_getting_started() {
     println!("Try:");
     println!("  docent explain notes.md --lines 12:20");
     println!("  docent ask notes.md --lines 12:20 --question \"Why does this work?\"");
-    println!("  docent translate notes.md --lines 12:20 --to French");
+    println!("  docent translate notes.md --lines 12:20 --target-language French");
     println!("  docent summarize paper.md");
     println!("  docent explain notes.md --lines 12:20 --viewer qutebrowser");
     println!("  docent explain notes.md --lines 12:20 --viewer firefox");

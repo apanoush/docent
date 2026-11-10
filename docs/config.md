@@ -324,7 +324,7 @@ docent explain notes.md --line 12
 docent explain notes.md --phrase "transformer"
 docent explain notes.md --text "a pasted passage"
 docent ask notes.md --lines 12:20 --question "Why does this work?"
-docent translate notes.md --lines 12:20 --to French
+docent translate notes.md --lines 12:20 --target-language French
 docent summarize paper.md
 docent summarize paper.md --lines 12:40
 docent summarize paper.pdf
@@ -345,7 +345,7 @@ docent do my-profile notes.md --lines 12:20
 - `--text TEXT` supplies a pasted selection. If a file or piped stdin is present, that is the document, and offsets are resolved with the same exact-then-tolerant search when the text occurs there.
 - Only one of `--lines`, `--line`, `--phrase`, and `--text` may be used.
 - `docent extract FILE [--page N | --pages START:END]` prints the extracted document text, which is useful for checking PDF and EPUB input.
-- `--context-mode` and `--target-language` (alias `--to`) work on every terminal command.
+- `--context-mode` and `--target-language` work on every terminal command.
 - `--viewer qutebrowser` shows the answer in a qutebrowser window or tab instead of stdout. `--qutebrowser`, `--qutebrowser-target`, `--qutebrowser-arg`, and `--answer-css` tune the viewer. See [the browser viewer](viewer.md).
 - `--viewer firefox` shows the answer in a Firefox window or tab instead. `--firefox`, `--firefox-target`, and `--answer-css` tune it.
 - Without `--viewer`, these commands use `viewer.default` from `config.toml`, which defaults to `terminal`. Pass `--viewer terminal` to override a configured browser default.
@@ -398,7 +398,7 @@ Output modes for `docent request`:
 docent explain [FILE] [--lines START:END | --line N | --phrase PHRASE | --text TEXT]
                [--page N | --pages START:END] [--question TEXT]
                [--context-mode auto|full|none]
-               [--target-language LANG | --to LANG] [--no-stream]
+               [--target-language LANG] [--no-stream]
                [--viewer terminal|qutebrowser|firefox] [--qutebrowser PATH]
                [--qutebrowser-target TARGET] [--qutebrowser-arg ARG]
                [--firefox PATH] [--firefox-target TARGET] [--answer-css PATH]

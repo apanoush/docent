@@ -136,9 +136,9 @@ pub fn write(config: &Config, config_dir: &Path, run: &NewRun) -> Result<(), Doc
     Ok(())
 }
 
-/// Opens the history database, applying the cache table migration when needed.
+/// Opens the history database, creating the schema on first use.
 ///
-/// Callers that read from another table also use this, so schema changes stay in
+/// Callers that read from another table also use this, so schema handling stays in
 /// one place.
 pub(crate) fn open_database(
     config: &Config,
@@ -180,7 +180,10 @@ fn ensure_schema(connection: &Connection, path: &Path) -> Result<(), DocentError
             source,
         })?;
 
-    if version > SCHEMA_VERSION {
+    if version == SCHEMA_VERSION {
+        return Ok(());
+    }
+    if version != 0 {
         return Err(DocentError::HistorySchema {
             path: path.to_path_buf(),
             version,
@@ -188,22 +191,18 @@ fn ensure_schema(connection: &Connection, path: &Path) -> Result<(), DocentError
         });
     }
 
-    for (target, migration) in MIGRATIONS.iter().filter(|(target, _)| *target > version) {
-        connection
-            .execute_batch(migration)
-            .map_err(|source| DocentError::History {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        connection
-            .pragma_update(None, "user_version", *target)
-            .map_err(|source| DocentError::History {
-                path: path.to_path_buf(),
-                source,
-            })?;
-    }
-
-    Ok(())
+    connection
+        .execute_batch(SCHEMA)
+        .map_err(|source| DocentError::History {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    connection
+        .pragma_update(None, "user_version", SCHEMA_VERSION)
+        .map_err(|source| DocentError::History {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 fn insert(connection: &Connection, path: &Path, run: &NewRun) -> Result<(), DocentError> {
@@ -296,7 +295,7 @@ fn restrict_permissions(path: &Path) {
 #[cfg(not(unix))]
 fn restrict_permissions(_path: &Path) {}
 
-const SCHEMA_V1: &str = r#"
+const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at INTEGER NOT NULL,
@@ -317,7 +316,7 @@ CREATE TABLE IF NOT EXISTS runs (
     context_max_chars INTEGER NOT NULL,
     context_chars INTEGER NOT NULL,
     context_truncated INTEGER NOT NULL,
-    provider TEXT NOT NULL,
+    wire_format TEXT NOT NULL,
     base_url TEXT NOT NULL,
     model TEXT NOT NULL,
     temperature REAL NOT NULL,
@@ -328,6 +327,7 @@ CREATE TABLE IF NOT EXISTS runs (
     system_prompt TEXT NOT NULL,
     user_prompt TEXT NOT NULL,
     output TEXT NOT NULL DEFAULT '',
+    output_truncated INTEGER NOT NULL DEFAULT 0,
     input_tokens INTEGER,
     output_tokens INTEGER,
     docent_version TEXT NOT NULL
@@ -336,9 +336,7 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_runs_profile ON runs(profile);
 CREATE INDEX IF NOT EXISTS idx_runs_source ON runs(source);
-"#;
 
-const SCHEMA_V2: &str = r#"
 CREATE TABLE IF NOT EXISTS cache (
     key BLOB PRIMARY KEY,
     created_at INTEGER NOT NULL,
@@ -351,22 +349,6 @@ CREATE TABLE IF NOT EXISTS cache (
 
 CREATE INDEX IF NOT EXISTS idx_cache_last_used_at ON cache(last_used_at);
 "#;
-
-const SCHEMA_V3: &str = r#"
-ALTER TABLE runs RENAME COLUMN provider TO wire_format;
-"#;
-
-const SCHEMA_V4: &str = r#"
-ALTER TABLE runs ADD COLUMN output_truncated INTEGER NOT NULL DEFAULT 0;
-"#;
-
-/// Migrations in the order they are applied, keyed by the version they produce.
-const MIGRATIONS: &[(i64, &str)] = &[
-    (1, SCHEMA_V1),
-    (2, SCHEMA_V2),
-    (3, SCHEMA_V3),
-    (4, SCHEMA_V4),
-];
 
 const INSERT_RUN: &str = r#"
 INSERT INTO runs (
@@ -615,18 +597,33 @@ mod tests {
     }
 
     #[test]
-    fn newer_schema_is_rejected() {
-        let temp = tempfile::tempdir().unwrap();
-        let database = temp.path().join("history.db");
-        let connection = Connection::open(&database).unwrap();
-        connection
-            .pragma_update(None, "user_version", SCHEMA_VERSION + 1)
-            .unwrap();
-        drop(connection);
+    fn schema_mismatch_is_rejected_with_a_clear_error() {
+        for stale in [1, SCHEMA_VERSION + 1] {
+            let temp = tempfile::tempdir().unwrap();
+            let database = temp.path().join("history.db");
+            let connection = Connection::open(&database).unwrap();
+            connection
+                .pragma_update(None, "user_version", stale)
+                .unwrap();
+            drop(connection);
 
-        let config = config_with_database(&database);
-        let error = write(&config, temp.path(), &sample_run()).unwrap_err();
-        assert!(error.to_string().contains("schema version"));
+            let config = config_with_database(&database);
+            let error = write(&config, temp.path(), &sample_run()).unwrap_err();
+            let message = error.to_string();
+            assert!(
+                message.contains(&database.display().to_string()),
+                "{message}"
+            );
+            assert!(
+                message.contains(&format!("schema version {stale}")),
+                "{message}"
+            );
+            assert!(
+                message.contains(&format!("expects {SCHEMA_VERSION}")),
+                "{message}"
+            );
+            assert!(message.contains("delete or rename"), "{message}");
+        }
     }
 
     #[cfg(unix)]
@@ -680,56 +677,8 @@ mod tests {
         count == 1
     }
 
-    /// Inserts one row using the pre-version-3 `provider` column.
-    fn insert_legacy_run(connection: &Connection, path: &Path) -> Result<(), DocentError> {
-        connection
-            .execute(
-                "INSERT INTO runs (
-                    created_at, duration_ms, command, profile, source, output_mode, status,
-                    selection, context_mode, context_max_chars, context_chars,
-                    context_truncated, provider, base_url, model, temperature,
-                    max_tokens, timeout_secs, response_language, target_language,
-                    system_prompt, user_prompt, output, docent_version
-                ) VALUES (
-                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                    ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24
-                )",
-                params![
-                    1_700_000_000_000i64,
-                    42i64,
-                    "explain",
-                    "explain",
-                    "cli",
-                    "plain_stream",
-                    "success",
-                    "beta",
-                    "auto",
-                    32_000i64,
-                    80i64,
-                    0i64,
-                    "openai",
-                    "https://example.com/v1",
-                    "test-model",
-                    0.3f64,
-                    1200i64,
-                    120i64,
-                    "auto",
-                    "English",
-                    "You are Docent.",
-                    "Document: alpha beta gamma",
-                    "An answer",
-                    "0.1.0",
-                ],
-            )
-            .map(|_| ())
-            .map_err(|source| DocentError::History {
-                path: path.to_path_buf(),
-                source,
-            })
-    }
-
     #[test]
-    fn fresh_database_has_the_cache_table() {
+    fn fresh_database_has_the_current_schema() {
         let temp = tempfile::tempdir().unwrap();
         let database = temp.path().join("history.db");
         let config = config_with_database(&database);
@@ -739,100 +688,9 @@ mod tests {
         let connection = open(&database).unwrap();
         assert!(table_exists(&connection, "runs"));
         assert!(table_exists(&connection, "cache"));
-    }
-
-    #[test]
-    fn migrates_a_version_1_database_and_keeps_runs() {
-        let temp = tempfile::tempdir().unwrap();
-        let database = temp.path().join("history.db");
-
-        let connection = Connection::open(&database).unwrap();
-        connection.execute_batch(SCHEMA_V1).unwrap();
-        connection.pragma_update(None, "user_version", 1).unwrap();
-        insert_legacy_run(&connection, &database).unwrap();
-        drop(connection);
-
-        let config = config_with_database(&database);
-        write(&config, temp.path(), &sample_run()).unwrap();
-
-        let connection = open(&database).unwrap();
-        let version: i64 = connection
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .unwrap();
-        assert_eq!(version, SCHEMA_VERSION);
-        assert!(table_exists(&connection, "cache"));
         assert!(column_exists(&connection, "runs", "wire_format"));
         assert!(column_exists(&connection, "runs", "output_truncated"));
         assert!(!column_exists(&connection, "runs", "provider"));
-        let runs: i64 = connection
-            .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(runs, 2);
-    }
-
-    #[test]
-    fn migrates_a_version_2_database_and_renames_provider_to_wire_format() {
-        let temp = tempfile::tempdir().unwrap();
-        let database = temp.path().join("history.db");
-
-        let connection = Connection::open(&database).unwrap();
-        connection.execute_batch(SCHEMA_V1).unwrap();
-        connection.execute_batch(SCHEMA_V2).unwrap();
-        connection.pragma_update(None, "user_version", 2).unwrap();
-        insert_legacy_run(&connection, &database).unwrap();
-        drop(connection);
-
-        let connection = open(&database).unwrap();
-        let version: i64 = connection
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .unwrap();
-        assert_eq!(version, SCHEMA_VERSION);
-        assert!(column_exists(&connection, "runs", "wire_format"));
-        assert!(!column_exists(&connection, "runs", "provider"));
-        let runs: i64 = connection
-            .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(runs, 1);
-    }
-
-    #[test]
-    fn migrates_a_version_3_database_and_adds_output_truncated() {
-        let temp = tempfile::tempdir().unwrap();
-        let database = temp.path().join("history.db");
-
-        let connection = Connection::open(&database).unwrap();
-        connection.execute_batch(SCHEMA_V1).unwrap();
-        connection.execute_batch(SCHEMA_V2).unwrap();
-        connection.execute_batch(SCHEMA_V3).unwrap();
-        connection
-            .execute(
-                "INSERT INTO runs (
-                    created_at, duration_ms, command, profile, source, output_mode,
-                    status, selection, context_mode, context_max_chars, context_chars,
-                    context_truncated, wire_format, base_url, model, temperature,
-                    max_tokens, timeout_secs, response_language, target_language,
-                    system_prompt, user_prompt, output, docent_version
-                ) VALUES (
-                    1, 1, 'request', 'explain', 'cli', 'json', 'success', 'beta',
-                    'auto', 1, 1, 0, 'openai', 'https://example.com/v1', 'm',
-                    0.0, 1, 1, 'auto', 'English', 's', 'u', 'o', '0.1.0'
-                )",
-                [],
-            )
-            .unwrap();
-        connection.pragma_update(None, "user_version", 3).unwrap();
-        drop(connection);
-
-        let connection = open(&database).unwrap();
-        let version: i64 = connection
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .unwrap();
-        assert_eq!(version, SCHEMA_VERSION);
-        assert!(column_exists(&connection, "runs", "output_truncated"));
-        let kept: i64 = connection
-            .query_row("SELECT output_truncated FROM runs", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(kept, 0);
     }
 
     #[test]

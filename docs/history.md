@@ -102,7 +102,7 @@ The `cache` table stores reusable answers:
 | `output` | text | Stored answer. |
 | `docent_version` | text | Docent version that stored the entry. |
 
-The cache table has an index on `last_used_at` for eviction. A new database is created at version 4. Version 1, 2, and 3 databases are upgraded in place on the next run, and their `runs` rows are kept.
+The cache table has an index on `last_used_at` for eviction. A new database is created at version 4. Docent does not migrate older databases: a file written by another schema version is rejected with a message that names the file, the version it found, and the version this build expects, so you can delete or rename it and let Docent create a new one.
 
 The raw document is not stored separately. The rendered `user_prompt` already contains the context window that the model received. `document_bytes` records the original size.
 

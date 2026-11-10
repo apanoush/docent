@@ -1332,7 +1332,7 @@ user_prompt = "Translate into {{target_language}}: {{selection}}"
             notes.to_str().unwrap(),
             "--line",
             "1",
-            "--to",
+            "--target-language",
             "French",
             "--no-stream",
         ],

@@ -17,7 +17,7 @@ This is the same answer page and stylesheet used by the qutebrowser and Firefox 
 docent explain notes.md --lines 12:20 --viewer qutebrowser
 docent explain notes.md --lines 12:20 --viewer firefox
 docent ask notes.md --lines 12:20 --question "Why does this work?" --viewer firefox
-docent translate notes.md --line 12 --to French --viewer firefox
+docent translate notes.md --line 12 --target-language French --viewer firefox
 docent summarize paper.md --viewer firefox --firefox-target tab
 ```
 
@@ -56,7 +56,7 @@ The configured default applies to `explain`, `ask`, `translate`, `summarize`, an
 | `--qutebrowser-arg ARG` | `viewer.qutebrowser_args`, else none | Extra qutebrowser argument inserted before the answer URL. Repeat the flag to pass several arguments. |
 | `--firefox PATH` | `viewer.firefox`, else `firefox` | Firefox executable or command name. |
 | `--firefox-target TARGET` | `viewer.firefox_target`, else `window` | `auto`, `tab`, `window`, or `private-window`. |
-| `--answer-css PATH` | none | Extra CSS appended after the built-in styles and `<config>/answer.css`. `--qutebrowser-css` is an alias. |
+| `--answer-css PATH` | none | Extra CSS appended after the built-in styles and `<config>/answer.css`. |
 | `--header TEXT` | request file | `docent request` only; text shown after the profile in the page header. |
 
 `--qutebrowser-target` is passed to qutebrowser as `--target=TARGET`. Qutebrowser applies that value only when an instance is already running; otherwise it opens a window. Use `--qutebrowser-target tab` to reuse a running qutebrowser window, or `window` for a separate answer window. The `--qutebrowser`, `--qutebrowser-target`, and `--qutebrowser-arg` options apply only to `--viewer qutebrowser`.
