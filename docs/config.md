@@ -267,7 +267,7 @@ Settings resolve in this order, highest first:
 3. `config.toml`.
 4. Built-in defaults.
 
-`model`, `temperature`, and `max_tokens` have no CLI flags in 0.1.0. Set them in the profile or in `config.toml`. Viewer settings resolve separately: the CLI flags win over the `[viewer]` table, and profiles do not carry viewer settings.
+`model`, `temperature`, and `max_tokens` have no CLI flags. Set them in the profile or in `config.toml`. Viewer settings resolve separately: the CLI flags win over the `[viewer]` table, and profiles do not carry viewer settings.
 
 ### Example profile
 

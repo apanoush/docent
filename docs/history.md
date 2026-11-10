@@ -156,4 +156,4 @@ History is fail-open. If the database cannot be opened or written, Docent logs a
 
 The database is local and unencrypted. It contains document excerpts, questions, answers, cached answers, and provider metadata. API keys are never stored. On Unix, Docent creates the database with mode `0600` and the default data directory with mode `0700`. A custom parent directory is not changed, so choose a private location when you override `history.database`.
 
-There is no automatic pruning of `runs` in version 0.1.0. Rows accumulate until you delete the database or remove rows yourself. Cache entries are evicted least recently used beyond `cache.max_entries`.
+There is no automatic pruning of `runs`. Rows accumulate until you delete the database or remove rows yourself. Cache entries are evicted least recently used beyond `cache.max_entries`.

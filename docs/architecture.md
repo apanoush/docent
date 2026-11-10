@@ -182,7 +182,7 @@ Requests include `User-Agent: docent/<version>`. For OpenCode endpoints, Docent 
 
 API keys come from the environment variable named by `provider.api_key_env`, or from the optional `provider.api_key` field for users who accept a plaintext secret in `config.toml`. A set environment variable wins, `init` creates the file with mode `0600` on Unix, and keys are never included in error messages or `Debug` output. The CLI does not use a provider SDK because the two request shapes are small and a hand-written client keeps streaming, error mapping, and request inspection under direct control.
 
-There are no retries in 0.1.0. A failed request returns a clear error instead of risking duplicate charges. Retry and backoff are deferred.
+There are no retries. A failed request returns a clear error instead of risking duplicate charges. Retry and backoff are deferred.
 
 ## NDJSON streaming contract
 
