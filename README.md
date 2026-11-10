@@ -1,25 +1,28 @@
 # Docent
 
 [![CI](https://github.com/apanoush/docent/actions/workflows/ci.yml/badge.svg)](https://github.com/apanoush/docent/actions/workflows/ci.yml)
-![coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-green)
+[![coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-green)](https://github.com/apanoush/docent/actions/workflows/ci.yml)
 
 A context-aware reading companion for the terminal, Neovim, qutebrowser, Firefox, and zathura. Select a passage, ask Docent to explain it, translate it, summarize it, or answer a question about it, and Docent sends the surrounding document as context to an AI provider.
-
-Docent has five pieces:
-
-- `docent`, a Rust CLI with terminal commands for files, line ranges, pasted text, and questions. It also accepts JSON on stdin for machine integrations, builds the prompt, calls an OpenAI-compatible or Anthropic API, and returns, streams, or shows the answer in qutebrowser or Firefox.
-- `plugins/nvim/`, a Neovim plugin that captures the selection and buffer, calls the CLI asynchronously, and streams the answer into a floating window.
-- `plugins/qutebrowser/`, a qutebrowser adapter that captures the page selection and rendered text, calls the CLI asynchronously, and streams the answer into a new tab.
-- `plugins/firefox/`, a Firefox extension plus a native messaging host that captures the page selection and rendered text and streams the answer into a new tab.
-- `plugins/zathura/`, a zathura adapter that reads the selection from the clipboard, extracts the current page and its neighbors through the `docent` CLI, and streams the answer into a terminal window, a Neovim float, or a qutebrowser window or tab.
 
 ## Why
 
 Most lookup tools treat a word or phrase in isolation. Docent sends the selection together with the surrounding document, so "transformer" in a machine learning paper gets an architecture explanation, while "transformer" in an electrical engineering text gets something else.
 
+## Main features
+
+- **Context-aware prompts.** A selection is sent with its surrounding document, so the answer follows the sense the document uses.
+- **Terminal commands and inputs.** `explain`, `ask`, `translate`, `summarize`, and custom profiles accept a file, stdin, or pasted text plus a line, page, or phrase selection.
+- **PDF input.** Built-in extraction with page ranges and a fallback for broken font encodings, with no external tools. Scanned pages without a text layer are rejected.
+- **Profiles.** Four shipped profiles and your own TOML files, with placeholders, model, and generation parameters. See [configuration](docs/config.md).
+- **Streaming answers.** Plain text in the terminal, newline-delimited JSON events for adapters, or Server-Sent Events for a browser page.
+- **Browser answer pages.** Markdown rendered once by the CLI, MathML for TeX math, and answer styles you can override. See [the browser viewer guide](docs/viewer.md).
+- **Local history and cache.** Runs are recorded in SQLite, and identical rendered prompts return the stored answer without calling the provider. See [run history](docs/history.md).
+- **Machine interface.** JSON on stdin for editors and browsers, plus `--print-prompt` to inspect the exact prompt and `docent extract` to see PDF text before it is sent. See [configuration](docs/config.md#machine-interface).
+
 ## Install
 
-Requires Rust 1.88 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, the Firefox adapter needs Firefox 140 or newer, and the zathura adapter needs zathura. The CLI browser viewers need qutebrowser 3.7 or newer for `--viewer qutebrowser`, and Firefox with the standard `--new-tab`, `--new-window`, and `--private-window` flags for `--viewer firefox`. The zathura `--viewer nvim` option needs Neovim 0.10 or newer. The adapter tests need Node 18 or newer.
+Requires Rust 1.88 or newer.
 
 ```bash
 cargo install --path .
@@ -28,6 +31,8 @@ docent init
 ```
 
 `docent init` writes `~/.config/docent/config.toml`, four profiles (explain, ask, translate, and summarize), and an example `answer.css` for browser answer styling. The generated config points at OpenCode Go. Edit it to use OpenAI, Anthropic, another OpenAI-compatible endpoint, or a local server. The key can also be stored directly in `config.toml` with `api_key` instead of an environment variable; a set environment variable wins, and `api_key_env` remains the safer choice for shared machines and dotfiles. See [configuration](docs/config.md).
+
+The Neovim, qutebrowser, Firefox, and zathura adapters have their own requirements and setup steps. Each section below links to its guide.
 
 ## Quickstart
 
@@ -49,27 +54,11 @@ Translate one line:
 docent translate notes.md --line 12 --to French
 ```
 
-Summarize a whole document, or just a section:
+Summarize a whole document, or only some of its pages:
 
 ```bash
 docent summarize paper.md
-docent summarize paper.md --lines 12:40
-```
-
-Read a PDF directly, or only some of its pages:
-
-```bash
-docent summarize paper.pdf
 docent summarize paper.pdf --pages 1:4
-docent ask paper.pdf --text "a passage from the PDF" --question "Why?"
-```
-
-PDFs are decoded with built-in Rust extractors, so no external tools are needed. Text with broken font encodings is retried with a second extractor and sanitized before it reaches the model. `--page` and `--pages` are 1-based and inclusive and scope the document before `--lines`, `--text`, or `--phrase` apply. PDFs without a text layer, such as scanned pages, are rejected; run OCR first if the document is image-only.
-
-Use a pasted passage with a file as context:
-
-```bash
-docent explain notes.md --text "the passage to explain"
 ```
 
 Pipe a document and select a line:
@@ -78,116 +67,43 @@ Pipe a document and select a line:
 cat notes.md | docent explain - --line 12
 ```
 
-If a required input is missing and stdin is a terminal, Docent prompts for it. Piped stdin is always treated as the document. Answers stream by default; add `--no-stream` to wait for the complete answer.
-
 Stream the answer into a browser window or tab instead of the terminal:
 
 ```bash
 docent explain notes.md --lines 12:20 --viewer qutebrowser
 docent explain notes.md --lines 12:20 --viewer firefox --firefox-target tab
-docent summarize paper.md --viewer firefox
 ```
 
-The page uses the same answer styles as the qutebrowser and Firefox adapters. Pass `--answer-css PATH` for extra overrides, or edit `<config dir>/answer.css`. See [the browser viewer guide](docs/viewer.md).
+Answers stream by default; add `--no-stream` to wait for the complete answer. Piped stdin is always treated as the document, and a missing required input is prompted for when stdin is a terminal. When a run has no selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr; use `--context-mode full`, raise the limit, or narrow the subject with `--lines` or `--pages`. The browser viewer, viewer defaults, and answer styling are documented in [the browser viewer guide](docs/viewer.md). Run `docent --help` for the terminal commands and `docent request --help` for the machine interface.
 
-Set `[viewer] default = "firefox"` in `config.toml` to stop passing `--viewer` on every command. The other `[viewer]` keys set the executable and target, and command-line flags still win per run. `docent request` keeps `terminal` as its default unless `--viewer` is passed, so the adapters are unaffected.
+## Integrations
 
-`--viewer firefox` opens a standalone local answer page. It does not use the Docent Firefox extension; the extension remains the way to capture a page selection from inside Firefox.
+### Neovim
 
-When a run has no selection and the document is larger than `context.max_chars`, Docent sends only part of it and warns on stderr. Use `--context-mode full` to send everything, raise `context.max_chars`, or narrow the subject with `--lines` or `--pages`.
+The plugin in `plugins/nvim/` captures the selection and buffer, calls the CLI asynchronously, and streams the answer into a floating window. It needs Neovim 0.10 or newer and `docent` on `PATH`; press `q` to close the float or cancel a running request. See [the Neovim guide](docs/nvim.md) for the lazy.nvim setup and options.
 
-The JSON stdin interface used by Neovim, qutebrowser, Firefox, and zathura remains available:
+### qutebrowser
 
-```bash
-printf '%s' '{"selection":"transformer","document":"A transformer maps a sequence to a sequence using attention.","byte_start":2,"byte_end":13,"file":"notes.md"}' | docent request --profile explain
-```
+The adapter in `plugins/qutebrowser/` captures the selection and rendered page text, calls the CLI asynchronously, and streams the answer into a new tab. It needs qutebrowser 3.7 or newer. Closing the answer tab cancels a running request. See [the qutebrowser guide](docs/qutebrowser.md) for the `config.py` setup and limitations.
 
-Inspect the exact prompt without calling the provider with `--print-prompt`, or stream newline-delimited events with `--stream`. Add `--html` with `--stream` to include the final answer as rendered HTML before the `done` event; the browser adapters use this. The rendered HTML includes MathML for TeX math. `docent extract FILE --pages START:END` prints the text the CLI would send, which is useful for checking PDF extraction. Run `docent --help` for the terminal commands and `docent request --help` for the machine interface.
+### Firefox
 
-Every provider run is recorded in a local SQLite database by default, including the prompt, answer, model, parameters, token usage, and source. The database lives in the platform data directory, for example `~/.local/share/docent/docent.db` on Linux. Set `history.database` to move it, `history.enabled = false` to disable it, or pass `--no-history` for one run. See [run history](docs/history.md).
+The adapter is a WebExtension plus a native messaging host, because WebExtensions cannot start processes. It needs Firefox 140 or newer. Install the host with `scripts/firefox-host-install.sh` on Linux or macOS and load the extension temporarily from `about:debugging`; Windows needs a manifest and registry key written by hand. See [the Firefox guide](docs/firefox.md) for the full setup, context menu, and packaging.
 
-Docent also caches answers in the same database. A repeated request with the same rendered prompt, provider, model, temperature, and token limit returns the stored answer instead of calling the provider, even without an API key. Pass `--no-cache` to skip both reading and writing the cache, or `--refresh` to ignore the stored answer and replace it. Disabling history disables the cache too.
+### Zathura
 
-## Neovim
-
-Add the plugin directory to your configuration with lazy.nvim:
-
-```lua
-{
-  dir = "~/path/to/docent/plugins/nvim",
-  config = function()
-    require("docent").setup({
-      keymaps = {
-        explain = "<leader>de",
-        ask = "<leader>da",
-        translate = "<leader>dt",
-        summarize = "<leader>ds",
-        pick = "<leader>dp",
-      },
-    })
-  end,
-}
-```
-
-Select text and press `<leader>de`, or run `:Docent explain`. The answer streams into a floating window. Press `q` to close it; if the request is still running, `q` cancels it. See [the Neovim guide](docs/nvim.md).
-
-## qutebrowser
-
-Load the adapter from your qutebrowser `config.py`:
-
-```python
-import os
-import sys
-sys.path.insert(0, os.path.expanduser("~/path/to/docent/plugins/qutebrowser"))
-import docent_qutebrowser
-
-docent_qutebrowser.setup(
-    config,
-    keymaps={
-        "explain": ",de",
-        "ask": ",da",
-        "translate": ",dt",
-        "summarize": ",ds",
-        "pick": ",dp",
-    },
-)
-```
-
-Select text with the mouse or in caret mode and press `,de`, or run `:docent explain`. The answer streams into a new tab. Press `d` to close the tab; closing it while the request is still running cancels the request. See [the qutebrowser guide](docs/qutebrowser.md).
-
-## Firefox
-
-Install the CLI and the native messaging host manifest, then load the extension temporarily:
-
-```bash
-cargo install --path .
-scripts/firefox-host-install.sh
-```
-
-The script covers Linux and macOS. Windows needs a registry key and a manifest written by hand; see [the Firefox guide](docs/firefox.md#windows).
-
-Open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `plugins/firefox/manifest.json`. Select text with the mouse and click the Docent toolbar button or press `Alt+Shift+D`. The popup lists the profiles and runs the one you choose. The answer streams into a new tab. Press `d` to close the tab; closing it while the request is still running cancels the request. Permanent installs need a signed add-on from addons.mozilla.org. See [the Firefox guide](docs/firefox.md).
-
-The extension is for capturing a page selection. To show a terminal answer in Firefox without the extension, use `--viewer firefox` as described in [the browser viewer guide](docs/viewer.md).
-
-## Zathura
-
-Add a binding to `~/.config/zathura/zathurarc`:
-
-```zathurarc
-map <C-e> exec '/home/you/path/to/docent/plugins/zathura/docent-zathura explain "$FILE" "$PAGE"'
-```
-
-Select text with the mouse and press `<C-e>`. The answer streams into a terminal window. Add `--viewer nvim` inside the quotes to stream into the Neovim plugin's Markdown float, or `--viewer qutebrowser` to open a qutebrowser window or tab with rendered Markdown. `ask` and `translate` work the same way. The terminal, Neovim, and qutebrowser viewers prompt for the question. See [the zathura guide](docs/zathura.md).
+The adapter in `plugins/zathura/` reads the selection from the clipboard, extracts the current page and its neighbors through `docent extract`, and streams the answer into a terminal window, a Neovim float, or a qutebrowser page. Zathura has no keyboard text selection, so this is a mouse-first workflow. See [the zathura guide](docs/zathura.md) for the `zathurarc` binding and viewer options.
 
 ## Status
 
-Early development, version 0.1.0. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, Firefox adapter, and zathura adapter work. PDF input is text-extraction only; layout reconstruction, OCR, and password-protected PDFs are not supported. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
+Early development, version 0.1.1. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, Firefox adapter, and zathura adapter work. PDF input is text-extraction only; layout reconstruction, OCR, and password-protected PDFs are not supported. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
 
 ## Documentation
 
 - [Documentation index](docs/index.md)
 - [Configuration and profiles](docs/config.md)
+- [Browser viewer](docs/viewer.md)
+- [Run history](docs/history.md)
 - [Neovim plugin](docs/nvim.md)
 - [qutebrowser adapter](docs/qutebrowser.md)
 - [Firefox adapter](docs/firefox.md)

@@ -4,7 +4,7 @@ Docent explains, translates, summarizes, or answers questions about a selected p
 
 ## Start here
 
-- [README](../README.md): install, quickstart, and the editor, browser, and PDF viewer setup snippets.
+- [README](../README.md): install, quickstart, and pointers to the editor, browser, and PDF viewer guides.
 - [Configuration and profiles](config.md): config file, provider examples, profile schema, and placeholders.
 - [Browser viewer](viewer.md): stream a terminal answer into a qutebrowser or Firefox window or tab, and style it.
 - [Run history](history.md): SQLite location, schema, source tagging, privacy, and example queries.
