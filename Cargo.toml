@@ -1,12 +1,15 @@
 [package]
 name = "docent"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.88"
 description = "A context-aware reading companion for the terminal, Neovim, and the browser"
 license = "AGPL-3.0-only"
 authors = ["aa-p"]
 repository = "https://github.com/apanoush/docent"
+readme = "README.md"
+keywords = ["llm", "cli", "pdf", "reading", "context"]
+categories = ["command-line-utilities", "text-processing"]
 
 [package.metadata.wix]
 upgrade-guid = "A2895CD0-41CF-442B-86A1-7660AB99BADE"

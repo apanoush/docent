@@ -13,6 +13,7 @@ Docent explains, translates, summarizes, or answers questions about a selected p
 - [Firefox adapter](firefox.md): native messaging host, toolbar picker, context menu, answer tabs, and limitations.
 - [Zathura adapter](zathura.md): `zathurarc` bindings, clipboard capture, terminal, Neovim, or qutebrowser answers, and PDF limitations.
 - [Architecture](architecture.md): request contract, context pipeline, providers, and streaming.
+- [Releasing](releasing.md): version bumps, tagging, cargo-dist artifacts, and crates.io publishing.
 
 ## Reference
 

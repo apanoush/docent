@@ -5,7 +5,7 @@ The Firefox adapter captures the selected text and the surrounding page, calls t
 ## Requirements
 
 - Firefox 140 or newer. Firefox 140 introduced the data collection permissions key that the manifest declares.
-- The `docent` and `docent-native-host` binaries. `cargo install --path .` installs both.
+- The `docent` and `docent-native-host` binaries. `cargo install docent` installs both.
 - The native messaging host manifest installed with `scripts/firefox-host-install.sh` on Linux or macOS, or by hand on Windows.
 - Node 18 or newer for the adapter tests and for packaging with `web-ext`.
 
@@ -14,7 +14,7 @@ The Firefox adapter captures the selected text and the surrounding page, calls t
 Install the CLI and the host manifest:
 
 ```bash
-cargo install --path .
+cargo install docent
 scripts/firefox-host-install.sh
 ```
 

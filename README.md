@@ -23,10 +23,12 @@ Most lookup tools treat a word or phrase in isolation; Docent reads it in place,
 Requires Rust 1.88 or newer.
 
 ```bash
-cargo install --path .
+cargo install docent
 export OPENCODE_API_KEY=...
 docent init
 ```
+
+Prebuilt archives and an MSI are on the [releases page](https://github.com/apanoush/docent/releases), and `cargo binstall docent` uses them when `cargo-binstall` is installed. From a clone, `cargo install --path .` builds both binaries from source.
 
 `docent init` writes `~/.config/docent/config.toml`, four profiles (explain, ask, translate, and summarize), and an example `answer.css` for browser answer styling. The generated config points at OpenCode Go. Edit it to use OpenAI, Anthropic, another OpenAI-compatible endpoint, or a local server. The key can also be stored directly in `config.toml` with `api_key` instead of an environment variable; a set environment variable wins, and `api_key_env` remains the safer choice for shared machines and dotfiles. See [configuration](docs/config.md).
 
@@ -94,7 +96,7 @@ The adapter in `plugins/zathura/` reads the selection from the clipboard, extrac
 
 ## Status
 
-Early development, version 0.1.1. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, Firefox adapter, and zathura adapter work. PDF input is text-extraction only; layout reconstruction, OCR, and password-protected PDFs are not supported. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
+Early development, version 0.1.2. The terminal commands, streaming, profile system, Neovim plugin, qutebrowser adapter, Firefox adapter, and zathura adapter work. PDF input is text-extraction only; layout reconstruction, OCR, and password-protected PDFs are not supported. Follow-up conversations, image input, clipboard selection in the terminal commands, and a generic command provider are not implemented yet.
 
 ## Documentation
 
@@ -107,6 +109,7 @@ Early development, version 0.1.1. The terminal commands, streaming, profile syst
 - [Firefox adapter](docs/firefox.md)
 - [Zathura adapter](docs/zathura.md)
 - [Architecture](docs/architecture.md)
+- [Releasing](docs/releasing.md)
 - [Rust module reference](docs/modules/docent.md)
 - [Neovim module reference](docs/modules/nvim.md)
 - [qutebrowser module reference](docs/modules/qutebrowser.md)

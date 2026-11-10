@@ -139,7 +139,7 @@ The plugin does not parse `config.toml`; all configuration and profile loading h
 
 ## Troubleshooting
 
-- `could not start docent`: the binary is missing from `PATH`. Run `cargo install --path .` or set `cmd` to an absolute path.
+- `could not start docent`: the binary is missing from `PATH`. Run `cargo install docent` or set `cmd` to an absolute path.
 - `missing API key`: neither `api_key` nor the environment variable named by `api_key_env` is set. Neovim passes its environment to `vim.system`.
 - `no profiles found`: run `docent init`, then `:DocentProfiles`.
 - `unknown profile`: the profile file is missing or invalid. Run `docent profiles` in a terminal to see the error.

@@ -1,0 +1,64 @@
+# Publish the crate to crates.io once the Release workflow for a pushed tag
+# succeeds.
+#
+# Publishing runs last so that a version never appears on crates.io while the
+# prebuilt archives or the MSI for that tag failed to build. A version that is
+# already on crates.io is skipped, which keeps the bootstrap release green when
+# the crate was published by hand before trusted publishing was configured. See
+# docs/releasing.md.
+name: Publish
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.event.workflow_run.head_sha }}
+
+jobs:
+  crates-io:
+    name: crates.io
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Trusted publishing exchanges a GitHub OIDC token for a short-lived
+      # crates.io API token, so no long-lived secret is stored here.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Read the crate version and query crates.io
+        id: check
+        run: |
+          set -euo pipefail
+          version=$(awk -F'"' '/^\[package\]/{seen=1} seen && /^version =/{print $2; exit}' Cargo.toml)
+          if [ -z "$version" ]; then
+            echo "error: could not read the version from Cargo.toml" >&2
+            exit 1
+          fi
+          status=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H 'User-Agent: docent-release (https://github.com/apanoush/docent)' \
+            "https://crates.io/api/v1/crates/docent/$version") || status=000
+          echo "docent $version on crates.io: HTTP $status"
+          {
+            echo "version=$version"
+            echo "published=$([ "$status" = 200 ] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+      - name: Authenticate with crates.io
+        if: steps.check.outputs.published == 'false'
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: cargo publish
+        if: steps.check.outputs.published == 'false'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --locked
