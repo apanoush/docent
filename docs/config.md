@@ -46,7 +46,7 @@ model = "deepseek-v4.1-flash"
 api_key_env = "OPENCODE_API_KEY"
 # api_key = "sk-..."
 timeout_secs = 120
-max_tokens = 1200
+max_tokens = 4000
 temperature = 0.3
 
 [context]
@@ -84,7 +84,7 @@ max_entries = 1000
 | `api_key` | string | unset | Literal API key stored in the file. Prefer `api_key_env` when the file is shared. |
 | `api_key_env` | string | `"OPENCODE_API_KEY"` | Environment variable that holds the API key. A non-empty value wins over `api_key`. |
 | `timeout_secs` | integer | `120` | Whole-request timeout in seconds. Must be greater than zero. |
-| `max_tokens` | integer | `1200` | Maximum output tokens, counted by the provider. Must be greater than zero. When the answer stops at this limit, Docent logs a warning and records `output_truncated = 1` in history. Raise it for long answers, including answers that end in a table or list. |
+| `max_tokens` | integer | `4000` | Maximum output tokens, counted by the provider. Must be greater than zero. When the answer stops at this limit, Docent logs a warning and records `output_truncated = 1` in history. Raise it for long answers, including answers that end in a table or list. |
 | `temperature` | float | `0.3` | Sampling temperature from 0.0 to 2.0. Anthropic requests must stay at or below 1.0. |
 
 For `wire_format = "openai"`, Docent posts to `<base_url>/chat/completions`. For `wire_format = "anthropic"`, Docent posts to `<base_url>/v1/messages`, or to `<base_url>/messages` when the base URL already ends in `/v1`.
@@ -106,7 +106,7 @@ base_url = "https://api.openai.com/v1"
 model = "your-model-id"
 api_key = "sk-..."
 timeout_secs = 120
-max_tokens = 1200
+max_tokens = 4000
 temperature = 0.3
 ```
 
@@ -121,7 +121,7 @@ base_url = "https://api.openai.com/v1"
 model = "your-model-id"
 api_key_env = "OPENAI_API_KEY"
 timeout_secs = 120
-max_tokens = 1200
+max_tokens = 4000
 temperature = 0.3
 ```
 
@@ -134,7 +134,7 @@ base_url = "https://api.anthropic.com"
 model = "your-model-id"
 api_key_env = "ANTHROPIC_API_KEY"
 timeout_secs = 120
-max_tokens = 1200
+max_tokens = 4000
 temperature = 0.3
 ```
 

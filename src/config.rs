@@ -112,7 +112,7 @@ impl Default for ProviderConfig {
             api_key: None,
             api_key_env: "OPENCODE_API_KEY".to_string(),
             timeout_secs: 120,
-            max_tokens: 1200,
+            max_tokens: 4000,
             temperature: 0.3,
         }
     }
