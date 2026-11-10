@@ -1,5 +1,8 @@
 # Docent
 
+[![CI](https://github.com/apanoush/docent/actions/workflows/ci.yml/badge.svg)](https://github.com/apanoush/docent/actions/workflows/ci.yml)
+![coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-green)
+
 A context-aware reading companion for the terminal, Neovim, qutebrowser, Firefox, and zathura. Select a passage, ask Docent to explain it, translate it, summarize it, or answer a question about it, and Docent sends the surrounding document as context to an AI provider.
 
 Docent has five pieces:

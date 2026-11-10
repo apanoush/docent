@@ -22,6 +22,7 @@ __pycache__/
 # tooling caches
 .coverage
 coverage.xml
+lcov.info
 htmlcov/
 .pytest_cache/
 .ruff_cache/

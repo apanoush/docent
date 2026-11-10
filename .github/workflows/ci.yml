@@ -1,9 +1,10 @@
-# Lint and test the crate on every push and pull request.
+# Lint, test, and measure coverage of the crate on every push and pull request.
 #
 # This is separate from release.yml, which cargo-dist generates and which only
 # builds release artifacts. Running clippy on Windows as well as Linux keeps
 # cfg-gated code honest: a binding whose only use sits behind #[cfg(unix)] is
-# otherwise flagged only by the Windows build.
+# otherwise flagged only by the Windows build. Coverage runs on Linux only and
+# enforces the same 80% line floor as scripts/check.sh.
 name: CI
 
 on:
@@ -47,3 +48,24 @@ jobs:
           persist-credentials: false
       - name: Test
         run: cargo test
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      # --all-targets matches scripts/check.sh, so the enforced number is the
+      # one measured locally. The floor fails the job; the report is uploaded
+      # for inspection when it does.
+      - name: Measure coverage
+        run: cargo llvm-cov --workspace --all-targets --lcov --output-path lcov.info --fail-under-lines 80
+      - name: Upload lcov report
+        uses: actions/upload-artifact@v7
+        with:
+          name: lcov
+          path: lcov.info
