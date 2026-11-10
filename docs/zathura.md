@@ -4,7 +4,7 @@ The zathura adapter reads the selected text from the system clipboard, extracts 
 
 ## Requirements
 
-- zathura with `$FILE` and `$PAGE` expansion in `exec`. The adapter targets zathura 2026.10.4 and the poppler plugin.
+- zathura with `$FILE` and `$PAGE` expansion in `exec`. Any PDF backend works (`zathura-pdf-poppler` or `zathura-pdf-mupdf`); the adapter reads no plugin-specific data and extracts text through `docent extract`.
 - Python 3.10 or newer for the adapter script.
 - `docent` installed and available on `PATH`, or in `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, or `/usr/bin`. Use `--docent` for any other location. The CLI must include the `extract` subcommand; reinstall or update it if PDF capture fails with `unexpected argument 'extract'`.
 - A clipboard tool: `wl-paste` on Wayland, or `xclip` or `xsel` on X11.
