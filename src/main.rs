@@ -3,12 +3,14 @@ use std::process::ExitCode;
 use env_logger::Env;
 
 fn main() -> ExitCode {
-    // `pdf-extract` warns once per page for standard Type 1 glyph names such as
-    // `.notdef`, which carry no text and only add noise. Extraction failures are
-    // reported by the input layer, and `RUST_LOG` still overrides this default.
-    env_logger::Builder::from_env(Env::default().default_filter_or("warn,pdf_extract=error"))
-        .format_timestamp(None)
-        .init();
+    // The PDF backends warn about font details that Docent already handles or
+    // reports as extraction errors. Keep those log targets quiet so a broken
+    // encoding does not flood stderr; `RUST_LOG` still overrides this default.
+    env_logger::Builder::from_env(
+        Env::default().default_filter_or("warn,pdf_extract=error,pdf_inspector=error,lopdf=error"),
+    )
+    .format_timestamp(None)
+    .init();
 
     match docent::cli::run() {
         Ok(()) => ExitCode::SUCCESS,

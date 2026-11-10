@@ -588,13 +588,14 @@ fn document_from_bytes(
         let extracted = pdf::extract(&bytes, pages).map_err(|message| {
             DocentError::Input(format!("failed to read PDF {name}: {message}"))
         })?;
-        if let Some(range) = pages {
-            if !clamp_pages && range.end > extracted.pages {
-                return Err(DocentError::Input(format!(
-                    "failed to read PDF {name}: page range {range} is out of bounds; the PDF has {} pages",
-                    extracted.pages
-                )));
-            }
+        if let Some(range) = pages
+            && !clamp_pages
+            && range.end > extracted.pages
+        {
+            return Err(DocentError::Input(format!(
+                "failed to read PDF {name}: page range {range} is out of bounds; the PDF has {} pages",
+                extracted.pages
+            )));
         }
         if extracted.text.trim().is_empty() {
             return Err(DocentError::Input(format!(

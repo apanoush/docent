@@ -74,11 +74,11 @@ pub(crate) fn complete_streaming(
                     }
                 }
                 Some("content_block_delta") => {
-                    if let Some(delta) = value.pointer("/delta/text").and_then(Value::as_str) {
-                        if !delta.is_empty() {
-                            text.push_str(delta);
-                            on_delta(delta)?;
-                        }
+                    if let Some(delta) = value.pointer("/delta/text").and_then(Value::as_str)
+                        && !delta.is_empty()
+                    {
+                        text.push_str(delta);
+                        on_delta(delta)?;
                     }
                 }
                 Some("message_delta") => {

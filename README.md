@@ -19,7 +19,7 @@ Most lookup tools treat a word or phrase in isolation. Docent sends the selectio
 
 ## Install
 
-Requires Rust 1.85 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, the Firefox adapter needs Firefox 140 or newer, and the zathura adapter needs zathura. The CLI browser viewers need qutebrowser 3.7 or newer for `--viewer qutebrowser`, and Firefox with the standard `--new-tab`, `--new-window`, and `--private-window` flags for `--viewer firefox`. The zathura `--viewer nvim` option needs Neovim 0.10 or newer. The adapter tests need Node 18 or newer.
+Requires Rust 1.88 or newer. The Neovim plugin needs Neovim 0.10 or newer, the qutebrowser adapter needs qutebrowser 3.7 or newer, the Firefox adapter needs Firefox 140 or newer, and the zathura adapter needs zathura. The CLI browser viewers need qutebrowser 3.7 or newer for `--viewer qutebrowser`, and Firefox with the standard `--new-tab`, `--new-window`, and `--private-window` flags for `--viewer firefox`. The zathura `--viewer nvim` option needs Neovim 0.10 or newer. The adapter tests need Node 18 or newer.
 
 ```bash
 cargo install --path .
@@ -64,7 +64,7 @@ docent summarize paper.pdf --pages 1:4
 docent ask paper.pdf --text "a passage from the PDF" --question "Why?"
 ```
 
-PDFs are decoded with a built-in text extractor, so no external tools are needed. `--page` and `--pages` are 1-based and inclusive and scope the document before `--lines`, `--text`, or `--phrase` apply. PDFs without a text layer, such as scanned pages, are rejected; run OCR first if the document is image-only.
+PDFs are decoded with built-in Rust extractors, so no external tools are needed. Text with broken font encodings is retried with a second extractor and sanitized before it reaches the model. `--page` and `--pages` are 1-based and inclusive and scope the document before `--lines`, `--text`, or `--phrase` apply. PDFs without a text layer, such as scanned pages, are rejected; run OCR first if the document is image-only.
 
 Use a pasted passage with a file as context:
 

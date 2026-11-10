@@ -32,27 +32,25 @@ pub(super) fn extract(text: &str) -> (String, Vec<Span>) {
 
     while index < chars.len() {
         if let Some((open, open_len)) = fence {
-            if line_start(&chars, index) {
-                if let Some((close, close_len, marker)) = fence_marker(&chars, index) {
-                    let end = line_end(&chars, index);
-                    if close == open
-                        && close_len >= open_len
-                        && blank(&chars, marker + close_len, end)
-                    {
-                        fence = None;
-                    }
+            if line_start(&chars, index)
+                && let Some((close, close_len, marker)) = fence_marker(&chars, index)
+            {
+                let end = line_end(&chars, index);
+                if close == open && close_len >= open_len && blank(&chars, marker + close_len, end)
+                {
+                    fence = None;
                 }
             }
             copy_line(&mut out, &chars, &mut index);
             continue;
         }
 
-        if line_start(&chars, index) {
-            if let Some((marker, len, _)) = fence_marker(&chars, index) {
-                fence = Some((marker, len));
-                copy_line(&mut out, &chars, &mut index);
-                continue;
-            }
+        if line_start(&chars, index)
+            && let Some((marker, len, _)) = fence_marker(&chars, index)
+        {
+            fence = Some((marker, len));
+            copy_line(&mut out, &chars, &mut index);
+            continue;
         }
 
         match chars[index] {
@@ -88,18 +86,17 @@ pub(super) fn substitute(html: &str, spans: &[Span]) -> String {
     let mut index = 0;
 
     while index < html.len() {
-        if html[index..].starts_with(PREFIX) {
-            if let Some((number, end)) = placeholder(html, index) {
-                if let Some(span) = spans.get(number) {
-                    if code_depth > 0 {
-                        out.push_str(&escape_text(&span.original));
-                    } else {
-                        out.push_str(&span.rendered);
-                    }
-                    index = end;
-                    continue;
-                }
+        if html[index..].starts_with(PREFIX)
+            && let Some((number, end)) = placeholder(html, index)
+            && let Some(span) = spans.get(number)
+        {
+            if code_depth > 0 {
+                out.push_str(&escape_text(&span.original));
+            } else {
+                out.push_str(&span.rendered);
             }
+            index = end;
+            continue;
         }
         let ch = html[index..].chars().next().expect("index is char aligned");
         if ch == '<' {
@@ -176,17 +173,17 @@ fn dollar(chars: &[char], index: usize, out: &mut String, spans: &mut Vec<Span>)
     let run = run_len(chars, index, '$');
 
     if run >= 2 {
-        if let Some(close) = find_dollar_close(chars, index + 2) {
-            if !has_blank_line(chars, index + 2, close) {
-                let content = chars[index + 2..close]
-                    .iter()
-                    .collect::<String>()
-                    .trim()
-                    .to_string();
-                if !content.is_empty() {
-                    add_span(chars, index, close + 2, true, true, out, spans);
-                    return close + 2;
-                }
+        if let Some(close) = find_dollar_close(chars, index + 2)
+            && !has_blank_line(chars, index + 2, close)
+        {
+            let content = chars[index + 2..close]
+                .iter()
+                .collect::<String>()
+                .trim()
+                .to_string();
+            if !content.is_empty() {
+                add_span(chars, index, close + 2, true, true, out, spans);
+                return close + 2;
             }
         }
         copy_range(out, chars, index, index + run);
@@ -491,14 +488,13 @@ fn restore_in_tag(tag: &str, spans: &[Span]) -> String {
     let mut out = String::with_capacity(tag.len());
     let mut index = 0;
     while index < tag.len() {
-        if tag[index..].starts_with(PREFIX) {
-            if let Some((number, end)) = placeholder(tag, index) {
-                if let Some(span) = spans.get(number) {
-                    out.push_str(&escape_attribute(&span.original));
-                    index = end;
-                    continue;
-                }
-            }
+        if tag[index..].starts_with(PREFIX)
+            && let Some((number, end)) = placeholder(tag, index)
+            && let Some(span) = spans.get(number)
+        {
+            out.push_str(&escape_attribute(&span.original));
+            index = end;
+            continue;
         }
         let ch = tag[index..].chars().next().expect("index is char aligned");
         out.push(ch);
@@ -550,14 +546,14 @@ fn sanitize_mathml(html: &str) -> String {
     while index < html.len() {
         let ch = html[index..].chars().next().expect("index is char aligned");
         if ch == '<' {
-            if let Some((tag, end)) = parse_tag(html, index) {
-                if safe_tag(tag) {
-                    out.push('<');
-                    out.push_str(tag);
-                    out.push('>');
-                    index = end;
-                    continue;
-                }
+            if let Some((tag, end)) = parse_tag(html, index)
+                && safe_tag(tag)
+            {
+                out.push('<');
+                out.push_str(tag);
+                out.push('>');
+                index = end;
+                continue;
             }
             out.push_str("&lt;");
             index += 1;

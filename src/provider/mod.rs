@@ -213,10 +213,10 @@ fn post_json(
     for (name, value) in headers {
         request = request.header(*name, *value);
     }
-    if config.provider.base_url.contains("opencode.ai") {
-        if let Some(session) = opencode_session_id() {
-            request = request.header("x-opencode-session", session);
-        }
+    if config.provider.base_url.contains("opencode.ai")
+        && let Some(session) = opencode_session_id()
+    {
+        request = request.header("x-opencode-session", session);
     }
 
     let mut response =

@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      # The runner images ship a current stable toolchain (>= 1.85, as required
+      # The runner images ship a current stable toolchain (>= 1.88, as required
       # by the edition 2024 crate).
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings

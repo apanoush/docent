@@ -38,15 +38,14 @@ impl Request {
         }
         let document = self.document.as_deref()?;
 
-        if let (Some(start), Some(end)) = (self.byte_start, self.byte_end) {
-            if start < end
-                && end <= document.len()
-                && document.is_char_boundary(start)
-                && document.is_char_boundary(end)
-                && document.get(start..end) == Some(self.selection.as_str())
-            {
-                return Some((start, end));
-            }
+        if let (Some(start), Some(end)) = (self.byte_start, self.byte_end)
+            && start < end
+            && end <= document.len()
+            && document.is_char_boundary(start)
+            && document.is_char_boundary(end)
+            && document.get(start..end) == Some(self.selection.as_str())
+        {
+            return Some((start, end));
         }
 
         crate::input::find_text(document, &self.selection)

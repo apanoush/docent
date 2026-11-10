@@ -3,8 +3,18 @@
 //! PDFs are detected by their magic header, decoded with `pdf-extract`, and
 //! joined into plain text. Page ranges are applied before joining, so the
 //! document text only contains the pages the user asked for.
+//!
+//! `pdf-extract` loses text and spacing on a few documents with broken font
+//! encodings. When its output contains NUL, control characters, or replacement
+//! characters, the same pages are decoded again with `pdf-inspector` and the
+//! cleaner result wins. The final text always passes through a small sanitizer.
+
+use std::collections::{BTreeMap, HashSet};
 
 use pdf_extract::{Document, PlainTextOutput, extract_text_from_mem_by_pages, output_doc_page};
+use pdf_inspector::extractor::{
+    ItemType, extract_text_with_positions_mem_pages, group_into_lines_preserving_all_text,
+};
 
 use crate::input::PageRange;
 
@@ -36,6 +46,34 @@ pub struct ExtractedText {
 /// around the final page without knowing the page count. A start past the last
 /// page is still an error.
 pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, String> {
+    let primary = extract_primary(bytes, pages)?;
+    if dirty_score(&primary.text) == 0 {
+        return Ok(ExtractedText {
+            text: sanitize_text(&primary.text),
+            pages: primary.pages,
+        });
+    }
+
+    let primary_score = dirty_score(&primary.text);
+    let fallback = extract_fallback(bytes, pages, primary.pages);
+    let text = match fallback {
+        Ok(text)
+            if dirty_score(&text) < primary_score
+                && word_count(&text) * 10 >= word_count(&primary.text) * 9 =>
+        {
+            text
+        }
+        _ => primary.text,
+    };
+
+    Ok(ExtractedText {
+        text: sanitize_text(&text),
+        pages: primary.pages,
+    })
+}
+
+/// Extracts text with `pdf-extract`, the default backend.
+fn extract_primary(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, String> {
     let (page_texts, page_count) = match pages {
         None if worker_count() < 2 => {
             // Keep the library's single-pass decoder on single-core machines.
@@ -58,6 +96,144 @@ pub fn extract(bytes: &[u8], pages: Option<PageRange>) -> Result<ExtractedText, 
         text,
         pages: page_count,
     })
+}
+
+/// Decodes the selected pages with `pdf-inspector`.
+///
+/// This backend handles CID and two-byte fonts more reliably than
+/// `pdf-extract`. It is only used when the primary text is visibly broken.
+fn extract_fallback(
+    bytes: &[u8],
+    pages: Option<PageRange>,
+    page_count: usize,
+) -> Result<String, String> {
+    let filter = page_filter(pages, page_count);
+    let items = extract_text_with_positions_mem_pages(bytes, filter.as_ref())
+        .map_err(|error| format!("could not decode the PDF: {error}"))?;
+    let items = items
+        .into_iter()
+        .filter(|item| matches!(item.item_type, ItemType::Text))
+        .collect();
+    let lines = group_into_lines_preserving_all_text(items);
+
+    let mut by_page: BTreeMap<u32, String> = BTreeMap::new();
+    for line in lines {
+        let text = strip_script_tags(&line.text());
+        if text.is_empty() {
+            continue;
+        }
+        let page = by_page.entry(line.page).or_default();
+        page.push_str(&text);
+        page.push('\n');
+    }
+
+    let start = pages.map_or(1, |range| range.start);
+    let end = pages.map_or(page_count, |range| range.end.min(page_count));
+    let mut page_texts = Vec::with_capacity(end.saturating_sub(start).saturating_add(1));
+    for page in start..=end {
+        let text = by_page.remove(&(page as u32)).unwrap_or_default();
+        page_texts.push(text.trim_matches('\n').to_string());
+    }
+    Ok(page_texts.join("\n\n"))
+}
+
+fn page_filter(pages: Option<PageRange>, page_count: usize) -> Option<HashSet<u32>> {
+    pages.map(|range| {
+        (range.start..=range.end.min(page_count))
+            .map(|page| page as u32)
+            .collect()
+    })
+}
+
+/// `TextLine::text` renders super- and subscripts as inline HTML tags.
+fn strip_script_tags(text: &str) -> String {
+    text.replace("<sup>", "")
+        .replace("</sup>", "")
+        .replace("<sub>", "")
+        .replace("</sub>", "")
+}
+
+/// Counts characters that usually signal a failed font decode.
+fn dirty_score(text: &str) -> usize {
+    text.chars()
+        .filter(|&ch| {
+            matches!(ch, '\0' | '\u{fffd}')
+                || (ch.is_control() && !matches!(ch, '\n' | '\t' | '\r'))
+        })
+        .count()
+}
+
+fn word_count(text: &str) -> usize {
+    text.split_whitespace().count()
+}
+
+/// Removes characters that no model or terminal should receive.
+fn sanitize_text(text: &str) -> String {
+    text.split_inclusive('\n')
+        .map(sanitize_line)
+        .collect::<Vec<_>>()
+        .concat()
+}
+
+fn sanitize_line(line: &str) -> String {
+    let line = if is_dense_nul_run(line) {
+        line.replace('\0', "")
+    } else {
+        line.replace('\0', " ")
+    };
+
+    let mut output = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                output.push('\n');
+            }
+            '\n' | '\t' => output.push(ch),
+            '\u{2028}' | '\u{2029}' => output.push('\n'),
+            '\u{fffd}' | '\u{feff}' | '\u{200b}' => {}
+            c if c.is_control() => {}
+            c if is_private_use(c) || is_bidi_control(c) || is_noncharacter(c) => {}
+            c => output.push(c),
+        }
+    }
+    output
+}
+
+/// Whether NULs are interleaved with printable text, as in two-byte font text.
+fn is_dense_nul_run(line: &str) -> bool {
+    let nul = line.bytes().filter(|&byte| byte == 0).count();
+    if nul < 2 {
+        return false;
+    }
+    let other = line.chars().count().saturating_sub(nul);
+    nul * 2 >= other
+}
+
+fn is_private_use(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{e000}'..='\u{f8ff}' | '\u{f0000}'..='\u{ffffd}' | '\u{100000}'..='\u{10fffd}'
+    )
+}
+
+fn is_bidi_control(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{061c}'
+            | '\u{200e}'
+            | '\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2066}'..='\u{2069}'
+    )
+}
+
+fn is_noncharacter(ch: char) -> bool {
+    let value = ch as u32;
+    (0xfdd0..=0xfdef).contains(&value) || value & 0xfffe == 0xfffe
 }
 
 /// Decodes every page of a PDF with the library's single-pass decoder.
@@ -263,6 +439,46 @@ pub(crate) fn sample_pdf(pages: &[&str]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_strips_dense_nul_runs() {
+        assert_eq!(sanitize_text("\0P\0a\0s\0s\0 \0@\0Γ"), "Pass @Γ");
+    }
+
+    #[test]
+    fn sanitize_replaces_isolated_nuls() {
+        assert_eq!(sanitize_text("word\0another"), "word another");
+    }
+
+    #[test]
+    fn sanitize_removes_controls_and_normalizes_separators() {
+        let text = "a\u{1}b\u{7f}c\u{9f}d\re\r\nf\u{2028}g\u{2029}h";
+        assert_eq!(sanitize_text(text), "abcd\ne\nf\ng\nh");
+    }
+
+    #[test]
+    fn sanitize_drops_replacement_private_use_and_bidi() {
+        assert_eq!(
+            sanitize_text("a\u{fffd}b\u{e000}c\u{202e}d\u{feff}e"),
+            "abcde"
+        );
+    }
+
+    #[test]
+    fn sanitize_keeps_clean_text() {
+        assert_eq!(sanitize_text("Héllo, 世界!\n"), "Héllo, 世界!\n");
+    }
+
+    #[test]
+    fn strips_script_tags_from_fallback_lines() {
+        assert_eq!(strip_script_tags("x<sup>1</sup>y<sub>2</sub>"), "x1y2");
+    }
+
+    #[test]
+    fn page_filter_clamps_the_end() {
+        let filter = page_filter(Some(PageRange { start: 2, end: 9 }), 3);
+        assert_eq!(filter, Some(HashSet::from([2, 3])));
+    }
 
     #[test]
     fn detects_pdf_magic_bytes() {

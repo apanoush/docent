@@ -109,6 +109,22 @@ pub fn sample_pdf_with_unmapped_glyph() -> Vec<u8> {
     assemble_pdf(&objects)
 }
 
+/// Creates a one-page PDF whose text is written as NUL-prefixed bytes.
+///
+/// This reproduces the two-byte font pattern where `pdf-extract` emits a NUL
+/// before every printable character.
+pub fn sample_pdf_with_nul_text() -> Vec<u8> {
+    let objects = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [4 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /Type /Encoding /Differences [0 /.notdef] >> >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>".to_string(),
+        stream_object(&text_stream("\0P\0a\0s\0s")),
+    ];
+
+    assemble_pdf(&objects)
+}
+
 fn text_stream(text: &str) -> String {
     let escaped = text
         .replace('\\', "\\\\")

@@ -4,7 +4,7 @@ use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use common::{sample_pdf, sample_pdf_with_unmapped_glyph};
+use common::{sample_pdf, sample_pdf_with_nul_text, sample_pdf_with_unmapped_glyph};
 use serde_json::Value;
 
 fn docent() -> Command {
@@ -433,6 +433,21 @@ fn extract_pdf_glyph_warnings_can_be_reenabled() {
         "{}",
         stderr(&output)
     );
+}
+
+#[test]
+fn extract_removes_nul_bytes_from_pdf_text() {
+    let temp = tempfile::tempdir().unwrap();
+    let paper = temp.path().join("paper.pdf");
+    fs::write(&paper, sample_pdf_with_nul_text()).unwrap();
+
+    let output = run_extract(&[paper.to_str().unwrap()], b"");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(!text.contains('\0'), "{text:?}");
+    let compact: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
+    assert!(compact.contains("Pass"), "{text:?}");
 }
 
 #[test]

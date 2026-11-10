@@ -438,14 +438,14 @@ fn warn_if_key_is_exposed(path: &Path, config: &Config) {
     if api_key_is_empty(config.provider.api_key.as_deref()) {
         return;
     }
-    if let Ok(metadata) = fs::metadata(path) {
-        if metadata.permissions().mode() & 0o077 != 0 {
-            log::warn!(
-                "{} contains an API key and is readable by other users; run 'chmod 600 {}'",
-                path.display(),
-                path.display()
-            );
-        }
+    if let Ok(metadata) = fs::metadata(path)
+        && metadata.permissions().mode() & 0o077 != 0
+    {
+        log::warn!(
+            "{} contains an API key and is readable by other users; run 'chmod 600 {}'",
+            path.display(),
+            path.display()
+        );
     }
 }
 

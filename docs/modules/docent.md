@@ -1,6 +1,6 @@
 # Rust crate modules
 
-The crate has two binary targets and a library target. `src/main.rs` is the CLI: it initializes logging, calls `cli::run`, prints errors to stderr, and maps errors to exit codes. Logging defaults to Docent warnings with the `pdf_extract` target at error level; `RUST_LOG` overrides the default. `src/bin/docent-native-host.rs` is the Firefox native messaging bridge, which delegates to `native_host::run`. Everything else lives in library modules so it can be tested without a terminal or a browser.
+The crate has two binary targets and a library target. `src/main.rs` is the CLI: it initializes logging, calls `cli::run`, prints errors to stderr, and maps errors to exit codes. Logging defaults to Docent warnings with the `pdf_extract`, `pdf_inspector`, and `lopdf` targets at error level; `RUST_LOG` overrides the default. `src/bin/docent-native-host.rs` is the Firefox native messaging bridge, which delegates to `native_host::run`. Everything else lives in library modules so it can be tested without a terminal or a browser.
 
 ## Module map
 
@@ -12,7 +12,7 @@ The crate has two binary targets and a library target. `src/main.rs` is the CLI:
 | `profile` | Profile schema, validation, placeholder parsing, discovery, and metadata for `docent profiles`. |
 | `request` | The JSON request type and selection range resolution. |
 | `input` | Terminal input adapters: file and stdin documents, line and page ranges, phrase and text selection, prompts, and request construction. |
-| `pdf` | PDF magic-byte detection and page-range text extraction with `pdf-extract`. |
+| `pdf` | PDF magic-byte detection, page-range text extraction with `pdf-extract`, and a `pdf-inspector` fallback for broken font encodings. |
 | `context` | Context modes, windowing, line alignment, selection and truncation markers. |
 | `prompt` | Effective settings precedence and strict placeholder rendering. |
 | `provider` | Provider dispatch, shared HTTP code, error extraction, streaming types. |
@@ -127,7 +127,7 @@ Profile validation covers TOML fields, numeric ranges, placeholder syntax, requi
 
 `input::Document` normalizes CRLF and stores a byte range for every line. Line selections are sliced from the first line start to the last line end, so they include newlines between lines but not the trailing newline after the final line. `--phrase` uses the first matching occurrence and reports the count when it is ambiguous; `--text` resolves offsets when the text occurs in the document.
 
-Files and stdin are read as bytes. Inputs starting with `%PDF-` go through `pdf::extract`, which parses the document once and decodes only the requested `--page`/`--pages` range, or every page when no range is given. Page sets of four or more are decoded across worker threads; on a single-core machine the whole-document path keeps the library's single-pass decoder. `pdf::extract` clamps the end of a page range to the last page; the human commands still reject a range that ends past the document, while `docent extract` uses the clamped text. PDF extraction failures, out-of-range starts, `--pages` on a non-PDF, and PDFs without a text layer become input errors with a specific message. Other inputs must be UTF-8 text.
+Files and stdin are read as bytes. Inputs starting with `%PDF-` go through `pdf::extract`, which parses the document once and decodes only the requested `--page`/`--pages` range, or every page when no range is given. Page sets of four or more are decoded across worker threads; on a single-core machine the whole-document path keeps the library's single-pass decoder. When the extracted text contains NUL, control characters, or replacement characters, the same pages are decoded again with `pdf-inspector` and the cleaner result wins; the final text is sanitized for private-use, bidi, and remaining control characters. `pdf::extract` clamps the end of a page range to the last page; the human commands still reject a range that ends past the document, while `docent extract` uses the clamped text. PDF extraction failures, out-of-range starts, `--pages` on a non-PDF, and PDFs without a text layer become input errors with a specific message. Other inputs must be UTF-8 text.
 
 `docent extract FILE [--page N | --pages START:END]` prints the document text to stdout. It is the machine interface to the same reader and is used by the zathura adapter for page windows; it is also useful for checking extraction by hand.
 

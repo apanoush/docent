@@ -58,7 +58,7 @@ The terminal commands (`explain`, `ask`, `translate`, `summarize`, `do`) build t
 - A file is read as the document. `-` means stdin.
 - With no file and piped stdin, the piped text becomes the document.
 - With no file and a terminal stdin, Docent prompts for a file.
-- Inputs whose bytes start with `%PDF-` are decoded with `pdf-extract`; `--page` and `--pages` select 1-based pages before the text is joined.
+- Inputs whose bytes start with `%PDF-` are decoded with `pdf-extract`; `--page` and `--pages` select 1-based pages before the text is joined. Text with NUL, control, or replacement characters is decoded again with `pdf-inspector`, and the cleaner result wins.
 - `docent extract` exposes the same reader as a machine command for adapters and shell use, and clamps an end page beyond the document instead of rejecting it.
 - Line ranges are 1-based and inclusive and are converted to byte offsets through a line index.
 - `--phrase` uses the first phrase occurrence and fails when the phrase is absent.

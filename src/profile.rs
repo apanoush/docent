@@ -77,37 +77,37 @@ impl Profile {
         if self.user_prompt.trim().is_empty() {
             errors.push("user_prompt must not be empty".to_string());
         }
-        if let Some(description) = &self.description {
-            if description.trim().is_empty() {
-                errors.push("description must not be empty".to_string());
-            }
+        if let Some(description) = &self.description
+            && description.trim().is_empty()
+        {
+            errors.push("description must not be empty".to_string());
         }
-        if let Some(model) = &self.model {
-            if model.trim().is_empty() {
-                errors.push("model must not be empty".to_string());
-            }
+        if let Some(model) = &self.model
+            && model.trim().is_empty()
+        {
+            errors.push("model must not be empty".to_string());
         }
-        if let Some(temperature) = self.temperature {
-            if !(0.0..=2.0).contains(&temperature) {
-                errors.push(format!(
-                    "temperature must be between 0.0 and 2.0, got {temperature}"
-                ));
-            }
+        if let Some(temperature) = self.temperature
+            && !(0.0..=2.0).contains(&temperature)
+        {
+            errors.push(format!(
+                "temperature must be between 0.0 and 2.0, got {temperature}"
+            ));
         }
-        if let Some(max_tokens) = self.max_tokens {
-            if max_tokens == 0 {
-                errors.push("max_tokens must be greater than zero".to_string());
-            }
+        if let Some(max_tokens) = self.max_tokens
+            && max_tokens == 0
+        {
+            errors.push("max_tokens must be greater than zero".to_string());
         }
-        if let Some(language) = &self.response_language {
-            if language.trim().is_empty() {
-                errors.push("response_language must not be empty".to_string());
-            }
+        if let Some(language) = &self.response_language
+            && language.trim().is_empty()
+        {
+            errors.push("response_language must not be empty".to_string());
         }
-        if let Some(language) = &self.target_language {
-            if language.trim().is_empty() {
-                errors.push("target_language must not be empty".to_string());
-            }
+        if let Some(language) = &self.target_language
+            && language.trim().is_empty()
+        {
+            errors.push("target_language must not be empty".to_string());
         }
         if self.context_mode == Some(ContextMode::None)
             && self.requires.contains(&Requirement::Context)

@@ -360,9 +360,9 @@ Terminal commands stream plain text by default. `--no-stream` waits for the comp
 
 ## Logging
 
-Docent writes warnings to stderr. The default filter shows Docent's own warnings and keeps the `pdf_extract` target at error level, because the extractor logs one warning per page for standard Type 1 glyph names such as `.notdef` that carry no text.
+Docent writes warnings to stderr. The default filter shows Docent's own warnings and keeps the `pdf_extract`, `pdf_inspector`, and `lopdf` targets at error level, because the PDF backends log per-glyph and per-font details that Docent either handles or reports as extraction errors.
 
-Set `RUST_LOG` to change the filter. For example, `RUST_LOG=warn,pdf_extract=warn` restores the extractor warnings, and `RUST_LOG=debug` enables debug output from Docent and its dependencies. An explicit `RUST_LOG` replaces the built-in default, so list every target you want to see.
+Set `RUST_LOG` to change the filter. For example, `RUST_LOG=warn,pdf_extract=warn,pdf_inspector=warn,lopdf=warn` restores the extractor warnings, and `RUST_LOG=debug` enables debug output from Docent and its dependencies. An explicit `RUST_LOG` replaces the built-in default, so list every target you want to see.
 
 ## Machine interface
 

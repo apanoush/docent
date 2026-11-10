@@ -2,7 +2,7 @@
 name = "docent"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "A context-aware reading companion for the terminal, Neovim, and the browser"
 license = "AGPL-3.0-only"
 authors = ["aa-p"]
@@ -22,6 +22,7 @@ env_logger = "0.11.11"
 getrandom = "0.4.3"
 log = "0.4.35"
 pdf-extract = "0.12.1"
+pdf-inspector = "~1.25"
 pulldown-cmark = { version = "0.13.6", default-features = false, features = ["html"] }
 pulldown-latex = "0.8.0"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
