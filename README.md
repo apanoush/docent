@@ -3,11 +3,7 @@
 [![CI](https://github.com/apanoush/docent/actions/workflows/ci.yml/badge.svg)](https://github.com/apanoush/docent/actions/workflows/ci.yml)
 [![coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-green)](https://github.com/apanoush/docent/actions/workflows/ci.yml)
 
-A context-aware reading companion for the terminal, Neovim, qutebrowser, Firefox, and zathura. Select a passage, ask Docent to explain it, translate it, summarize it, or answer a question about it, and Docent sends the surrounding document as context to an AI provider.
-
-## Why
-
-Most lookup tools treat a word or phrase in isolation. Docent sends the selection together with the surrounding document, so "transformer" in a machine learning paper gets an architecture explanation, while "transformer" in an electrical engineering text gets something else.
+A context-aware reading companion for the terminal, Neovim, qutebrowser, Firefox, and zathura. Select a passage, ask Docent to explain it, translate it, summarize it, or answer a question about it, and Docent answers with the surrounding document as context. Most lookup tools treat a word or phrase in isolation; Docent reads it in place, so "transformer" in a machine learning paper gets an architecture explanation, while "transformer" in an electrical engineering text gets something else.
 
 ## Main features
 
