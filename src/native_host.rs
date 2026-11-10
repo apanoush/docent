@@ -379,10 +379,8 @@ fn read_limited(mut reader: impl Read) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use std::io;
     use std::io::Cursor;
-    use std::path::Path;
 
     #[test]
     fn framing_round_trips() {
@@ -452,8 +450,9 @@ mod tests {
     #[cfg(unix)]
     mod unix {
         use super::*;
+        use std::fs;
         use std::os::unix::fs::PermissionsExt;
-        use std::path::PathBuf;
+        use std::path::{Path, PathBuf};
         use std::sync::{Mutex, MutexGuard};
 
         /// Serialize tests that spawn child processes, so a burst of forks
