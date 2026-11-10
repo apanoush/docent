@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/apanoush/docent/actions/workflows/ci.yml/badge.svg)](https://github.com/apanoush/docent/actions/workflows/ci.yml)
 [![coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-green)](https://github.com/apanoush/docent/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/docent.svg)](https://crates.io/crates/docent)
 
 A context-aware reading companion for the terminal, Neovim, qutebrowser, Firefox, and zathura. Select a passage, ask Docent to explain it, translate it, summarize it, or answer a question about it, and Docent answers with the surrounding document as context. 
 
