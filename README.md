@@ -18,6 +18,7 @@ Most lookup tools treat a word or phrase in isolation; Docent reads it in place,
 - **Streaming answers.** Plain text in the terminal, newline-delimited JSON events for adapters, or Server-Sent Events for a browser page.
 - **Browser answer pages.** Markdown rendered once by the CLI, MathML for TeX math, and answer styles you can override. See [the browser viewer guide](docs/viewer.md).
 - **Local history and cache.** Runs are recorded in SQLite, and identical rendered prompts return the stored answer without calling the provider. See [run history](docs/history.md).
+- **Local and private with a local provider.** Docent has no telemetry, and its only external network traffic is the provider request. Configuration, profiles, history, cache, and browser answer pages stay on your machine; with a local OpenAI-compatible provider such as Ollama or LM Studio, prompts and answers never leave it. History is unencrypted and protected by owner-only file permissions.
 - **Machine interface.** JSON on stdin for editors and browsers, plus `--print-prompt` to inspect the exact prompt and `docent extract` to see PDF or EPUB text before it is sent. See [configuration](docs/config.md#machine-interface).
 
 ## Install
