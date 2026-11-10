@@ -4,7 +4,7 @@ use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use common::sample_pdf;
+use common::{sample_pdf, sample_pdf_with_unmapped_glyph};
 use serde_json::Value;
 
 fn docent() -> Command {
@@ -329,15 +329,27 @@ fn request_viewer_rejects_streaming_flags() {
 }
 
 fn run_extract(args: &[&str], stdin: &[u8]) -> std::process::Output {
+    run_extract_with_log(args, stdin, None)
+}
+
+fn run_extract_with_log(
+    args: &[&str],
+    stdin: &[u8],
+    rust_log: Option<&str>,
+) -> std::process::Output {
     let config = tempfile::tempdir().unwrap();
-    let mut child = docent()
+    let mut command = docent();
+    command
         .args(["--config-dir", config.path().to_str().unwrap(), "extract"])
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .env_remove("RUST_LOG");
+    if let Some(value) = rust_log {
+        command.env("RUST_LOG", value);
+    }
+    let mut child = command.spawn().unwrap();
     child.stdin.take().unwrap().write_all(stdin).unwrap();
     child.wait_with_output().unwrap()
 }
@@ -387,6 +399,40 @@ fn extract_prints_every_page_by_default() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("alpha page"), "{text}");
     assert!(text.contains("beta page"), "{text}");
+}
+
+#[test]
+fn extract_silences_pdf_glyph_warnings_by_default() {
+    let temp = tempfile::tempdir().unwrap();
+    let paper = temp.path().join("paper.pdf");
+    fs::write(&paper, sample_pdf_with_unmapped_glyph()).unwrap();
+
+    let output = run_extract(&[paper.to_str().unwrap()], b"");
+    let err = stderr(&output);
+    assert!(output.status.success(), "stderr: {err}");
+
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("alpha"), "{text}");
+    assert!(!err.contains("[WARN"), "{err}");
+}
+
+#[test]
+fn extract_pdf_glyph_warnings_can_be_reenabled() {
+    let temp = tempfile::tempdir().unwrap();
+    let paper = temp.path().join("paper.pdf");
+    fs::write(&paper, sample_pdf_with_unmapped_glyph()).unwrap();
+
+    let output = run_extract_with_log(
+        &[paper.to_str().unwrap()],
+        b"",
+        Some("warn,pdf_extract=warn"),
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(
+        stderr(&output).contains("unknown glyph name '.notdef'"),
+        "{}",
+        stderr(&output)
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 # Rust crate modules
 
-The crate has two binary targets and a library target. `src/main.rs` is the CLI: it initializes logging, calls `cli::run`, prints errors to stderr, and maps errors to exit codes. `src/bin/docent-native-host.rs` is the Firefox native messaging bridge, which delegates to `native_host::run`. Everything else lives in library modules so it can be tested without a terminal or a browser.
+The crate has two binary targets and a library target. `src/main.rs` is the CLI: it initializes logging, calls `cli::run`, prints errors to stderr, and maps errors to exit codes. Logging defaults to Docent warnings with the `pdf_extract` target at error level; `RUST_LOG` overrides the default. `src/bin/docent-native-host.rs` is the Firefox native messaging bridge, which delegates to `native_host::run`. Everything else lives in library modules so it can be tested without a terminal or a browser.
 
 ## Module map
 

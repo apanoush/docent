@@ -358,6 +358,12 @@ A bare `docent` prints a short getting-started message. `docent profiles` prints
 
 Terminal commands stream plain text by default. `--no-stream` waits for the complete answer and prints it once. `--viewer qutebrowser` or `--viewer firefox` streams the answer into a browser instead and cannot be combined with `--no-stream`. `--json` and `--stream` are reserved for `docent request`, where `--stream` means newline-delimited JSON events.
 
+## Logging
+
+Docent writes warnings to stderr. The default filter shows Docent's own warnings and keeps the `pdf_extract` target at error level, because the extractor logs one warning per page for standard Type 1 glyph names such as `.notdef` that carry no text.
+
+Set `RUST_LOG` to change the filter. For example, `RUST_LOG=warn,pdf_extract=warn` restores the extractor warnings, and `RUST_LOG=debug` enables debug output from Docent and its dependencies. An explicit `RUST_LOG` replaces the built-in default, so list every target you want to see.
+
 ## Machine interface
 
 `docent request` reads a JSON request from stdin:

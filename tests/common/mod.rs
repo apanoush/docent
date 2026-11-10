@@ -86,17 +86,46 @@ pub fn sample_pdf(pages: &[&str]) -> Vec<u8> {
         objects.push(format!(
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents {content_id} 0 R >>"
         ));
-        let escaped = text
-            .replace('\\', "\\\\")
-            .replace('(', "\\(")
-            .replace(')', "\\)");
-        let stream = format!("BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET");
-        objects.push(format!(
-            "<< /Length {} >>\nstream\n{stream}\nendstream",
-            stream.len()
-        ));
+        let stream = text_stream(text);
+        objects.push(stream_object(&stream));
     }
 
+    assemble_pdf(&objects)
+}
+
+/// Creates a one-page PDF whose font maps one code to the `.notdef` glyph.
+///
+/// `pdf-extract` warns about the unmapped glyph name when it decodes the page,
+/// which makes this fixture useful for testing log filtering.
+pub fn sample_pdf_with_unmapped_glyph() -> Vec<u8> {
+    let objects = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [4 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /Type /Encoding /Differences [65 /.notdef] >> >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>".to_string(),
+        stream_object(&text_stream("alpha")),
+    ];
+
+    assemble_pdf(&objects)
+}
+
+fn text_stream(text: &str) -> String {
+    let escaped = text
+        .replace('\\', "\\\\")
+        .replace('(', "\\(")
+        .replace(')', "\\)");
+    format!("BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET")
+}
+
+fn stream_object(stream: &str) -> String {
+    format!(
+        "<< /Length {} >>\nstream\n{stream}\nendstream",
+        stream.len()
+    )
+}
+
+/// Writes objects and their cross-reference table as a minimal PDF.
+fn assemble_pdf(objects: &[String]) -> Vec<u8> {
     let mut pdf = String::from("%PDF-1.4\n");
     let mut offsets = Vec::new();
     for (index, object) in objects.iter().enumerate() {
